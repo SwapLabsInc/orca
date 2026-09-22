@@ -12,6 +12,7 @@ import { TerminalSessionStateSaveFailureDialog } from './TerminalSessionStateSav
 import { LinkActionPopover } from '@/components/link-actions/LinkActionPopover'
 import { TerminalAgentSessionForkDialog } from './TerminalAgentSessionForkDialog'
 import { SessionRestoredBannerPortals } from './SessionRestoredBannerPortals'
+import { AgentResumeChooserPortals } from './AgentResumeChooserPortals'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 import { TerminalQuickCommandEditorDialog } from './TerminalQuickCommandEditorDialog'
 import { TerminalPaneNativeChatPortal } from './TerminalPaneNativeChatPortal'
@@ -219,6 +220,10 @@ export function TerminalPaneSurface({
       <SessionRestoredBannerPortals
         panes={managerRef.current?.getPanes() ?? []}
         paneIds={sessionRestoredBannerPaneIds}
+      />
+      <AgentResumeChooserPortals
+        tabId={tabId}
+        panes={managerRef.current?.getPanes() ?? []}
       />
       <TerminalPaneNativeChatPortal controller={controller} />
       <TerminalContextMenu

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AgentResumeCandidate } from '../../../../shared/agent-resume-candidate'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
@@ -15,22 +16,21 @@ export type AgentResumeChooserPane = {
 type AgentResumeChooserPortalsProps = {
   tabId: string
   panes: readonly AgentResumeChooserPane[]
-  /** Passed in so the relative ages in the list are computed once per render, not per row. */
-  now: number
 }
 
 /** One pane's chooser. A child component because the pending-choice subscription is a hook
  *  and the parent renders a list. */
 function AgentResumeChooserPortal({
   paneKey,
-  container,
-  now
+  container
 }: {
   paneKey: string
   container: HTMLElement
-  now: number
 }): React.JSX.Element | null {
   const candidates = usePendingAgentResumeChoices(paneKey)
+  // Read once, lazily: the ages are a decision aid, and a clock ticking under the cursor would
+  // re-render the list while someone is choosing from it.
+  const [now] = useState(() => Date.now())
   if (!candidates || candidates.length === 0) {
     return null
   }
@@ -54,8 +54,7 @@ function AgentResumeChooserPortal({
 
 export function AgentResumeChooserPortals({
   tabId,
-  panes,
-  now
+  panes
 }: AgentResumeChooserPortalsProps): React.JSX.Element {
   return (
     <>
@@ -64,7 +63,6 @@ export function AgentResumeChooserPortals({
           key={pane.id}
           paneKey={makePaneKey(tabId, pane.leafId)}
           container={pane.container}
-          now={now}
         />
       ))}
     </>
