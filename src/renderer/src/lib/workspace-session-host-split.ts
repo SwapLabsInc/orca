@@ -2,6 +2,7 @@ import type { WorkspaceSessionState } from '../../../shared/workspace-session-st
 import {
   LOCAL_EXECUTION_HOST_ID,
   parseExecutionHostId,
+  toSshExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import { isWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
@@ -51,7 +52,8 @@ export type HostIdByWorktreeId = (worktreeId: string) => ExecutionHostId
  *  - browserWorkspaceKeyed: Record keyed by browser-workspace id; follows the
  *    page record's own worktreeId.
  *  - fileKeyed: Record keyed by editor file id; follows the open file's worktree.
- *  - sleepingAgentKeyed: Record keyed by pane key; follows the record's worktreeId.
+ *  - sleepingAgentKeyed: Record keyed by pane key; follows the record's worktreeId, falling back
+ *    to the ssh connection the record itself names when routing has no row for that worktree.
  *  - surfaceTombstoneKeyed: Record under an opaque key whose value names its own worktreeId --
  *    the only routing available once the tab or pane it describes is gone. */
 type SplitContext = {
@@ -125,20 +127,43 @@ function assignVisitRecencyByHost(
   }
 }
 
+/** The ssh host a sleeping-agent record's own capture names, or null when it names none.
+ *
+ * Why a second source: routing answers off the worktree catalog, and an ssh worktree the catalog
+ * has no row for routes to 'local' — which parked five real `ssh-*` records in the local partition
+ * while both `ssh:` partitions held none. A host partition that cannot answer for its own panes is
+ * wrong even where the merge still finds them.
+ *
+ * Why ssh only: `null` is "local **or** paired runtime" and `undefined` is "never stamped", so
+ * neither is evidence of a host (sleeping-record-execution-host-scope.ts). Those keep the routed
+ * placement rather than guess one. */
+function sleepingRecordOriginHostId(entry: unknown): ExecutionHostId | null {
+  if (!isWorkspaceSessionRecord(entry) || typeof entry.connectionId !== 'string') {
+    return null
+  }
+  const targetId = entry.connectionId.trim()
+  return targetId ? toSshExecutionHostId(targetId) : null
+}
+
 function assignKeyedByResolvedWorktree(
   slices: HostSessionSlices,
   templates: SliceTemplates,
   field: keyof WorkspaceSessionState,
   value: unknown,
   resolveWorktreeId: (key: string, entry: unknown) => string | undefined,
-  ctx: SplitContext
+  ctx: SplitContext,
+  resolveHostFromEntry?: (entry: unknown) => ExecutionHostId | null
 ): void {
   if (!isWorkspaceSessionRecord(value)) {
     return
   }
   for (const [key, entry] of Object.entries(value)) {
     const worktreeId = resolveWorktreeId(key, entry)
-    const host = worktreeId ? ctx.hostIdByWorktreeId(worktreeId) : LOCAL_EXECUTION_HOST_ID
+    const routed = worktreeId ? ctx.hostIdByWorktreeId(worktreeId) : LOCAL_EXECUTION_HOST_ID
+    // Why only on 'local': it is also the routing resolver's answer for a worktree it has no row
+    // for, so it is the one verdict that may be silence rather than a host.
+    const host =
+      routed === LOCAL_EXECUTION_HOST_ID ? (resolveHostFromEntry?.(entry) ?? routed) : routed
     const slice = ensureSlice(slices, host, templates) as WorkspaceSessionRecord
     const target = (slice[field] ??= {}) as WorkspaceSessionRecord
     target[key] = entry
@@ -268,7 +293,8 @@ export function splitWorkspaceSessionByHost(
             isWorkspaceSessionRecord(record) && typeof record.worktreeId === 'string'
               ? record.worktreeId
               : undefined,
-          ctx
+          ctx,
+          sleepingRecordOriginHostId
         )
         break
       case 'paneKeyed':
