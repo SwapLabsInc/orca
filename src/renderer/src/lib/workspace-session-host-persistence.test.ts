@@ -464,7 +464,7 @@ describe('fetchWorkspaceSessionFromHosts', () => {
       }
     } satisfies HostPersistenceState
 
-    const snapshots = buildWorkspaceSessionHostSnapshots(payload, state)
+    const snapshots = buildWorkspaceSessionHostSnapshots({}, payload, state)
 
     expect(snapshots.map((snapshot) => snapshot.hostId)).toEqual([undefined, 'runtime:env-1'])
     expect(snapshots[0].state.tabsByWorktree).toEqual({

@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
-import { toSshExecutionHostId } from '../../../shared/execution-host'
+import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
 import {
+  LOCAL_EXECUTION_HOST_ID,
+  toSshExecutionHostId,
+  type ExecutionHostId
+} from '../../../shared/execution-host'
+import { getDefaultWorkspaceSession } from '../../../shared/constants'
+import { fetchWorkspaceSessionWithRuntimeHostOwners } from './workspace-session-host-hydration'
+import {
+  buildWorkspaceSessionHostSnapshots,
   patchWorkspaceSessionByHost,
   type HostPersistenceState
 } from './workspace-session-host-persistence'
@@ -33,6 +41,26 @@ const cleared = { sleepingAgentSessionsByPaneKey: {} }
 
 function makeApi(patch = vi.fn().mockResolvedValue(undefined)) {
   return { api: { get: vi.fn(), patch, setSync: vi.fn() }, patch }
+}
+
+/** The boot read as it reaches the write path: one ssh partition already holding the record. */
+function makeReadApi(patch = vi.fn().mockResolvedValue(undefined)) {
+  const partitions: Record<string, WorkspaceSessionState> = {
+    [LOCAL_EXECUTION_HOST_ID]: { ...getDefaultWorkspaceSession(), ...cleared },
+    [SSH_HOST_ID]: { ...getDefaultWorkspaceSession(), ...withRecord }
+  }
+  return {
+    api: {
+      get: vi.fn(async (hostId?: string) => partitions[hostId ?? LOCAL_EXECUTION_HOST_ID] ?? {}),
+      listHostIds: vi.fn(async (): Promise<ExecutionHostId[]> => [
+        LOCAL_EXECUTION_HOST_ID,
+        SSH_HOST_ID
+      ]),
+      patch,
+      setSync: vi.fn()
+    },
+    patch
+  }
 }
 
 function sshCalls(patch: ReturnType<typeof vi.fn>): unknown[] {
@@ -98,5 +126,28 @@ describe('clearing a sleeping-record field a non-local partition held', () => {
     await Promise.resolve()
     await patchWorkspaceSessionByHost(api, cleared, catalog)
     expect(sshCalls(patch)).toEqual([withRecord, cleared, withRecord, cleared])
+  })
+})
+
+describe('clearing a partition the read found rows in', () => {
+  it('clears an ssh partition whose restored record retired before any patch filled it', async () => {
+    const { api, patch } = makeReadApi()
+    await fetchWorkspaceSessionWithRuntimeHostOwners(api, [])
+    await patchWorkspaceSessionByHost(api, cleared, catalog)
+    await vi.waitFor(() => expect(sshCalls(patch)).toEqual([cleared]))
+  })
+
+  it('clears a host the full snapshot routes no rows to', async () => {
+    const { api } = makeReadApi()
+    await fetchWorkspaceSessionWithRuntimeHostOwners(api, [])
+    const snapshots = buildWorkspaceSessionHostSnapshots(
+      api,
+      { ...getDefaultWorkspaceSession(), ...cleared },
+      catalog
+    )
+    expect(
+      snapshots.find((snapshot) => snapshot.hostId === SSH_HOST_ID)?.state
+        .sleepingAgentSessionsByPaneKey
+    ).toEqual({})
   })
 })

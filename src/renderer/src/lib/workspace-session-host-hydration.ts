@@ -22,6 +22,7 @@ import {
   normalizeWorkspaceSessionKeyToWorktreeId
 } from './workspace-session-host-contention'
 import { nonLocalHostSessionEntries, type HostSessionSlices } from './workspace-session-host-split'
+import { trackPartitionFieldsHeldByRead } from './workspace-session-partition-field-clearing'
 
 type SessionReadApi = {
   get: (hostId?: ExecutionHostId) => Promise<WorkspaceSessionState>
@@ -199,6 +200,13 @@ export async function fetchWorkspaceSessionWithRuntimeHostOwners(
       [...sshHostIds].sort().map(async (hostId) => [hostId, await readPartition(hostId)] as const)
     )
   ])
+  // Why here: the write path's clear tracker otherwise learns ownership only from this renderer's
+  // own patches, so a row restored from disk and retired before the first patch carrying the field
+  // had no host to clear. Seeded from the raw read, ssh partitions included.
+  trackPartitionFieldsHeldByRead(api, {
+    ...slices,
+    ...Object.fromEntries(sshPartitions.filter(([, slice]) => slice !== null))
+  })
   const merged = mergeWorkspaceSessionsWithHostShadow(slices)
   // Why the ssh partitions stay out of `slices`: the contention split reads two slices holding one
   // workspace id as two DIFFERENT workspaces on rival hosts and parks one of them. 'local' and

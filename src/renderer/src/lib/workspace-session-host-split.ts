@@ -163,6 +163,30 @@ function assignKeyedByResolvedWorktree(
   }
 }
 
+function buildSliceTemplates(state: WorkspaceSessionState): SliceTemplates {
+  // Why own-keys only: a partial patch (where most globals are absent) must not inject `undefined`
+  // values that would clobber persisted state when the slice is applied as a patch. Intentional
+  // `undefined` keys are preserved.
+  const template = {} as WorkspaceSessionState
+  for (const field of GLOBAL_WORKSPACE_SESSION_FIELDS) {
+    if (Object.hasOwn(state, field)) {
+      ;(template as WorkspaceSessionRecord)[field] = state[field]
+    }
+  }
+  return { local: template, nonLocal: hostPartitionSliceTemplate(template) }
+}
+
+/** Give `hostId` an empty `field`, seeding the slice from the same globals template the split uses.
+ *  For a host the split routed no rows to whose partition still holds rows under that field. */
+export function seedEmptyPartitionField(
+  slices: HostSessionSlices,
+  hostId: ExecutionHostId,
+  state: WorkspaceSessionState,
+  field: keyof WorkspaceSessionState
+): void {
+  Object.assign(ensureSlice(slices, hostId, buildSliceTemplates(state)), { [field]: {} })
+}
+
 /** Partition a unified session into per-host slices keyed by ExecutionHostId.
  *  Global fields are copied to the 'local' slice; worktree-scoped data is routed
  *  to its owner host. Entries whose owning worktree is unknown to the payload and
@@ -173,21 +197,7 @@ export function splitWorkspaceSessionByHost(
   hostIdByWorktreeId: HostIdByWorktreeId,
   options: { worktreeIdByTabId?: Map<string, string> } = {}
 ): HostSessionSlices {
-  // Template carries only the global fields; per-field assigners add the rest.
-  // Why: copy only own-keys so a partial patch (where most globals are absent)
-  // does not inject `undefined` values that would clobber persisted state when
-  // the slice is applied as a patch. Intentional `undefined` keys are preserved.
-  const template = {} as WorkspaceSessionState
-  for (const field of GLOBAL_WORKSPACE_SESSION_FIELDS) {
-    if (Object.hasOwn(state, field)) {
-      ;(template as WorkspaceSessionRecord)[field] = state[field]
-    }
-  }
-
-  const templates: SliceTemplates = {
-    local: template,
-    nonLocal: hostPartitionSliceTemplate(template)
-  }
+  const templates = buildSliceTemplates(state)
 
   const slices: HostSessionSlices = {}
   // Why: 'local' must always exist — it owns the global fields and is the

@@ -201,6 +201,7 @@ export function useAppSessionPersistence(): void {
       buildSessionSnapshots: () => {
         const freshState = useAppStore.getState()
         return buildWorkspaceSessionHostSnapshots(
+          window.api.session,
           buildWorkspaceSessionPayload(freshState),
           freshState
         )
