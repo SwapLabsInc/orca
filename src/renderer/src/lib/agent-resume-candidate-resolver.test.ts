@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AGENT_RESUME_LIFETIME_SLACK_MS,
   AGENT_RESUME_SUBSTANCE_FLOOR_MESSAGES,
   type AgentResumeCandidate,
   type AgentResumeResolution
@@ -79,80 +78,7 @@ const rungs: Row[] = [
     expected: 'resume:a:sole-candidate'
   },
   {
-    name: 'rung 3: tab last-session id matches one survivor',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + HOUR }), candidate('b')],
-      tabLastSessionId: 'b'
-    },
-    expected: 'resume:b:tab-session-match'
-  },
-  {
-    name: 'rung 4: exactly one survivor inside the tab lifetime window',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 10 * HOUR }), candidate('b')],
-      tabCreatedAt: T0 - HOUR,
-      tabLastSeenAt: T0 + HOUR
-    },
-    expected: 'resume:b:lifetime-window'
-  },
-  {
-    name: 'rung 4: slack admits activity just past the window edge',
-    args: {
-      candidates: [
-        candidate('a', { updatedAt: T0 + 10 * HOUR }),
-        candidate('b', { updatedAt: T0 + AGENT_RESUME_LIFETIME_SLACK_MS })
-      ],
-      tabCreatedAt: T0 - HOUR,
-      tabLastSeenAt: T0
-    },
-    expected: 'resume:b:lifetime-window'
-  },
-  {
-    name: 'rung 4: two survivors inside the window fall through to choose',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 60_000 }), candidate('b')],
-      tabCreatedAt: T0 - HOUR,
-      tabLastSeenAt: T0 + HOUR
-    },
-    expected: 'choose:a,b'
-  },
-  {
-    name: 'rung 4 skipped when tabCreatedAt is missing',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 10 * HOUR }), candidate('b')],
-      tabLastSeenAt: T0 + HOUR
-    },
-    expected: 'choose:a,b'
-  },
-  {
-    name: 'rung 4 skipped when a bound is non-finite',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 10 * HOUR }), candidate('b')],
-      tabCreatedAt: Number.NEGATIVE_INFINITY,
-      tabLastSeenAt: T0 + HOUR
-    },
-    expected: 'choose:a,b'
-  },
-  {
-    name: 'rung 4 skipped when a bound is NaN or negative',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 10 * HOUR }), candidate('b')],
-      tabCreatedAt: -1,
-      tabLastSeenAt: Number.NaN
-    },
-    expected: 'choose:a,b'
-  },
-  {
-    name: 'rung 4 skipped when the window is inverted',
-    args: {
-      candidates: [candidate('a', { updatedAt: T0 + 10 * HOUR }), candidate('b')],
-      tabCreatedAt: T0 + HOUR,
-      tabLastSeenAt: T0 - HOUR
-    },
-    expected: 'choose:a,b'
-  },
-  {
-    name: 'rung 5: survivors ranked newest first',
+    name: 'last rung: survivors ranked newest first',
     args: {
       candidates: [
         candidate('old', { updatedAt: T0 }),
@@ -209,10 +135,7 @@ const regressions: Row[] = [
       candidates: [
         candidate('diagnostic', { messageCount: 39, updatedAt: T0 + HOUR }),
         candidate('work', { messageCount: 758, updatedAt: T0 - 5 * HOUR })
-      ],
-      tabLastSessionId: 'diagnostic',
-      tabCreatedAt: T0,
-      tabLastSeenAt: T0 + HOUR
+      ]
     },
     expected: 'resume:work:sole-candidate'
   },
@@ -227,18 +150,15 @@ const regressions: Row[] = [
     expected: 'choose:a,b'
   },
   {
-    name: 'regression 3: a claimed id is not revived by tab affinity',
+    name: 'regression 3: a claimed id is dropped, not resumed',
     args: {
       candidates: [candidate('a'), candidate('b'), candidate('c')],
-      claimedSessionIds: new Set(['a']),
-      tabLastSessionId: 'a',
-      tabCreatedAt: T0 - HOUR,
-      tabLastSeenAt: T0 + HOUR
+      claimedSessionIds: new Set(['a'])
     },
     expected: 'choose:b,c'
   },
   {
-    name: 'regression 3: a claimed id is not the lifetime-window match',
+    name: 'regression 3: a claimed newest candidate is never resumed',
     args: {
       candidates: [candidate('a'), candidate('b', { updatedAt: T0 + 10 * HOUR })],
       claimedSessionIds: new Set(['a', 'b'])
@@ -329,11 +249,8 @@ const malformed: Row[] = [
     expected: 'resume:b:sole-candidate'
   },
   {
-    name: 'empty tab last-session id is ignored',
-    args: {
-      candidates: [candidate('a'), candidate('', { messageCount: 500 }), candidate('b')],
-      tabLastSessionId: ''
-    },
+    name: 'a candidate with an empty session id is dropped',
+    args: { candidates: [candidate('a'), candidate('', { messageCount: 500 }), candidate('b')] },
     expected: 'choose:a,b'
   }
 ]
@@ -348,27 +265,15 @@ describe('resolveAgentResumeCandidate', () => {
     expect(summarize(result)).toBe('resume:a:sole-candidate')
   })
 
-  it('never returns a claimed id from any rung', () => {
+  it('never returns a claimed id', () => {
     const candidates = [
       candidate('a'),
       candidate('b', { updatedAt: T0 + 10 * HOUR }),
       candidate('c', { updatedAt: T0 + 20 * HOUR })
     ]
-    const affinities: Partial<ResolveAgentResumeCandidateArgs>[] = [
-      {},
-      { tabLastSessionId: 'a' },
-      { tabCreatedAt: T0 - HOUR, tabLastSeenAt: T0 + HOUR }
-    ]
-    for (const affinity of affinities) {
-      const result = resolve({ candidates, claimedSessionIds: new Set(['a']), ...affinity })
-      const returned =
-        result.kind === 'resume'
-          ? [result.candidate]
-          : result.kind === 'choose'
-            ? result.candidates
-            : []
-      expect(returned.map((c) => c.providerSession.id)).not.toContain('a')
-    }
+    const result = resolve({ candidates, claimedSessionIds: new Set(['a']) })
+    const returned = result.kind === 'choose' ? result.candidates : []
+    expect(returned.map((c) => c.providerSession.id)).not.toContain('a')
   })
 
   it('does not mutate the caller candidate order', () => {

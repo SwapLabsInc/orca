@@ -21,8 +21,6 @@ export type AgentResumeCandidate = {
 export type AgentResumeResolutionReason =
   | 'pane-record'
   | 'sole-candidate'
-  | 'tab-session-match'
-  | 'lifetime-window'
   | 'no-candidates'
   | 'every-candidate-claimed'
   | 'ambiguous'
@@ -31,12 +29,9 @@ export type AgentResumeResolution =
   | {
       kind: 'resume'
       candidate: AgentResumeCandidate
-      reason: Extract<
-        AgentResumeResolutionReason,
-        'pane-record' | 'sole-candidate' | 'tab-session-match' | 'lifetime-window'
-      >
+      reason: Extract<AgentResumeResolutionReason, 'pane-record' | 'sole-candidate'>
     }
-  /** Rung 5: several candidates survived every filter and no evidence separates them. */
+  /** Last rung: several candidates survived every filter and no evidence separates them. */
   | { kind: 'choose'; candidates: readonly AgentResumeCandidate[] }
   | {
       kind: 'none'
@@ -51,7 +46,3 @@ export type AgentResumeResolution =
  *  newest must never outrank a substantial one (a 39-line diagnostic beat a 758-line session
  *  in the field before this floor existed). */
 export const AGENT_RESUME_SUBSTANCE_FLOOR_MESSAGES = 50
-
-/** Candidates this far apart in last-activity are not "the same moment"; used only to decide
- *  whether a lifetime-window match is unique rather than to rank. */
-export const AGENT_RESUME_LIFETIME_SLACK_MS = 5 * 60 * 1000

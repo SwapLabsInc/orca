@@ -1,5 +1,4 @@
 import {
-  AGENT_RESUME_LIFETIME_SLACK_MS,
   AGENT_RESUME_SUBSTANCE_FLOOR_MESSAGES,
   type AgentResumeCandidate,
   type AgentResumeResolution
@@ -14,11 +13,6 @@ export type ResolveAgentResumeCandidateArgs = {
   candidates: readonly AgentResumeCandidate[]
   paneAgent: ResumableTuiAgent | null
   worktreePath: string
-  tabLastSessionId?: string | null
-  /** Host-clock epoch ms, comparable to candidate `updatedAt`; the caller owns that mapping. */
-  tabCreatedAt?: number | null
-  /** Host-clock epoch ms, comparable to candidate `updatedAt`; the caller owns that mapping. */
-  tabLastSeenAt?: number | null
   claimedSessionIds: ReadonlySet<string>
 }
 
@@ -86,31 +80,10 @@ export function resolveAgentResumeCandidate(
     return { kind: 'resume', candidate: survivors[0], reason: 'sole-candidate' }
   }
 
-  const tabSessionId = args.tabLastSessionId
-  if (typeof tabSessionId === 'string' && tabSessionId.length > 0) {
-    const matches = survivors.filter((candidate) => candidate.providerSession.id === tabSessionId)
-    if (matches.length === 1) {
-      return { kind: 'resume', candidate: matches[0], reason: 'tab-session-match' }
-    }
-  }
-
-  const { tabCreatedAt, tabLastSeenAt } = args
-  if (
-    isHostTimestamp(tabCreatedAt) &&
-    isHostTimestamp(tabLastSeenAt) &&
-    tabCreatedAt <= tabLastSeenAt
-  ) {
-    // Both sides are host-clock values; a client clock would skew this window.
-    const from = tabCreatedAt - AGENT_RESUME_LIFETIME_SLACK_MS
-    const to = tabLastSeenAt + AGENT_RESUME_LIFETIME_SLACK_MS
-    const inWindow = survivors.filter(
-      (candidate) => candidate.updatedAt >= from && candidate.updatedAt <= to
-    )
-    if (inWindow.length === 1) {
-      return { kind: 'resume', candidate: inWindow[0], reason: 'lifetime-window' }
-    }
-  }
-
+  // Why no tab-session-match or lifetime-window rung: the renderer cannot source either. A tab
+  // carries no last provider session id — that handle is precisely what was lost — and its
+  // `createdAt` is a renderer-clock value, which this resolver may never compare to a host-clock
+  // `updatedAt`. Guessing across those clocks forks a transcript; the chooser asks instead.
   // Display order only; the user decides.
   const ranked = [...survivors].sort(
     (a, b) =>

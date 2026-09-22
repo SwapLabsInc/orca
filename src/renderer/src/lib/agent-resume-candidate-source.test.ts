@@ -122,7 +122,7 @@ describe('fetchAgentResumeCandidates', () => {
       executionHostId: 'ssh:ssh-1',
       listSessions: async (request) => {
         calls.push(request)
-        return { sessions: [session()] }
+        return { sessions: [session()], issues: [], scannedAt: '' }
       }
     })
     expect(calls).toEqual([
@@ -130,30 +130,68 @@ describe('fetchAgentResumeCandidates', () => {
     ])
   })
 
-  // Why: loss of contact says nothing about the sessions. Answering empty leaves a plain
-  // shell (the pre-feature behaviour) instead of risking a wrong resume.
-  it('answers with no candidates when the host cannot be reached', async () => {
-    const candidates = await fetchAgentResumeCandidates({
+  // Why not "no candidates": loss of contact says nothing about the sessions, and a scan that
+  // answered about nothing must not let a subset be read as the sole candidate.
+  it('answers unverifiable when the host cannot be reached', async () => {
+    const scan = await fetchAgentResumeCandidates({
       worktreePath: '/home/ubuntu/Desktop/qbit',
       executionHostId: 'ssh:ssh-1',
       listSessions: async () => {
         throw new Error('relay unreachable')
       }
     })
-    expect(candidates).toEqual([])
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'no-contact' })
+  })
+
+  // A cancelled scan resolves with an empty body by construction, which is the shape most
+  // likely to be misread as "this host holds nothing".
+  it('answers unverifiable for a cancelled scan', async () => {
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/home/ubuntu/Desktop/qbit',
+      executionHostId: 'ssh:ssh-1',
+      listSessions: async () => ({ sessions: [], issues: [], scannedAt: '', cancelled: true })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'cancelled' })
+  })
+
+  it('answers unverifiable when the scan reports an unread path or host', async () => {
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/home/ubuntu/Desktop/qbit',
+      executionHostId: 'ssh:ssh-1',
+      listSessions: async () => ({
+        sessions: [session()],
+        issues: [{ agent: 'claude', kind: 'host', path: '/home', message: 'host unreachable' }],
+        scannedAt: ''
+      })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-issues' })
+  })
+
+  // `notice` rows are scanner commentary the shared type documents as never a failure.
+  it('treats a notice-only issue list as a complete scan', async () => {
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/home/ubuntu/Desktop/qbit',
+      executionHostId: 'ssh:ssh-1',
+      listSessions: async () => ({
+        sessions: [session()],
+        issues: [{ agent: 'claude', kind: 'notice', path: '', message: 'issue list truncated' }],
+        scannedAt: ''
+      })
+    })
+    expect(scan.kind).toBe('complete')
   })
 
   it('does not query at all without a workspace path', async () => {
     let queried = false
-    const candidates = await fetchAgentResumeCandidates({
+    const scan = await fetchAgentResumeCandidates({
       worktreePath: '',
       executionHostId: null,
       listSessions: async () => {
         queried = true
-        return { sessions: [] }
+        return { sessions: [], issues: [], scannedAt: '' }
       }
     })
     expect(queried).toBe(false)
-    expect(candidates).toEqual([])
+    expect(scan).toEqual({ kind: 'complete', candidates: [] })
   })
 })

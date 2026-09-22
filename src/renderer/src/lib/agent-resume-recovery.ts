@@ -4,6 +4,7 @@ import type {
 } from '../../../shared/agent-resume-candidate'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import type { ResumableTuiAgent } from '../../../shared/agent-session-resume'
+import type { AgentResumeCandidateScan } from './agent-resume-candidate-source'
 import { resolveAgentResumeCandidate } from './agent-resume-candidate-resolver'
 import { decideAgentResumeForPane, type AgentResumePaneAction } from './agent-resume-pane-decision'
 
@@ -21,16 +22,13 @@ export type RecoverAgentSessionArgs = {
   executionHostId: ExecutionHostId | null
   paneAgent: ResumableTuiAgent | null
   readPaneState: () => AgentResumePaneGateState
-  tabLastSessionId?: string | null
-  tabCreatedAt?: number | null
-  tabLastSeenAt?: number | null
   /** Read AFTER the host scan, never before: the scan takes ~2s, and a sibling pane can claim
    *  or reserve a session inside that window. */
   readClaimedSessionIds: () => ReadonlySet<string>
   fetchCandidates: (args: {
     worktreePath: string
     executionHostId: ExecutionHostId | null
-  }) => Promise<readonly AgentResumeCandidate[]>
+  }) => Promise<AgentResumeCandidateScan>
   /** Reserves the candidate and respawns; false means another pane reserved it first. */
   resume: (candidate: AgentResumeCandidate) => boolean
   offerChoice: (paneKey: string, candidates: readonly AgentResumeCandidate[]) => void
@@ -58,17 +56,20 @@ export async function recoverAgentSessionForPane(
     return preGate
   }
 
-  const candidates = await args.fetchCandidates({
+  const scan = await args.fetchCandidates({
     worktreePath: args.worktreePath,
     executionHostId: args.executionHostId
   })
+  // An incomplete scan is `unverifiable`, not "no candidates": its subset could name the wrong
+  // conversation as the sole survivor, and its emptiness is no evidence of absence. The caller
+  // keeps the attempt unspent so a reachable host can still answer.
+  if (scan.kind !== 'complete') {
+    return { kind: 'none', reason: 'scan-unverifiable' }
+  }
   const resolution = resolveAgentResumeCandidate({
-    candidates,
+    candidates: scan.candidates,
     paneAgent: args.paneAgent,
     worktreePath: args.worktreePath,
-    tabLastSessionId: args.tabLastSessionId,
-    tabCreatedAt: args.tabCreatedAt,
-    tabLastSeenAt: args.tabLastSeenAt,
     claimedSessionIds: args.readClaimedSessionIds()
   })
 

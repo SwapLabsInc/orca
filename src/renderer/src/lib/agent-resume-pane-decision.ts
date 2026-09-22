@@ -6,7 +6,7 @@ import type {
 export type AgentResumePaneAction =
   /** Respawn this pane with the candidate's resume argv. */
   | { kind: 'resume'; candidate: AgentResumeCandidate }
-  /** Rung 5: offer the choice in the pane. */
+  /** Last rung: offer the choice in the pane. */
   | { kind: 'choose'; candidates: readonly AgentResumeCandidate[] }
   | { kind: 'none'; reason: AgentResumePaneRefusal }
 
@@ -17,6 +17,8 @@ export type AgentResumePaneRefusal =
   | 'resolver-refused'
   /** Another pane reserved the same conversation between the host scan and the respawn. */
   | 'session-claimed'
+  /** The host scan was cancelled, partial, or unreachable, so it answered about nothing. */
+  | 'scan-unverifiable'
 
 export type AgentResumePaneInputs = {
   /** The pane's own sleeping record already answered; the synchronous cold-restore path owns it. */

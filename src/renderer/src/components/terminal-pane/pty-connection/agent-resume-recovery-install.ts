@@ -87,10 +87,10 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     if (!session.deps.isVisibleRef.current) {
       return
     }
-    // Positive evidence this pane hosted an agent, from the ladder the rest of the pane already
-    // uses. Without it an ordinary shell could be replaced by an unrelated conversation that
-    // merely shares the workspace.
-    const paneAgent = session.resolveExpectedLaunchTuiAgent?.() ?? null
+    // Positive evidence THIS PANE hosted an agent. Never the tab-wide launch agent: it
+    // describes the tab's original pty only (terminal-pane-close-identity.ts), so a plain-shell
+    // split in an agent-launched tab would pass and have its shell destructively replaced.
+    const paneAgent = session.resolvePaneScopedTuiAgent?.() ?? null
     if (!isResumableTuiAgent(paneAgent)) {
       return
     }
@@ -100,7 +100,7 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     }
     session.agentResumeRecoveryAttempted = true
     try {
-      await recoverAgentSessionForPane({
+      const action = await recoverAgentSessionForPane({
         paneKey: session.cacheKey,
         worktreePath,
         executionHostId: session.executionHostId,
@@ -129,6 +129,10 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
           }
         }
       })
+      if (action.kind === 'none' && action.reason === 'scan-unverifiable') {
+        // The host answered about nothing, so this pane has not had its attempt yet.
+        session.agentResumeRecoveryAttempted = false
+      }
     } catch (err) {
       // A relay that never answered is not evidence about this pane, so the attempt is retried
       // on the next reveal rather than disabled for the life of the connection.
