@@ -17858,6 +17858,12 @@
         "copySessionId": "Copy Session ID",
         "copySessionIdSuccess": "Session ID copied",
         "copySessionIdError": "Unable to copy session ID"
+      },
+      "AgentResumeChooser": {
+        "label": "Choose a session to resume",
+        "title": "Which session should this terminal resume?",
+        "help": "Press a number or Enter to resume, Esc for a plain shell.",
+        "dismiss": "Start a plain shell instead"
       }
     },
     "settings": {

@@ -23,6 +23,7 @@ import {
 import { installRunDeferredConnect } from './run-deferred-connect'
 
 import { installSleepingRecordAccess } from './sleeping-record-access'
+import { installAgentResumeRecovery } from './agent-resume-recovery-install'
 import { installShellCommandInference } from './shell-command-inference'
 import { installInterruptInputIntent } from './interrupt-input-intent'
 import { installTerminalKeydownFit } from './terminal-keydown-fit'
@@ -168,6 +169,7 @@ export function connectPanePty(
     return created
   })()
   installSleepingRecordAccess(session)
+  installAgentResumeRecovery(session)
   installShellCommandInference(session)
   installInterruptInputIntent(session)
   installTerminalKeydownFit(session)

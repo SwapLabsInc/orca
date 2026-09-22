@@ -2754,6 +2754,14 @@
           "readyOneOne": "1 workspace found, with 1 cleanup suggestion."
         }
       }
+    },
+    "terminalPane": {
+      "AgentResumeChooser": {
+        "label": "Choose a session to resume",
+        "title": "Which session should this terminal resume?",
+        "help": "Press a number or Enter to resume, Esc for a plain shell.",
+        "dismiss": "Start a plain shell instead"
+      }
     }
   },
   "dashboard": {
