@@ -2,7 +2,7 @@ import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidat
 
 /** What a pane can do with a chosen session. Registered by the pane's pty connection while it
  *  is bound, so the chooser can reach the live connection without threading it through React. */
-export type AgentResumePaneHandler = (candidate: AgentResumeCandidate) => void
+export type AgentResumePaneHandler = (candidate: AgentResumeCandidate) => boolean
 
 const handlersByPaneKey = new Map<string, AgentResumePaneHandler>()
 

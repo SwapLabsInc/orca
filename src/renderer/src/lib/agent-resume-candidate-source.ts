@@ -2,13 +2,33 @@ import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidat
 import type { AiVaultSession } from '../../../shared/ai-vault-types'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
+  extractAgentProviderSession,
+  getAgentResumeArgv,
   isResumableTuiAgent,
-  normalizeAgentProviderSession
+  type AgentProviderSessionMetadata,
+  type ResumableTuiAgent
 } from '../../../shared/agent-session-resume'
 
 /** Epoch ms from the host's ISO stamps, preferring the session's own `updatedAt` over the
  *  file mtime. Returns null rather than a guess: the resolver treats a bad timestamp as
  *  evidence it must not select on. */
+/** Per-agent resume identity, read through the one mapping that already knows it. Antigravity
+ *  resumes by conversation id and Pi/Prime Agent by transcript path, so a hardcoded `session_id`
+ *  would name a locator those agents cannot resume. */
+function readProviderSession(
+  session: AiVaultSession,
+  agent: ResumableTuiAgent
+): AgentProviderSessionMetadata | null {
+  const transcriptPath = typeof session.filePath === 'string' ? session.filePath.trim() : ''
+  return extractAgentProviderSession(agent, {
+    session_id: session.sessionId,
+    sessionId: session.sessionId,
+    sessionID: session.sessionId,
+    conversationId: session.sessionId,
+    ...(transcriptPath ? { transcript_path: transcriptPath, session_file: transcriptPath } : {})
+  })
+}
+
 function readHostTimestamp(session: AiVaultSession): number | null {
   for (const raw of [session.updatedAt, session.modifiedAt]) {
     if (typeof raw !== 'string' || raw.length === 0) {
@@ -34,13 +54,13 @@ export function toAgentResumeCandidate(
   if (!isResumableTuiAgent(session.agent)) {
     return null
   }
-  // Claude/Codex resume by id; Pi and OMP resume by transcript path, which the relay
-  // withholds from paired clients (redactForTransport). Those stay record-only for now.
-  const providerSession = normalizeAgentProviderSession({
-    key: 'session_id',
-    id: session.sessionId
-  })
+  const providerSession = readProviderSession(session, session.agent)
   if (!providerSession) {
+    return null
+  }
+  // Refuse rather than offer: a candidate the resume argv builder cannot express would dismiss
+  // the chooser and resume nothing.
+  if (!getAgentResumeArgv(session.agent, providerSession)) {
     return null
   }
   const cwd = typeof session.cwd === 'string' ? session.cwd : ''

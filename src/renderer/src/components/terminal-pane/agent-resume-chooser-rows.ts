@@ -12,24 +12,26 @@ export function agentResumeChooserAgentLabel(agent: string): string {
   return labels[agent] ?? agent
 }
 
-/** Coarse, glanceable age. Deliberately not a live-updating clock: the chooser is a
- *  decision surface that should not re-render under the user's cursor. */
-export function agentResumeChooserRelativeAge(updatedAt: number, now: number): string {
-  if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) {
+/** Ages are relative to the newest candidate, never to the renderer clock: `updatedAt` is the
+ *  HOST's clock, and under skew a "2h ago" computed here would be fiction on the surface where
+ *  the user is choosing on exactly that evidence. Candidate-to-candidate distance is skew-free
+ *  because both sides come from the same host clock. */
+export function agentResumeChooserRelativeAge(updatedAt: number, newestUpdatedAt: number): string {
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(newestUpdatedAt)) {
     return 'unknown'
   }
-  const minutes = Math.floor(Math.max(0, now - updatedAt) / 60_000)
+  const minutes = Math.floor(Math.max(0, newestUpdatedAt - updatedAt) / 60_000)
   if (minutes < 1) {
-    return 'just now'
+    return 'newest'
   }
   if (minutes < 60) {
-    return `${minutes}m ago`
+    return `${minutes}m older`
   }
   const hours = Math.floor(minutes / 60)
   if (hours < 24) {
-    return `${hours}h ago`
+    return `${hours}h older`
   }
-  return `${Math.floor(hours / 24)}d ago`
+  return `${Math.floor(hours / 24)}d older`
 }
 
 export type AgentResumeChooserRow = {
@@ -44,14 +46,17 @@ export type AgentResumeChooserRow = {
 /** Ranking is display order only — the resolver already refused to decide, so nothing
  *  here may be read as a recommendation. */
 export function buildAgentResumeChooserRows(
-  candidates: readonly AgentResumeCandidate[],
-  now: number
+  candidates: readonly AgentResumeCandidate[]
 ): AgentResumeChooserRow[] {
+  const newestUpdatedAt = candidates.reduce(
+    (newest, candidate) => (candidate.updatedAt > newest ? candidate.updatedAt : newest),
+    Number.NEGATIVE_INFINITY
+  )
   return candidates.slice(0, AGENT_RESUME_CHOOSER_MAX_ROWS).map((candidate) => ({
     candidate,
     agentLabel: agentResumeChooserAgentLabel(candidate.agent),
     title: candidate.title.trim() || candidate.providerSession.id,
-    age: agentResumeChooserRelativeAge(candidate.updatedAt, now),
+    age: agentResumeChooserRelativeAge(candidate.updatedAt, newestUpdatedAt),
     messageCount: Math.max(0, Math.trunc(candidate.messageCount)),
     branch: candidate.branch
   }))

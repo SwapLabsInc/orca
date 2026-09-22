@@ -8,8 +8,6 @@ type AgentResumeChooserProps = {
   candidates: readonly AgentResumeCandidate[]
   onResume: (candidate: AgentResumeCandidate) => void
   onDismiss: () => void
-  /** Passed in rather than read from the clock so the surface stays pure and testable. */
-  now: number
 }
 
 /**
@@ -24,10 +22,9 @@ type AgentResumeChooserProps = {
 export function AgentResumeChooser({
   candidates,
   onResume,
-  onDismiss,
-  now
+  onDismiss
 }: AgentResumeChooserProps): React.JSX.Element | null {
-  const rows = buildAgentResumeChooserRows(candidates, now)
+  const rows = buildAgentResumeChooserRows(candidates)
   const [selected, setSelected] = useState(0)
   const containerRef = useRef<HTMLDivElement | null>(null)
 

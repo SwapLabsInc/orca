@@ -5,10 +5,7 @@ import type {
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import type { ResumableTuiAgent } from '../../../shared/agent-session-resume'
 import { resolveAgentResumeCandidate } from './agent-resume-candidate-resolver'
-import {
-  decideAgentResumeForPane,
-  type AgentResumePaneAction
-} from './agent-resume-pane-decision'
+import { decideAgentResumeForPane, type AgentResumePaneAction } from './agent-resume-pane-decision'
 
 /** The three destructive gates, read live rather than captured — asking the host takes
  *  seconds, and the pane can be hidden or typed into while the answer is in flight. */
@@ -27,12 +24,15 @@ export type RecoverAgentSessionArgs = {
   tabLastSessionId?: string | null
   tabCreatedAt?: number | null
   tabLastSeenAt?: number | null
-  claimedSessionIds: ReadonlySet<string>
+  /** Read AFTER the host scan, never before: the scan takes ~2s, and a sibling pane can claim
+   *  or reserve a session inside that window. */
+  readClaimedSessionIds: () => ReadonlySet<string>
   fetchCandidates: (args: {
     worktreePath: string
     executionHostId: ExecutionHostId | null
   }) => Promise<readonly AgentResumeCandidate[]>
-  resume: (candidate: AgentResumeCandidate) => void
+  /** Reserves the candidate and respawns; false means another pane reserved it first. */
+  resume: (candidate: AgentResumeCandidate) => boolean
   offerChoice: (paneKey: string, candidates: readonly AgentResumeCandidate[]) => void
 }
 
@@ -69,12 +69,15 @@ export async function recoverAgentSessionForPane(
     tabLastSessionId: args.tabLastSessionId,
     tabCreatedAt: args.tabCreatedAt,
     tabLastSeenAt: args.tabLastSeenAt,
-    claimedSessionIds: args.claimedSessionIds
+    claimedSessionIds: args.readClaimedSessionIds()
   })
 
   const decision = decideAgentResumeForPane({ ...args.readPaneState(), resolution })
   if (decision.kind === 'resume') {
-    args.resume(decision.candidate)
+    // The claim set above is a read; this is the check-and-reserve that decides it.
+    if (!args.resume(decision.candidate)) {
+      return { kind: 'none', reason: 'session-claimed' }
+    }
   } else if (decision.kind === 'choose') {
     args.offerChoice(args.paneKey, decision.candidates)
   }

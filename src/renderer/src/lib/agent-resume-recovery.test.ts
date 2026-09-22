@@ -33,9 +33,9 @@ function makeArgs(overrides: Partial<RecoverAgentSessionArgs> = {}): RecoverAgen
     executionHostId: null,
     paneAgent: 'claude',
     readPaneState: () => OPEN_GATES,
-    claimedSessionIds: new Set<string>(),
+    readClaimedSessionIds: () => new Set<string>(),
     fetchCandidates: async () => [makeCandidate()],
-    resume: vi.fn(),
+    resume: vi.fn(() => true),
     offerChoice: vi.fn(),
     ...overrides
   }
@@ -85,7 +85,7 @@ describe('recoverAgentSessionForPane', () => {
   // using is the one outcome this path must never produce.
   it('stands down when the user types while the host is answering', async () => {
     let typed = false
-    const resume = vi.fn()
+    const resume = vi.fn(() => true)
     const decision = await recoverAgentSessionForPane(
       makeArgs({
         resume,
@@ -121,9 +121,32 @@ describe('recoverAgentSessionForPane', () => {
     expect(args.resume).not.toHaveBeenCalled()
   })
 
+  // EP-STATE: the ~2s scan is exactly the window in which a sibling pane claims the session
+  // this pane resolved, so the set that decides must be the one read after the await.
+  it('re-reads the claim set after the host answers', async () => {
+    const claimed = new Set<string>()
+    const args = makeArgs({
+      readClaimedSessionIds: () => claimed,
+      fetchCandidates: async () => {
+        claimed.add('a521d69e-9181-481c-ab8e-998a1881b731')
+        return [makeCandidate()]
+      }
+    })
+    const decision = await recoverAgentSessionForPane(args)
+    expect(decision).toEqual({ kind: 'none', reason: 'resolver-refused' })
+    expect(args.resume).not.toHaveBeenCalled()
+  })
+
+  // The final claim is the reservation inside `resume`; a refusal means another pane won it.
+  it('reports a refused reservation instead of resuming', async () => {
+    const args = makeArgs({ resume: vi.fn(() => false) })
+    const decision = await recoverAgentSessionForPane(args)
+    expect(decision).toEqual({ kind: 'none', reason: 'session-claimed' })
+  })
+
   it('never offers a session another live pane already holds', async () => {
     const args = makeArgs({
-      claimedSessionIds: new Set(['a521d69e-9181-481c-ab8e-998a1881b731'])
+      readClaimedSessionIds: () => new Set(['a521d69e-9181-481c-ab8e-998a1881b731'])
     })
     const decision = await recoverAgentSessionForPane(args)
     expect(decision.kind).toBe('none')
