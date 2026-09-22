@@ -155,7 +155,6 @@ export type AgentStatusSlice = {
   clearSleepingAgentSession: (paneKey: string) => void
   clearSleepingAgentSessionsByPaneKey: (paneKeys: readonly string[]) => void
   clearSleepingAgentSessionsByWorktree: (worktreeId: string) => void
-  pruneSleepingAgentSessions: (validWorktreeIds: Set<string>) => void
 
   /** Retain agent snapshots. Accepts an array so simultaneous disappearances produce a single set() with no mid-loop intermediate states. */
   retainAgents: (entries: RetainedAgentEntry[]) => void
