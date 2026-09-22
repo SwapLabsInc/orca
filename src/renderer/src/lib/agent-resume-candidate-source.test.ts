@@ -22,7 +22,11 @@ const BASE_SESSION: AiVaultSession = {
   modifiedAt: '2026-09-15T09:41:00.000Z',
   messageCount: 758,
   totalTokens: 0,
-  previewMessages: []
+  previewMessages: [],
+  queuedMessageCount: 0,
+  subagentTranscriptCount: 0,
+  resumeCommand: 'claude --resume c4c95ae3-fdd1-4ab6-be99-478dd26c3a67',
+  subagent: null
 }
 
 function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
