@@ -1,5 +1,5 @@
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
-import type { AiVaultSession } from '../../../shared/ai-vault-types'
+import type { AiVaultListResult, AiVaultSession } from '../../../shared/ai-vault-types'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
   extractAgentProviderSession,
@@ -97,12 +97,33 @@ export function toAgentResumeCandidates(
   return candidates
 }
 
+/** A scan that answered for the whole scope, or one whose answer may be a subset.
+ *  `unverifiable` is never "no candidates": an incomplete scan says nothing about what the host
+ *  holds, so resuming its subset could fork the wrong transcript
+ *  (docs/reference/ssh-execution-boundary.md). */
+export type AgentResumeCandidateScan =
+  | { kind: 'complete'; candidates: AgentResumeCandidate[] }
+  | { kind: 'unverifiable'; reason: 'cancelled' | 'scan-issues' | 'no-contact' }
+
+/** True only for an answer that covered the scope. `cancelled` is an empty body by construction,
+ *  and any non-notice issue means some path or host the scan needed went unread — `notice` rows
+ *  are scanner commentary the shared type documents as never a failure. */
+function scanIncompleteReason(
+  result: Pick<AiVaultListResult, 'issues' | 'cancelled'>
+): 'cancelled' | 'scan-issues' | null {
+  if (result.cancelled === true) {
+    return 'cancelled'
+  }
+  const failures = (result.issues ?? []).filter((issue) => issue.kind !== 'notice')
+  return failures.length > 0 ? 'scan-issues' : null
+}
+
 /**
  * Asks the pane's execution host which sessions it holds for this workspace.
  *
  * Addresses exactly one host — the one that owns the transcripts — because a session id
- * names a transcript on the machine that captured it. A failure answers with no candidates
- * rather than throwing: the caller then leaves a plain shell, which is the pre-feature
+ * names a transcript on the machine that captured it. A failure, a cancellation and a partial
+ * scan all answer `unverifiable`: the caller then leaves a plain shell, which is the pre-feature
  * behaviour, and never a wrong resume.
  */
 export async function fetchAgentResumeCandidates(args: {
@@ -111,19 +132,26 @@ export async function fetchAgentResumeCandidates(args: {
   listSessions: (request: {
     scopePaths: readonly string[]
     executionHostScope?: ExecutionHostId
-  }) => Promise<{ sessions: AiVaultSession[] }>
-}): Promise<AgentResumeCandidate[]> {
+  }) => Promise<Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>>
+}): Promise<AgentResumeCandidateScan> {
   if (args.worktreePath.length === 0) {
-    return []
+    return { kind: 'complete', candidates: [] }
   }
   try {
     const result = await args.listSessions({
       scopePaths: [args.worktreePath],
       ...(args.executionHostId ? { executionHostScope: args.executionHostId } : {})
     })
-    return toAgentResumeCandidates(result.sessions ?? [], args.executionHostId)
+    const incomplete = scanIncompleteReason(result)
+    if (incomplete) {
+      return { kind: 'unverifiable', reason: incomplete }
+    }
+    return {
+      kind: 'complete',
+      candidates: toAgentResumeCandidates(result.sessions ?? [], args.executionHostId)
+    }
   } catch {
     // Loss of contact is not evidence about the sessions; it only means we cannot offer one.
-    return []
+    return { kind: 'unverifiable', reason: 'no-contact' }
   }
 }

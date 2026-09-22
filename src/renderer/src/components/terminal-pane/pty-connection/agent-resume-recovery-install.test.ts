@@ -3,6 +3,7 @@ import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-ca
 import { getAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
 import { getPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
 import { resetAgentResumeSessionReservations } from '@/lib/agent-resume-session-reservations'
+import type { AgentResumeCandidateScan } from '@/lib/agent-resume-candidate-source'
 import { installAgentResumeRecovery } from './agent-resume-recovery-install'
 import { installPanePtyVisibilityBind } from './pane-pty-visibility-bind'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
@@ -19,7 +20,7 @@ vi.mock('./candidate-resume-startup', () => ({
   buildCandidateResumeStartup: () => ({ agent: 'claude' })
 }))
 
-const fetchCandidates = vi.fn<() => Promise<AgentResumeCandidate[]>>()
+const fetchCandidates = vi.fn<() => Promise<AgentResumeCandidateScan>>()
 vi.mock('@/lib/agent-resume-candidate-source', () => ({
   fetchAgentResumeCandidates: () => fetchCandidates()
 }))
@@ -38,13 +39,27 @@ function makeCandidate(overrides: Partial<AgentResumeCandidate> = {}): AgentResu
   }
 }
 
+/** Two survivors nothing separates, so the resolver asks rather than resuming. */
+function twoCandidates(): AgentResumeCandidate[] {
+  return [
+    makeCandidate(),
+    makeCandidate({
+      providerSession: { key: 'session_id', id: 'b171319f-6711-4537-89be-00f26ccc7e32' },
+      updatedAt: 1_788_000_000_000
+    })
+  ]
+}
+
 /** The installers read a session bag, so the fixture supplies exactly the fields they touch. */
 function buildSession(
   paneKey: string,
-  overrides: Record<string, unknown> = {}
+  overrides: Record<string, unknown> = {},
+  sharedPaneTransports?: Map<number, unknown>
 ): ConnectPanePtySession {
   const transport = { getPtyId: () => null, getConnectionId: () => null }
-  const paneTransports = new Map<number, unknown>([[1, transport]])
+  const paneTransports = sharedPaneTransports ?? new Map<number, unknown>()
+  // The successor of a replaced binding: registering it retires whichever binding held the slot.
+  paneTransports.set(1, transport)
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: ConnectPanePtySession is an index-signature bag whose pane/manager fields the installers under test never dereference; this fixture supplies every field they do read.
   const session = {
     pane: { id: 1, leafId: paneKey },
@@ -62,7 +77,9 @@ function buildSession(
     executionHostId: null,
     spawnedFreshPtyId: 'pty-1',
     lastTerminalInputAt: Number.NaN,
+    // The tab-wide value the guard must NOT read; the pane-scoped one is what authorizes a resume.
     resolveExpectedLaunchTuiAgent: () => 'claude',
+    resolvePaneScopedTuiAgent: () => 'claude',
     getSleepingRecordForPane: () => null,
     startFreshColdRestoreAgentResume: vi.fn(),
     ...overrides
@@ -75,7 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   resetAgentResumeSessionReservations()
   storeState.agentStatusByPaneKey = {}
-  fetchCandidates.mockResolvedValue([makeCandidate()])
+  fetchCandidates.mockResolvedValue({ kind: 'complete', candidates: [makeCandidate()] })
 })
 
 describe('recovery triggers', () => {
@@ -94,6 +111,45 @@ describe('recovery triggers', () => {
     await vi.waitFor(() => expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce())
   })
 
+  // The second half of the same question: a pane whose pty is replaced while its tab stays
+  // active gets a new binding, and that binding — not the retired one — runs recovery.
+  it('runs for a replacement binding and never for the binding it retired', async () => {
+    const paneTransports = new Map<number, unknown>()
+    const retired = buildSession('tab-1:leaf-replaced', {}, paneTransports)
+    const successor = buildSession('tab-1:leaf-replaced', {}, paneTransports)
+
+    await retired.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+
+    await successor.attemptAgentResumeRecovery()
+    expect(successor.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+    expect(retired.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  // C: `resolveExpectedLaunchTuiAgent` reads the tab-wide launchAgent, which describes the tab's
+  // ORIGINAL pty. A plain-shell split beside an agent pane must not inherit that evidence and
+  // have its shell replaced by a historical conversation.
+  it('never runs on tab-wide launch evidence alone', async () => {
+    const session = buildSession('tab-1:leaf-split', { resolvePaneScopedTuiAgent: () => null })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  // D: a cancelled or partial scan answered about nothing, so it must not burn the one attempt
+  // this connection gets.
+  it('does not spend the attempt on an unverifiable scan', async () => {
+    const session = buildSession('tab-1:leaf-partial')
+    fetchCandidates.mockResolvedValueOnce({ kind: 'unverifiable', reason: 'scan-issues' })
+
+    await session.attemptAgentResumeRecovery()
+    expect(session.agentResumeRecoveryAttempted).toBe(false)
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+
+    await session.attemptAgentResumeRecovery()
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+  })
+
   it('does not run twice when the pane is later revealed', async () => {
     const session = buildSession('tab-1:leaf-latch')
     await session.attemptAgentResumeRecovery()
@@ -105,7 +161,8 @@ describe('recovery triggers', () => {
   // an unrelated conversation that merely shares the workspace.
   it('never runs for a pane with no evidence it hosted an agent', async () => {
     const session = buildSession('tab-1:leaf-plain', {
-      resolveExpectedLaunchTuiAgent: () => null
+      resolveExpectedLaunchTuiAgent: () => null,
+      resolvePaneScopedTuiAgent: () => null
     })
     await session.attemptAgentResumeRecovery()
     expect(fetchCandidates).not.toHaveBeenCalled()
@@ -155,13 +212,7 @@ describe('a choice that settles after the pane is gone', () => {
     const session = buildSession('tab-1:leaf-disposed')
     fetchCandidates.mockImplementation(async () => {
       session.disposed = true
-      return [
-        makeCandidate(),
-        makeCandidate({
-          providerSession: { key: 'session_id', id: 'b171319f-6711-4537-89be-00f26ccc7e32' },
-          updatedAt: 1_788_000_000_000
-        })
-      ]
+      return { kind: 'complete', candidates: twoCandidates() }
     })
 
     await session.attemptAgentResumeRecovery()
@@ -173,13 +224,7 @@ describe('a choice that settles after the pane is gone', () => {
     fetchCandidates.mockImplementation(async () => {
       // A successor connection claimed this pane's slot while the scan was in flight.
       session.deps.paneTransportsRef.current.delete(1)
-      return [
-        makeCandidate(),
-        makeCandidate({
-          providerSession: { key: 'session_id', id: 'b171319f-6711-4537-89be-00f26ccc7e32' },
-          updatedAt: 1_788_000_000_000
-        })
-      ]
+      return { kind: 'complete', candidates: twoCandidates() }
     })
 
     await session.attemptAgentResumeRecovery()

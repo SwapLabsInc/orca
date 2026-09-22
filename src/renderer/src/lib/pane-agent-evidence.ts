@@ -2,6 +2,7 @@ import type { AgentStatus } from '../../../shared/agent-detection'
 import { detectAgentStatusFromTitle, getAgentLabel } from '../../../shared/agent-detection'
 import { resolveExplicitTerminalTitleAgentType } from '../../../shared/terminal-title-agent-type'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import { isTuiAgent } from '../../../shared/tui-agent-config'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   agentStatusEvidenceObservedAt,
@@ -126,4 +127,36 @@ export function resolvePaneAgentActivity(
     confidence: 'authoritative',
     livePtyRequired: false
   }
+}
+
+/** Evidence that THIS PANE hosted an agent, every field read under the pane's own key, strongest
+ *  first. A tab-wide value is deliberately absent: `tab.launchAgent` names the tab's ORIGINAL pty
+ *  (terminal-pane-close-identity.ts), so a plain-shell split in an agent-launched tab would
+ *  inherit it — and a destructive decision, such as replacing a live shell with a recovered
+ *  conversation, may not rest on another pane's identity. */
+export type PaneScopedAgentEvidence = {
+  /** The launch agent this pane's own startup carried. */
+  paneStartupLaunchAgent?: string | null
+  /** The initial agent status this pane's own startup carried. */
+  paneStartupStatusAgent?: string | null
+  /** The launch config registered under this pane key. */
+  registeredLaunchAgent?: string | null
+  /** This pane's own hook status row. */
+  statusEntryAgent?: string | null
+  /** This pane's own command/foreground inference. */
+  foregroundAgent?: string | null
+}
+
+/** Null means no pane-scoped evidence — never "an ordinary shell". */
+export function resolvePaneScopedLaunchTuiAgent(
+  evidence: PaneScopedAgentEvidence
+): TuiAgent | null {
+  const candidates = [
+    evidence.paneStartupLaunchAgent,
+    evidence.paneStartupStatusAgent,
+    evidence.registeredLaunchAgent,
+    evidence.statusEntryAgent,
+    evidence.foregroundAgent
+  ]
+  return candidates.find((candidate) => isTuiAgent(candidate)) ?? null
 }

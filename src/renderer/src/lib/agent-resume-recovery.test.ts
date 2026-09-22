@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidateScan } from './agent-resume-candidate-source'
 import {
   recoverAgentSessionForPane,
   type AgentResumePaneGateState,
@@ -20,6 +21,10 @@ function makeCandidate(overrides: Partial<AgentResumeCandidate> = {}): AgentResu
   }
 }
 
+function scan(candidates: AgentResumeCandidate[]): AgentResumeCandidateScan {
+  return { kind: 'complete', candidates }
+}
+
 const OPEN_GATES: AgentResumePaneGateState = {
   paneHasOwnRecord: false,
   paneIsVisible: true,
@@ -34,7 +39,7 @@ function makeArgs(overrides: Partial<RecoverAgentSessionArgs> = {}): RecoverAgen
     paneAgent: 'claude',
     readPaneState: () => OPEN_GATES,
     readClaimedSessionIds: () => new Set<string>(),
-    fetchCandidates: async () => [makeCandidate()],
+    fetchCandidates: async () => scan([makeCandidate()]),
     resume: vi.fn(() => true),
     offerChoice: vi.fn(),
     ...overrides
@@ -53,13 +58,14 @@ describe('recoverAgentSessionForPane', () => {
     const offerChoice = vi.fn()
     const args = makeArgs({
       offerChoice,
-      fetchCandidates: async () => [
-        makeCandidate(),
-        makeCandidate({
-          providerSession: { key: 'session_id', id: 'b171319f-6711-4537-89be-00f26ccc7e32' },
-          updatedAt: 1_788_000_000_000
-        })
-      ]
+      fetchCandidates: async () =>
+        scan([
+          makeCandidate(),
+          makeCandidate({
+            providerSession: { key: 'session_id', id: 'b171319f-6711-4537-89be-00f26ccc7e32' },
+            updatedAt: 1_788_000_000_000
+          })
+        ])
     })
     const decision = await recoverAgentSessionForPane(args)
     expect(decision.kind).toBe('choose')
@@ -73,7 +79,7 @@ describe('recoverAgentSessionForPane', () => {
     ['already in use', { ...OPEN_GATES, paneHasReceivedInput: true }],
     ['already holding a record', { ...OPEN_GATES, paneHasOwnRecord: true }]
   ])('never asks the host for a pane that is %s', async (_label, state) => {
-    const fetchCandidates = vi.fn(async () => [makeCandidate()])
+    const fetchCandidates = vi.fn(async () => scan([makeCandidate()]))
     const decision = await recoverAgentSessionForPane(
       makeArgs({ readPaneState: () => state, fetchCandidates })
     )
@@ -92,7 +98,7 @@ describe('recoverAgentSessionForPane', () => {
         readPaneState: () => ({ ...OPEN_GATES, paneHasReceivedInput: typed }),
         fetchCandidates: async () => {
           typed = true
-          return [makeCandidate()]
+          return scan([makeCandidate()])
         }
       })
     )
@@ -107,7 +113,7 @@ describe('recoverAgentSessionForPane', () => {
         readPaneState: () => ({ ...OPEN_GATES, paneIsVisible: visible }),
         fetchCandidates: async () => {
           visible = false
-          return [makeCandidate()]
+          return scan([makeCandidate()])
         }
       })
     )
@@ -115,7 +121,7 @@ describe('recoverAgentSessionForPane', () => {
   })
 
   it('does nothing when the host returns no usable candidate', async () => {
-    const args = makeArgs({ fetchCandidates: async () => [] })
+    const args = makeArgs({ fetchCandidates: async () => scan([]) })
     const decision = await recoverAgentSessionForPane(args)
     expect(decision).toEqual({ kind: 'none', reason: 'resolver-refused' })
     expect(args.resume).not.toHaveBeenCalled()
@@ -129,7 +135,7 @@ describe('recoverAgentSessionForPane', () => {
       readClaimedSessionIds: () => claimed,
       fetchCandidates: async () => {
         claimed.add('a521d69e-9181-481c-ab8e-998a1881b731')
-        return [makeCandidate()]
+        return scan([makeCandidate()])
       }
     })
     const decision = await recoverAgentSessionForPane(args)
@@ -151,5 +157,19 @@ describe('recoverAgentSessionForPane', () => {
     const decision = await recoverAgentSessionForPane(args)
     expect(decision.kind).toBe('none')
     expect(args.resume).not.toHaveBeenCalled()
+  })
+
+  // D: an incomplete scan is `unverifiable`, not "no candidates" — its subset could name the
+  // wrong conversation as the sole survivor (docs/reference/ssh-execution-boundary.md).
+  it.each([
+    ['cancelled', { kind: 'unverifiable', reason: 'cancelled' } as const],
+    ['partial', { kind: 'unverifiable', reason: 'scan-issues' } as const],
+    ['unreachable', { kind: 'unverifiable', reason: 'no-contact' } as const]
+  ])('refuses to resolve on a %s scan', async (_label, result) => {
+    const args = makeArgs({ fetchCandidates: async () => result })
+    const decision = await recoverAgentSessionForPane(args)
+    expect(decision).toEqual({ kind: 'none', reason: 'scan-unverifiable' })
+    expect(args.resume).not.toHaveBeenCalled()
+    expect(args.offerChoice).not.toHaveBeenCalled()
   })
 })
