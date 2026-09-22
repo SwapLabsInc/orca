@@ -729,10 +729,7 @@ describe('captureAllSleepingAgentSessions', () => {
     const entry = store.getState().agentStatusByPaneKey['tab-1:leaf-1']
     expect(entry?.providerSession).toBeUndefined()
     expect(entry).not.toHaveProperty('launchConfig')
-    // The handle deliberately survives the completed turn: the same agent started a new turn that
-    // has not reported an id yet, so the finished session is still the only resumable thing this
-    // pane has. Only a positive signal (a different agent, a superseding id, or an ineligible
-    // pane) may retire it.
+    // The same agent's new turn has no id yet, so the finished session is still the pane's handle.
     expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']).toMatchObject({
       agent: 'codex',
       providerSession: { key: 'session_id', id: 'codex-session-1' },

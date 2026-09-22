@@ -27,6 +27,7 @@ import {
   type HostSessionSlices,
   type HostIdByWorktreeId
 } from './workspace-session-host-split'
+import { nonLocalPartitionPatches } from './workspace-session-partition-field-clearing'
 import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
@@ -242,9 +243,13 @@ export function patchWorkspaceSessionByHost(
   const slices = splitWorkspaceSessionForWrite(patch as WorkspaceSessionState, state, 'patch')
   const local = (slices[LOCAL_EXECUTION_HOST_ID] ?? patch) as WorkspaceSessionPatch
   const localWrite = api.patch(local)
-  for (const [hostId, slice] of nonLocalHostSessionEntries(slices)) {
+  for (const { hostId, patch: hostPatch, onPersisted } of nonLocalPartitionPatches(
+    api,
+    patch,
+    slices
+  )) {
     // Why: a failed runtime-partition write must not reject the local chain.
-    void api.patch(slice as WorkspaceSessionPatch, hostId).catch((err) => {
+    void api.patch(hostPatch, hostId).then(onPersisted, (err) => {
       console.warn(`[session] host partition patch failed for ${hostId}:`, err)
     })
   }

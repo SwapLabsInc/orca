@@ -127,16 +127,9 @@ function assignVisitRecencyByHost(
   }
 }
 
-/** The ssh host a sleeping-agent record's own capture names, or null when it names none.
- *
- * Why a second source: routing answers off the worktree catalog, and an ssh worktree the catalog
- * has no row for routes to 'local' — which parked five real `ssh-*` records in the local partition
- * while both `ssh:` partitions held none. A host partition that cannot answer for its own panes is
- * wrong even where the merge still finds them.
- *
- * Why ssh only: `null` is "local **or** paired runtime" and `undefined` is "never stamped", so
- * neither is evidence of a host (sleeping-record-execution-host-scope.ts). Those keep the routed
- * placement rather than guess one. */
+/** The ssh host a sleeping record's own capture names, or null. Catalog routing sends an ssh
+ *  worktree it has no row for to 'local'. Ssh only: `null` (local or runtime) and `undefined`
+ *  (unstamped) name no host (sleeping-record-execution-host-scope.ts). */
 function sleepingRecordOriginHostId(entry: unknown): ExecutionHostId | null {
   if (!isWorkspaceSessionRecord(entry) || typeof entry.connectionId !== 'string') {
     return null

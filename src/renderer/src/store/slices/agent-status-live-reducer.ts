@@ -73,9 +73,8 @@ export function reduceAgentStatusLiveUpdate(
       [paneKey]: { ...registryEntry, identity: { ...registryEntry.identity, providerSession } }
     }
   }
-  // Launch tokens authorize only the session they started; a completed turn or changed provider id
-  // consumes them — except while the pane keeps a resume handle, which would otherwise wake with
-  // default flags and silently drop the flags the pane actually ran with.
+  // Launch tokens authorize only the session they started; a retained resume handle keeps its
+  // token, or it wakes with default flags.
   if (
     (providerSessionChanged || (entry.state === 'done' && entry.sessionBoundary !== true)) &&
     !retainsSleepingRecord &&

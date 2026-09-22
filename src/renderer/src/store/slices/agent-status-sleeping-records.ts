@@ -64,10 +64,8 @@ export function sleepingRecordFromEntry(args: {
   }
 }
 
-// Why: a status row that yields no live recovery record is usually silent — an OSC-parsed row, a
-// replayed cached pane status, or a worktree id that has not hydrated yet all arrive without a
-// provider session. None of those are evidence the pane's identity is void, and the record is the
-// pane's only resume handle, so it is retired on positive evidence only.
+// Why positive evidence only: this is the pane's sole resume handle, and a row with no provider
+// session (OSC, replay, unhydrated worktree) says nothing about it.
 export function shouldRetireSleepingRecord(args: {
   entry: AgentStatusEntry
   existingRecord: SleepingAgentSessionRecord
@@ -85,8 +83,7 @@ export function shouldRetireSleepingRecord(args: {
   if (!providerSession) {
     return false
   }
-  // Reached only when no record could be built from this session, so a difference means the
-  // handle's identity was superseded by an unresumable one.
+  // Reached only when this session built no record, so a different id is an unresumable successor.
   return !agentProviderSessionsEqual(
     args.existingRecord.agent,
     args.existingRecord.providerSession,
@@ -94,9 +91,7 @@ export function shouldRetireSleepingRecord(args: {
   )
 }
 
-/** Identity — agent, providerSession, launchConfig, origin, capturedAt — survives until a positive
- *  retirement signal; the rest must keep tracking the pane, or the sidebar, `worktree ps` and mobile
- *  read a record latched at the state it was captured in. */
+/** Keeps the resume identity; refreshes the volatile fields readers show as live pane state. */
 export function refreshRetainedSleepingRecord(
   record: SleepingAgentSessionRecord,
   entry: AgentStatusEntry
@@ -104,7 +99,7 @@ export function refreshRetainedSleepingRecord(
   // Why: a finished pane's handle carries resume identity, not the completed turn's text.
   const prompt = entry.state === 'done' ? '' : entry.prompt
   const lastAssistantMessage = entry.state === 'done' ? undefined : entry.lastAssistantMessage
-  // An entry with no title means unknown, not cleared: it already inherits the previous row's.
+  // No title means unknown, not cleared.
   const terminalTitle = entry.terminalTitle ?? record.terminalTitle
   const interrupted = entry.interrupted === true
   if (
