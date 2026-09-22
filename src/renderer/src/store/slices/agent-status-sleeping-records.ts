@@ -67,7 +67,7 @@ export function sleepingRecordFromEntry(args: {
 // Why: a status row that yields no live recovery record is usually silent — an OSC-parsed row, a
 // replayed cached pane status, or a worktree id that has not hydrated yet all arrive without a
 // provider session. None of those are evidence the pane's identity is void, and the record is the
-// pane's only resume handle, so it is retired on positive evidence only (#22270).
+// pane's only resume handle, so it is retired on positive evidence only.
 export function shouldRetireSleepingRecord(args: {
   entry: AgentStatusEntry
   existingRecord: SleepingAgentSessionRecord
