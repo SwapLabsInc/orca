@@ -1,8 +1,10 @@
 import type { AppState } from '../types'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import {
+  agentProviderSessionsEqual,
   getAgentResumeArgv,
   isResumableTuiAgent,
+  type AgentProviderSessionMetadata,
   type SleepingAgentLaunchConfig,
   type SleepingAgentSessionRecord
 } from '../../../../shared/agent-session-resume'
@@ -60,6 +62,83 @@ export function sleepingRecordFromEntry(args: {
     ...(args.entry.interrupted ? { interrupted: true } : {}),
     ...(args.origin ? { origin: args.origin } : {})
   }
+}
+
+// Why: a status row that yields no live recovery record is usually silent — an OSC-parsed row, a
+// replayed cached pane status, or a worktree id that has not hydrated yet all arrive without a
+// provider session. None of those are evidence the pane's identity is void, and the record is the
+// pane's only resume handle, so it is retired on positive evidence only (#22270).
+export function shouldRetireSleepingRecord(args: {
+  entry: AgentStatusEntry
+  existingRecord: SleepingAgentSessionRecord
+  /** The build's resolved session, which may be inherited from the live row the payload omitted. */
+  providerSession: AgentProviderSessionMetadata | undefined
+}): boolean {
+  if (args.entry.terminalResumeEligible === false) {
+    return true
+  }
+  // A pane that switched agent has positively moved on; an undefined type is unknown, not changed.
+  if (args.entry.agentType !== undefined && args.entry.agentType !== args.existingRecord.agent) {
+    return true
+  }
+  const providerSession = args.providerSession ?? args.entry.providerSession
+  if (!providerSession) {
+    return false
+  }
+  // Reached only when no record could be built from this session, so a difference means the
+  // handle's identity was superseded by an unresumable one.
+  return !agentProviderSessionsEqual(
+    args.existingRecord.agent,
+    args.existingRecord.providerSession,
+    providerSession
+  )
+}
+
+/** Identity — agent, providerSession, launchConfig, origin, capturedAt — survives until a positive
+ *  retirement signal; the rest must keep tracking the pane, or the sidebar, `worktree ps` and mobile
+ *  read a record latched at the state it was captured in. */
+export function refreshRetainedSleepingRecord(
+  record: SleepingAgentSessionRecord,
+  entry: AgentStatusEntry
+): SleepingAgentSessionRecord {
+  // Why: a finished pane's handle carries resume identity, not the completed turn's text.
+  const prompt = entry.state === 'done' ? '' : entry.prompt
+  const lastAssistantMessage = entry.state === 'done' ? undefined : entry.lastAssistantMessage
+  // An entry with no title means unknown, not cleared: it already inherits the previous row's.
+  const terminalTitle = entry.terminalTitle ?? record.terminalTitle
+  const interrupted = entry.interrupted === true
+  if (
+    record.state === entry.state &&
+    record.prompt === prompt &&
+    record.updatedAt === entry.updatedAt &&
+    record.terminalTitle === terminalTitle &&
+    record.lastAssistantMessage === lastAssistantMessage &&
+    (record.interrupted === true) === interrupted
+  ) {
+    return record
+  }
+  const next: SleepingAgentSessionRecord = {
+    ...record,
+    state: entry.state,
+    prompt,
+    updatedAt: entry.updatedAt
+  }
+  if (terminalTitle === undefined) {
+    delete next.terminalTitle
+  } else {
+    next.terminalTitle = terminalTitle
+  }
+  if (lastAssistantMessage === undefined) {
+    delete next.lastAssistantMessage
+  } else {
+    next.lastAssistantMessage = lastAssistantMessage
+  }
+  if (interrupted) {
+    next.interrupted = true
+  } else {
+    delete next.interrupted
+  }
+  return next
 }
 
 export type CollectSleepingAgentSessionRecordsOptions = {
