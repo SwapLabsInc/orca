@@ -8,6 +8,7 @@ import { cancelPendingSafeFitContinuations } from '@/lib/pane-manager/pane-tree-
 import { PANE_PTY_RESIZE_HOLD_FLUSH_EVENT } from '@/lib/pane-manager/pane-pty-resize-hold'
 import { discardTerminalOutput } from '@/lib/pane-manager/pane-terminal-output-scheduler'
 import { clearPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
+import { releaseAgentResumeSessionsForPane } from '@/lib/agent-resume-session-reservations'
 import {
   getProviderSessionClaimKey,
   isPassiveCompletedHibernationEvidence
@@ -183,13 +184,16 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       // A replaced connection must not leave a resume handler pointing at a transport that no
       // longer owns this pane.
       session.agentResumeRecoveryUnregister?.()
-      clearPendingAgentResumeChoices(session.cacheKey)
+      releaseAgentResumeSessionsForPane(session.cacheKey)
       session.startupTiming?.finish('disposed')
       // A successor can claim the numeric pane slot before this retired
       // binding's disposal callback runs; do not clear its pane-scoped error.
       const currentPaneTransport = session.deps.paneTransportsRef.current.get(session.pane.id)
       if (!currentPaneTransport || currentPaneTransport === session.transport) {
         session.deps.onPtyErrorClearedRef?.current?.(session.pane.id)
+        // Same successor guard: the pending choices under this stable pane key may already
+        // belong to the connection that replaced this one.
+        clearPendingAgentResumeChoices(session.cacheKey)
       }
       // Why: a detached client stops observing the pane's bytes, so it must cede
       // agent-status authority back to the host on the next mirrored snapshot.

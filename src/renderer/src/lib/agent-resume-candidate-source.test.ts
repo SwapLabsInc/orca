@@ -38,7 +38,11 @@ describe('toAgentResumeCandidate', () => {
     const candidate = toAgentResumeCandidate(session(), 'ssh:ssh-1')
     expect(candidate).toEqual({
       agent: 'claude',
-      providerSession: { key: 'session_id', id: 'c4c95ae3-fdd1-4ab6-be99-478dd26c3a67' },
+      providerSession: {
+        key: 'session_id',
+        id: 'c4c95ae3-fdd1-4ab6-be99-478dd26c3a67',
+        transcriptPath: '/home/ubuntu/.claude/projects/x/y.jsonl'
+      },
       cwd: '/home/ubuntu/Desktop/qbit',
       title: 'Fix the ledger deadline',
       updatedAt: Date.parse('2026-09-15T09:40:00.000Z'),
@@ -75,6 +79,30 @@ describe('toAgentResumeCandidate', () => {
   it('refuses a session id the shared parser would reject', () => {
     expect(toAgentResumeCandidate(session({ sessionId: '' }), null)).toBeNull()
     expect(toAgentResumeCandidate(session({ sessionId: '-leading-dash' }), null)).toBeNull()
+  })
+
+  // Hardcoding `session_id` for every agent made Antigravity's candidate unusable: it passes
+  // isResumableTuiAgent, so it reached the chooser and then produced no resume argv at all.
+  it('reads Antigravity by conversation id', () => {
+    const candidate = toAgentResumeCandidate(session({ agent: 'antigravity' }), null)
+    expect(candidate?.providerSession).toEqual({
+      key: 'conversation_id',
+      id: 'c4c95ae3-fdd1-4ab6-be99-478dd26c3a67'
+    })
+  })
+
+  it('carries the transcript path the path-resuming agents need', () => {
+    const candidate = toAgentResumeCandidate(session({ agent: 'pi' }), null)
+    expect(candidate?.providerSession.transcriptPath).toBe(
+      '/home/ubuntu/.claude/projects/x/y.jsonl'
+    )
+  })
+
+  // A candidate that cannot produce resume argv must never be offered: the chooser would
+  // dismiss itself and resume nothing.
+  it('refuses a path-resuming agent whose row has no transcript path', () => {
+    expect(toAgentResumeCandidate(session({ agent: 'pi', filePath: '' }), null)).toBeNull()
+    expect(toAgentResumeCandidate(session({ agent: 'prime-agent', filePath: '' }), null)).toBeNull()
   })
 
   it('drops unusable rows without discarding the usable ones beside them', () => {

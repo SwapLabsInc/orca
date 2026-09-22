@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AgentResumeCandidate } from '../../../../shared/agent-resume-candidate'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
@@ -28,24 +27,21 @@ function AgentResumeChooserPortal({
   container: HTMLElement
 }): React.JSX.Element | null {
   const candidates = usePendingAgentResumeChoices(paneKey)
-  // Read once, lazily: the ages are a decision aid, and a clock ticking under the cursor would
-  // re-render the list while someone is choosing from it.
-  const [now] = useState(() => Date.now())
   if (!candidates || candidates.length === 0) {
     return null
   }
   const resume = (candidate: AgentResumeCandidate): void => {
-    // Clear first: the respawn replaces this pane's connection, and a chooser still mounted
-    // over it would offer a session that is now being resumed.
-    clearPendingAgentResumeChoices(paneKey)
-    getAgentResumePaneHandler(paneKey)?.(candidate)
+    // Kept open when the handler refuses: another pane reserved that session between the offer
+    // and the click, and the remaining rows are still the user's to choose from.
+    if (getAgentResumePaneHandler(paneKey)?.(candidate) === true) {
+      clearPendingAgentResumeChoices(paneKey)
+    }
   }
   return createPortal(
     <AgentResumeChooser
       candidates={candidates}
       onResume={resume}
       onDismiss={() => clearPendingAgentResumeChoices(paneKey)}
-      now={now}
     />,
     container,
     `agent-resume-chooser-${paneKey}`

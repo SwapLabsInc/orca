@@ -1,4 +1,7 @@
-import type { AgentResumeCandidate, AgentResumeResolution } from '../../../shared/agent-resume-candidate'
+import type {
+  AgentResumeCandidate,
+  AgentResumeResolution
+} from '../../../shared/agent-resume-candidate'
 
 export type AgentResumePaneAction =
   /** Respawn this pane with the candidate's resume argv. */
@@ -12,6 +15,8 @@ export type AgentResumePaneRefusal =
   | 'pane-hidden'
   | 'pane-in-use'
   | 'resolver-refused'
+  /** Another pane reserved the same conversation between the host scan and the respawn. */
+  | 'session-claimed'
 
 export type AgentResumePaneInputs = {
   /** The pane's own sleeping record already answered; the synchronous cold-restore path owns it. */

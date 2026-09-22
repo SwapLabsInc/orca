@@ -3,16 +3,24 @@ import { fetchAgentResumeCandidates } from '@/lib/agent-resume-candidate-source'
 import { recoverAgentSessionForPane } from '@/lib/agent-resume-recovery'
 import { registerAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
 import { setPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
+import {
+  agentResumeSessionsReservedElsewhere,
+  reserveAgentResumeSession
+} from '@/lib/agent-resume-session-reservations'
 import { resolveAgentResumeLaunchTarget } from '@/lib/agent-resume-launch-target'
 import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
+import { isResumableTuiAgent } from '../../../../../shared/agent-session-resume'
 
 import { buildCandidateResumeStartup } from './candidate-resume-startup'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
-/** Session ids a live pane already holds. Resuming one into a second pane would put two
- *  agents on one transcript, so they are excluded before anything is offered. */
-function claimedProviderSessionIds(state: ReturnType<typeof useAppStore.getState>): Set<string> {
-  const claimed = new Set<string>()
+/** Session ids a live pane already holds, plus the ones another pane has reserved but not yet
+ *  spawned. Resuming one into a second pane would put two agents on one transcript. */
+function claimedProviderSessionIds(
+  state: ReturnType<typeof useAppStore.getState>,
+  paneKey: string
+): Set<string> {
+  const claimed = agentResumeSessionsReservedElsewhere(paneKey)
   for (const entry of Object.values(state.agentStatusByPaneKey)) {
     if (entry.providerSession && entry.state !== 'done') {
       claimed.add(entry.providerSession.id)
@@ -22,9 +30,13 @@ function claimedProviderSessionIds(state: ReturnType<typeof useAppStore.getState
 }
 
 export function installAgentResumeRecovery(session: ConnectPanePtySession): void {
-  const resumeWithCandidate = (candidate: AgentResumeCandidate): void => {
-    if (session.disposed) {
-      return
+  const bindingStillOwnsPane = (): boolean =>
+    !session.disposed &&
+    session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport
+
+  const resumeWithCandidate = (candidate: AgentResumeCandidate): boolean => {
+    if (!bindingStillOwnsPane()) {
+      return false
     }
     const state = useAppStore.getState()
     const target = resolveAgentResumeLaunchTarget({
@@ -44,9 +56,15 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
       shell: target.shell
     })
     if (!startup) {
-      return
+      return false
+    }
+    // Last step before the spawn, and synchronous: two panes that resolved the same sole
+    // candidate while both scans were in flight cannot both get past this line.
+    if (!reserveAgentResumeSession(candidate.providerSession.id, session.cacheKey)) {
+      return false
     }
     void session.startFreshColdRestoreAgentResume(startup)
+    return true
   }
 
   session.agentResumeRecoveryUnregister = registerAgentResumePaneHandler(
@@ -57,36 +75,65 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
   session.attemptAgentResumeRecovery = async (): Promise<void> => {
     // Once per connection: a visibility flip must not re-ask the host, and a pane that already
     // declined a choice must not be offered it again on every tab switch.
-    if (session.agentResumeRecoveryAttempted || session.disposed) {
+    if (session.agentResumeRecoveryAttempted || !bindingStillOwnsPane()) {
       return
     }
-    session.agentResumeRecoveryAttempted = true
+    // Only the plain shell this connection just spawned may be replaced; a reattached PTY may
+    // still be running the agent itself. Not latched: the spawn triggers its own attempt.
+    if (!session.spawnedFreshPtyId) {
+      return
+    }
+    // A hidden pane must not spend the latch: it retries when the user reveals it.
+    if (!session.deps.isVisibleRef.current) {
+      return
+    }
+    // Positive evidence this pane hosted an agent, from the ladder the rest of the pane already
+    // uses. Without it an ordinary shell could be replaced by an unrelated conversation that
+    // merely shares the workspace.
+    const paneAgent = session.resolveExpectedLaunchTuiAgent?.() ?? null
+    if (!isResumableTuiAgent(paneAgent)) {
+      return
+    }
     const worktreePath = session.worktree?.path
     if (!worktreePath) {
       return
     }
-    await recoverAgentSessionForPane({
-      paneKey: session.cacheKey,
-      worktreePath,
-      executionHostId: session.executionHostId,
-      paneAgent: session.startupDraftAgent ?? null,
-      readPaneState: () => {
-        const state = useAppStore.getState()
-        return {
-          paneHasOwnRecord: Boolean(session.getSleepingRecordForPane(state)),
-          paneIsVisible: session.deps.isVisibleRef.current,
-          // The same reading `isUntouchedFreshSpawnPty` uses: any input makes the shell theirs.
-          paneHasReceivedInput: Number.isFinite(session.lastTerminalInputAt)
+    session.agentResumeRecoveryAttempted = true
+    try {
+      await recoverAgentSessionForPane({
+        paneKey: session.cacheKey,
+        worktreePath,
+        executionHostId: session.executionHostId,
+        paneAgent,
+        readPaneState: () => {
+          const state = useAppStore.getState()
+          return {
+            paneHasOwnRecord: Boolean(session.getSleepingRecordForPane(state)),
+            paneIsVisible: session.deps.isVisibleRef.current,
+            // The same reading `isUntouchedFreshSpawnPty` uses: any input makes the shell theirs.
+            paneHasReceivedInput: Number.isFinite(session.lastTerminalInputAt)
+          }
+        },
+        readClaimedSessionIds: () =>
+          claimedProviderSessionIds(useAppStore.getState(), session.cacheKey),
+        fetchCandidates: (args) =>
+          fetchAgentResumeCandidates({
+            ...args,
+            listSessions: (request) => window.api.aiVault.listSessions(request)
+          }),
+        resume: resumeWithCandidate,
+        offerChoice: (paneKey, candidates) => {
+          // A choice that arrives after the pane is gone would outlive it on the stable pane key.
+          if (bindingStillOwnsPane()) {
+            setPendingAgentResumeChoices(paneKey, candidates)
+          }
         }
-      },
-      claimedSessionIds: claimedProviderSessionIds(useAppStore.getState()),
-      fetchCandidates: (args) =>
-        fetchAgentResumeCandidates({
-          ...args,
-          listSessions: (request) => window.api.aiVault.listSessions(request)
-        }),
-      resume: resumeWithCandidate,
-      offerChoice: setPendingAgentResumeChoices
-    })
+      })
+    } catch (err) {
+      // A relay that never answered is not evidence about this pane, so the attempt is retried
+      // on the next reveal rather than disabled for the life of the connection.
+      session.agentResumeRecoveryAttempted = false
+      console.warn('[agent-resume] recovery attempt failed:', err)
+    }
   }
 }
