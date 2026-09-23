@@ -10,6 +10,15 @@ function listResult(issues: AiVaultScanIssue[]): AiVaultListResult {
   return { sessions: [], issues, scannedAt: '2026-08-02T00:00:00.000Z' }
 }
 
+function legWithDepth(depth: AiVaultListResult['appliedSessionDepth']): AiVaultListResult {
+  return {
+    sessions: [],
+    issues: [],
+    scannedAt: '2026-08-02T00:00:00.000Z',
+    appliedSessionDepth: depth
+  }
+}
+
 function session(index: number): AiVaultSession {
   const id = `session-${index}`
   const timestamp = new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString()
@@ -221,5 +230,45 @@ describe('mergeAiVaultListResults', () => {
     expect(merged.issues).toEqual([SCOPE_TRUNCATION, hostDown])
     // Kinded issues render as their own banner rows, never as skipped transcripts.
     expect(merged.issues.filter((issue) => !issue.kind)).toEqual([])
+  })
+})
+
+describe('merged scan coverage', () => {
+  it('reports unlimited only when the merge and every leg were uncapped', () => {
+    const merged = mergeAiVaultListResults(
+      [legWithDepth('unlimited'), legWithDepth('unlimited')],
+      undefined,
+      true
+    )
+
+    expect(merged.appliedSessionDepth).toBe('unlimited')
+  })
+
+  it('takes the tightest bound any leg applied', () => {
+    const merged = mergeAiVaultListResults(
+      [legWithDepth('unlimited'), legWithDepth(25)],
+      undefined,
+      true
+    )
+
+    expect(merged.appliedSessionDepth).toBe(25)
+  })
+
+  // One leg that cannot prove its coverage makes the merge unprovable: the rows it withheld are
+  // exactly the ones missing here, and no other leg can vouch for them.
+  it('reports nothing when a leg predates the signal', () => {
+    const merged = mergeAiVaultListResults(
+      [legWithDepth('unlimited'), listResult([])],
+      undefined,
+      true
+    )
+
+    expect(merged.appliedSessionDepth).toBeUndefined()
+  })
+
+  it('reports its own limit when the merge itself is the tighter bound', () => {
+    const merged = mergeAiVaultListResults([legWithDepth('unlimited')], 10)
+
+    expect(merged.appliedSessionDepth).toBe(10)
   })
 })

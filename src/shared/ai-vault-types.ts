@@ -196,10 +196,22 @@ export function isAiVaultSessionRecoverableEmpty(
   )
 }
 
+/** How many scan issues one scan reports before the rest are dropped. A list AT this length is an
+ *  overflowed list: `recordSessionScanIssue` collapses everything past it into a single notice, so
+ *  the rows that did not fit are gone and the list no longer describes the whole scan. Shared
+ *  because a reader deciding whether an answer covered its scope has to know the bound. */
+export const AI_VAULT_SCAN_ISSUE_LIMIT = 500
+
+/** A bound on how many sessions a scan returns, or `'unlimited'` for none. Defined here beside the
+ *  result that reports it; `ai-vault-session-depth.ts` owns the normalization. */
+export type AiVaultSessionDepth = number | 'unlimited'
+
 export type AiVaultScanIssue = {
   executionHostId?: ExecutionHostId
   agent: AiVaultAgent
-  // 'notice' rows are scanner commentary (issue-list overflow), never a failure.
+  // 'notice' is not a failure, but it is not a clean bill of health either: it marks both a
+  // per-transcript remark and the overflow row that says issues were DROPPED. Read
+  // `issues.length >= AI_VAULT_SCAN_ISSUE_LIMIT` for the second, never the kind alone.
   kind?: 'host' | 'scope' | 'notice'
   path: string
   message: string
@@ -222,6 +234,17 @@ export type AiVaultListResult = {
   scannedAt: string
   /** Set only by the desktop IPC boundary: this scan was superseded, so its empty body means "nothing to apply". */
   cancelled?: true
+  /**
+   * The session depth the answering scan actually applied: `'unlimited'` for an uncapped answer, a
+   * number for one bounded at that many rows.
+   *
+   * Optional because hosts update independently of clients, and a host that predates this field
+   * sends nothing. Absent therefore means "this answer's coverage cannot be proved" — never
+   * "complete". Counting the returned sessions cannot stand in for it: a host that honours
+   * `unlimited` and holds 1000+ sessions looks identical to one that silently capped at 1000, and
+   * a host capping BELOW that is invisible either way.
+   */
+  appliedSessionDepth?: AiVaultSessionDepth
 }
 
 export function aiVaultAgentLabel(agent: AiVaultAgent): string {

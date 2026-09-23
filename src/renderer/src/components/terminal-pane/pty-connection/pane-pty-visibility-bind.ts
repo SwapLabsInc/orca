@@ -186,6 +186,10 @@ export function installPanePtyVisibilityBind(session: ConnectPanePtySession): vo
       // pane slot. Its one-shot startup belongs to the successor, not here.
       return
     }
+    // Why here and not only on a visibility flip: the primary case is a tab that is already
+    // active when Orca opens, which never transitions hidden -> visible. The attempt latch
+    // keeps the two entry points from running twice.
+    void session.attemptAgentResumeRecovery?.()
     // Spend queued startup only after this pane owns a concrete PTY.
     try {
       session.deps.onQueuedStartupSpawned?.()

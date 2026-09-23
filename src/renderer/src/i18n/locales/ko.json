@@ -15005,6 +15005,12 @@
         "copySessionId": "세션 ID 복사",
         "copySessionIdSuccess": "세션 ID를 복사했습니다",
         "copySessionIdError": "세션 ID를 복사하지 못했습니다"
+      },
+      "AgentResumeChooser": {
+        "label": "재개할 세션 선택",
+        "title": "이 terminal에서 어떤 세션을 재개할까요?",
+        "help": "숫자 또는 Enter를 누르면 재개하고, Esc를 누르면 일반 셸을 시작합니다.",
+        "dismiss": "대신 일반 셸 시작"
       }
     }
   },

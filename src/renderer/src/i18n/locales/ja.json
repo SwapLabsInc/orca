@@ -14867,6 +14867,12 @@
         "copySessionId": "セッション ID をコピー",
         "copySessionIdSuccess": "セッション ID をコピーしました",
         "copySessionIdError": "セッション ID のコピーに失敗しました"
+      },
+      "AgentResumeChooser": {
+        "label": "再開するセッションを選択",
+        "title": "このターミナルで再開するセッションはどれですか?",
+        "help": "数字または Enter を押すと再開、Esc でシンプルなシェルを起動します。",
+        "dismiss": "代わりにシンプルなシェルを起動"
       }
     }
   },
