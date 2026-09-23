@@ -23,7 +23,6 @@ export function createAgentStatusRecoveryActions(
   | 'clearSleepingAgentSession'
   | 'clearSleepingAgentSessionsByPaneKey'
   | 'clearSleepingAgentSessionsByWorktree'
-  | 'pruneSleepingAgentSessions'
 > {
   const { set, clearSleepingAgentSessionsByPaneKey } = runtime
   return {
@@ -115,36 +114,6 @@ export function createAgentStatusRecoveryActions(
         const removed: string[] = []
         for (const [paneKey, record] of Object.entries(s.sleepingAgentSessionsByPaneKey)) {
           if (record.worktreeId === worktreeId) {
-            changed = true
-            removed.push(paneKey)
-          } else {
-            next[paneKey] = record
-          }
-        }
-        if (!changed) {
-          return s
-        }
-        const nextLaunch =
-          removed.length > 0 ? { ...s.agentLaunchConfigByPaneKey } : s.agentLaunchConfigByPaneKey
-        for (const paneKey of removed) {
-          delete nextLaunch[paneKey]
-        }
-        return {
-          sleepingAgentSessionsByPaneKey: next,
-          ...(nextLaunch !== s.agentLaunchConfigByPaneKey
-            ? { agentLaunchConfigByPaneKey: nextLaunch }
-            : {})
-        }
-      })
-    },
-
-    pruneSleepingAgentSessions: (validWorktreeIds) => {
-      set((s) => {
-        let changed = false
-        const next: Record<string, SleepingAgentSessionRecord> = {}
-        const removed: string[] = []
-        for (const [paneKey, record] of Object.entries(s.sleepingAgentSessionsByPaneKey)) {
-          if (!validWorktreeIds.has(record.worktreeId)) {
             changed = true
             removed.push(paneKey)
           } else {

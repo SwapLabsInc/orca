@@ -6,6 +6,10 @@ import {
 } from '../../../shared/execution-host'
 import { isWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
 import {
+  sleepingRecordOriginHostId,
+  type SleepingRecordOriginHosts
+} from './sleeping-record-origin-host'
+import {
   GLOBAL_WORKSPACE_SESSION_FIELDS,
   hostPartitionSliceTemplate,
   WORKSPACE_SESSION_FIELD_OWNERSHIP
@@ -51,7 +55,9 @@ export type HostIdByWorktreeId = (worktreeId: string) => ExecutionHostId
  *  - browserWorkspaceKeyed: Record keyed by browser-workspace id; follows the
  *    page record's own worktreeId.
  *  - fileKeyed: Record keyed by editor file id; follows the open file's worktree.
- *  - sleepingAgentKeyed: Record keyed by pane key; follows the record's worktreeId.
+ *  - sleepingAgentKeyed: Record keyed by pane key; follows the record's worktreeId, falling back
+ *    to the host the record's own capture names when routing has no row for that worktree
+ *    (sleeping-record-origin-host.ts proves that stamp's host kind first).
  *  - surfaceTombstoneKeyed: Record under an opaque key whose value names its own worktreeId --
  *    the only routing available once the tab or pane it describes is gone. */
 type SplitContext = {
@@ -131,18 +137,36 @@ function assignKeyedByResolvedWorktree(
   field: keyof WorkspaceSessionState,
   value: unknown,
   resolveWorktreeId: (key: string, entry: unknown) => string | undefined,
-  ctx: SplitContext
+  ctx: SplitContext,
+  resolveHostFromEntry?: (entry: unknown) => ExecutionHostId | null
 ): void {
   if (!isWorkspaceSessionRecord(value)) {
     return
   }
   for (const [key, entry] of Object.entries(value)) {
     const worktreeId = resolveWorktreeId(key, entry)
-    const host = worktreeId ? ctx.hostIdByWorktreeId(worktreeId) : LOCAL_EXECUTION_HOST_ID
+    const routed = worktreeId ? ctx.hostIdByWorktreeId(worktreeId) : LOCAL_EXECUTION_HOST_ID
+    // Why only on 'local': it is also the routing resolver's answer for a worktree it has no row
+    // for, so it is the one verdict that may be silence rather than a host.
+    const host =
+      routed === LOCAL_EXECUTION_HOST_ID ? (resolveHostFromEntry?.(entry) ?? routed) : routed
     const slice = ensureSlice(slices, host, templates) as WorkspaceSessionRecord
     const target = (slice[field] ??= {}) as WorkspaceSessionRecord
     target[key] = entry
   }
+}
+
+function buildSliceTemplates(state: WorkspaceSessionState): SliceTemplates {
+  // Why own-keys only: a partial patch (where most globals are absent) must not inject `undefined`
+  // values that would clobber persisted state when the slice is applied as a patch. Intentional
+  // `undefined` keys are preserved.
+  const template = {} as WorkspaceSessionState
+  for (const field of GLOBAL_WORKSPACE_SESSION_FIELDS) {
+    if (Object.hasOwn(state, field)) {
+      ;(template as WorkspaceSessionRecord)[field] = state[field]
+    }
+  }
+  return { local: template, nonLocal: hostPartitionSliceTemplate(template) }
 }
 
 /** Partition a unified session into per-host slices keyed by ExecutionHostId.
@@ -153,23 +177,12 @@ function assignKeyedByResolvedWorktree(
 export function splitWorkspaceSessionByHost(
   state: WorkspaceSessionState,
   hostIdByWorktreeId: HostIdByWorktreeId,
-  options: { worktreeIdByTabId?: Map<string, string> } = {}
+  options: {
+    worktreeIdByTabId?: Map<string, string>
+    sleepingRecordOrigins?: SleepingRecordOriginHosts
+  } = {}
 ): HostSessionSlices {
-  // Template carries only the global fields; per-field assigners add the rest.
-  // Why: copy only own-keys so a partial patch (where most globals are absent)
-  // does not inject `undefined` values that would clobber persisted state when
-  // the slice is applied as a patch. Intentional `undefined` keys are preserved.
-  const template = {} as WorkspaceSessionState
-  for (const field of GLOBAL_WORKSPACE_SESSION_FIELDS) {
-    if (Object.hasOwn(state, field)) {
-      ;(template as WorkspaceSessionRecord)[field] = state[field]
-    }
-  }
-
-  const templates: SliceTemplates = {
-    local: template,
-    nonLocal: hostPartitionSliceTemplate(template)
-  }
+  const templates = buildSliceTemplates(state)
 
   const slices: HostSessionSlices = {}
   // Why: 'local' must always exist — it owns the global fields and is the
@@ -268,7 +281,8 @@ export function splitWorkspaceSessionByHost(
             isWorkspaceSessionRecord(record) && typeof record.worktreeId === 'string'
               ? record.worktreeId
               : undefined,
-          ctx
+          ctx,
+          (record) => sleepingRecordOriginHostId(record, options.sleepingRecordOrigins)
         )
         break
       case 'paneKeyed':

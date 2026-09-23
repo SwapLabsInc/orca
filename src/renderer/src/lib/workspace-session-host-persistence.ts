@@ -27,6 +27,7 @@ import {
   type HostSessionSlices,
   type HostIdByWorktreeId
 } from './workspace-session-host-split'
+import type { SleepingRecordOriginHosts } from './sleeping-record-origin-host'
 import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
@@ -53,6 +54,12 @@ export type HostPersistenceState = WorkspaceTabOwnerCatalog & {
   /** Partition each restored session key was read from. Routing honours it so a write returns rows
    *  to their own partition instead of re-deriving an owner the read never agreed to. */
   contestedPrimaryHostBySessionKey?: Record<string, ExecutionHostId>
+  /** Paired runtime environments this client knows. A sleeping record stamped with one of these ids
+   *  is a runtime capture, not an ssh target — see `sleepingRecordOriginHostId`. */
+  runtimeEnvironments?: readonly { id: string }[]
+  /** Configured ssh targets, keyed by target id. Only meaningful once `sshTargetsHydrated`. */
+  sshTargetLabels?: ReadonlyMap<string, string>
+  sshTargetsHydrated?: boolean
 }
 
 type SessionApi = {
@@ -119,6 +126,7 @@ function getFolderWorkspacePartitionHostId(
 export type HostSessionRouting = {
   hostIdByWorktreeId: HostIdByWorktreeId
   claims: WorktreeHostClaims
+  sleepingRecordOrigins: SleepingRecordOriginHosts
 }
 
 function buildRepoHostById(
@@ -152,6 +160,47 @@ function catalogReattributedAwayFrom(
 ): boolean {
   const claimed = claims.get(worktreeId)
   return Boolean(claimed) && !contestedPartitionHosts(claimed ?? []).includes(hostId)
+}
+
+/** Every runtime environment id this client can name, read through the host ids the catalogs
+ *  already carry rather than a second parser for the same value. Used only to tell a runtime stamp
+ *  on a sleeping record apart from an ssh target id. */
+function collectRuntimeEnvironmentIds(
+  state: HostPersistenceState,
+  runtimeHostIdByWorktreeId: ReadonlyMap<string, ExecutionHostId | null>
+): Set<string> {
+  const environmentIds = new Set<string>()
+  const addHost = (hostId: string | null | undefined): void => {
+    const parsed = parseExecutionHostId(hostId)
+    if (parsed?.kind === 'runtime') {
+      environmentIds.add(parsed.environmentId)
+    }
+  }
+  for (const environment of state.runtimeEnvironments ?? []) {
+    const id = environment.id.trim()
+    if (id) {
+      environmentIds.add(id)
+    }
+  }
+  for (const hostId of runtimeHostIdByWorktreeId.values()) {
+    addHost(hostId)
+  }
+  for (const hostId of Object.values(state.restoredRuntimeHostIdByWorkspaceSessionKey ?? {})) {
+    addHost(hostId)
+  }
+  for (const hostId of Object.values(state.contestedPrimaryHostBySessionKey ?? {})) {
+    addHost(hostId)
+  }
+  for (const workspace of state.folderWorkspaces ?? []) {
+    addHost(workspace.executionHostId)
+  }
+  for (const group of state.projectGroups ?? []) {
+    addHost(group.executionHostId)
+  }
+  for (const repo of state.repos) {
+    addHost(getRepoExecutionHostId(repo))
+  }
+  return environmentIds
 }
 
 export function buildHostSessionRouting(state: HostPersistenceState): HostSessionRouting {
@@ -204,7 +253,16 @@ export function buildHostSessionRouting(state: HostPersistenceState): HostSessio
     }
     return workspaceSessionPartitionHostId(repoHostId)
   }
-  return { hostIdByWorktreeId, claims }
+  return {
+    hostIdByWorktreeId,
+    claims,
+    sleepingRecordOrigins: {
+      runtimeEnvironmentIds: collectRuntimeEnvironmentIds(state, runtimeHostIdByWorktreeId),
+      // Why the hydration gate: an unloaded target list says nothing about an id, and reading its
+      // silence as "not an ssh target" would strand every ssh record on a client that has no ssh RPC.
+      sshTargetIds: state.sshTargetsHydrated ? new Set(state.sshTargetLabels?.keys() ?? []) : null
+    }
+  }
 }
 
 export function buildHostIdByWorktreeId(state: HostPersistenceState): HostIdByWorktreeId {
@@ -225,7 +283,8 @@ function splitWorkspaceSessionForWrite(
   // worktree — the runtime partition never received the capture (#21295).
   const worktreeIdByTabId = extendWorktreeIdByTabId(buildWorktreeIdByTabId(payload), state)
   const slices = splitWorkspaceSessionByHost(payload, routing.hostIdByWorktreeId, {
-    worktreeIdByTabId
+    worktreeIdByTabId,
+    sleepingRecordOrigins: routing.sleepingRecordOrigins
   })
   attachHostSessionShadow(slices, state.contestedHostWorkspaceSessions, routing.claims, mode)
   return slices
@@ -233,7 +292,18 @@ function splitWorkspaceSessionForWrite(
 
 /** Patch path of the debounced session writer: split the partial patch by owner
  *  host and patch each partition. Returns the promise for the local write so
- *  App.tsx can keep chaining the SSH remote-workspace upload off it. */
+ *  App.tsx can keep chaining the SSH remote-workspace upload off it.
+ *
+ *  KNOWN LIMITATION, deliberately unfixed: a patch names only the hosts this split routes rows to,
+ *  so once the LAST row of a keyed field leaves a non-local partition, that partition keeps its
+ *  stale copy and the next boot's merge reads it back. Emitting `{ field: {} }` to close that gap
+ *  is what an earlier revision did, and it cannot be made safe: a field-level patch replaces the
+ *  whole record, and this renderer's view of a partition is incomplete by construction — the boot
+ *  merge PARKS rows it declines to adopt, and main's own migrations rewrite the same field. Such a
+ *  clear therefore deletes resume handles nobody here ever saw, which docs/reference/
+ *  ssh-execution-boundary.md forbids: leak is the safe direction, never kill. A stale row costs one
+ *  resurrected entry the pane's own evidence check discards; a wrong clear is unrecoverable.
+ *  Closing it properly needs a key-scoped delete in the persistence API, not a renderer-side guess. */
 export function patchWorkspaceSessionByHost(
   api: SessionApi,
   patch: WorkspaceSessionPatch,

@@ -1,8 +1,10 @@
 import type { AppState } from '../types'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import {
+  agentProviderSessionsEqual,
   getAgentResumeArgv,
   isResumableTuiAgent,
+  type AgentProviderSessionMetadata,
   type SleepingAgentLaunchConfig,
   type SleepingAgentSessionRecord
 } from '../../../../shared/agent-session-resume'
@@ -18,6 +20,30 @@ export function copyLaunchConfig(config: SleepingAgentLaunchConfig): SleepingAge
   }
 }
 
+/** Omission is not evidence. `interrupted` is refreshed from every payload, so a payload that says
+ *  nothing about it must not clear a prior marker — the row then reads as passive hibernation and
+ *  the resume path clears it instead of resuming. Cleared only on an explicit negative, and
+ *  inherited only from a record that names the same session this entry does (EP-STATE). */
+function resolveInterruptedMarker(
+  entry: AgentStatusEntry,
+  priorRecord: SleepingAgentSessionRecord | undefined
+): boolean {
+  if (entry.interrupted !== undefined) {
+    return entry.interrupted
+  }
+  if (!priorRecord || !entry.providerSession || entry.agentType !== priorRecord.agent) {
+    return false
+  }
+  return (
+    priorRecord.interrupted === true &&
+    agentProviderSessionsEqual(
+      priorRecord.agent,
+      priorRecord.providerSession,
+      entry.providerSession
+    )
+  )
+}
+
 export function sleepingRecordFromEntry(args: {
   state: AppState
   entry: AgentStatusEntry
@@ -26,6 +52,8 @@ export function sleepingRecordFromEntry(args: {
   capturedAt: number
   launchConfig?: SleepingAgentLaunchConfig
   origin?: SleepingAgentSessionRecord['origin']
+  /** The record this build replaces, so an omitted `interrupted` keeps its established marker. */
+  priorRecord?: SleepingAgentSessionRecord
 }): SleepingAgentSessionRecord | null {
   const agent = args.entry.agentType
   if (
@@ -57,9 +85,83 @@ export function sleepingRecordFromEntry(args: {
       ? { lastAssistantMessage: args.entry.lastAssistantMessage }
       : {}),
     ...(args.launchConfig ? { launchConfig: copyLaunchConfig(args.launchConfig) } : {}),
-    ...(args.entry.interrupted ? { interrupted: true } : {}),
+    ...(resolveInterruptedMarker(args.entry, args.priorRecord) ? { interrupted: true } : {}),
     ...(args.origin ? { origin: args.origin } : {})
   }
+}
+
+// Why positive evidence only: this is the pane's sole resume handle, and a row with no provider
+// session (OSC, replay, unhydrated worktree) says nothing about it.
+export function shouldRetireSleepingRecord(args: {
+  entry: AgentStatusEntry
+  existingRecord: SleepingAgentSessionRecord
+  /** The build's resolved session, which may be inherited from the live row the payload omitted. */
+  providerSession: AgentProviderSessionMetadata | undefined
+}): boolean {
+  if (args.entry.terminalResumeEligible === false) {
+    return true
+  }
+  // A pane that switched agent has positively moved on; an undefined type is unknown, not changed.
+  if (args.entry.agentType !== undefined && args.entry.agentType !== args.existingRecord.agent) {
+    return true
+  }
+  const providerSession = args.providerSession ?? args.entry.providerSession
+  if (!providerSession) {
+    return false
+  }
+  // Reached only when this session built no record, so a different id is an unresumable successor.
+  return !agentProviderSessionsEqual(
+    args.existingRecord.agent,
+    args.existingRecord.providerSession,
+    providerSession
+  )
+}
+
+/** Keeps the resume identity; refreshes the volatile fields readers show as live pane state. */
+export function refreshRetainedSleepingRecord(
+  record: SleepingAgentSessionRecord,
+  entry: AgentStatusEntry
+): SleepingAgentSessionRecord {
+  // Why: a finished pane's handle carries resume identity, not the completed turn's text.
+  const prompt = entry.state === 'done' ? '' : entry.prompt
+  const lastAssistantMessage = entry.state === 'done' ? undefined : entry.lastAssistantMessage
+  // No title means unknown, not cleared.
+  const terminalTitle = entry.terminalTitle ?? record.terminalTitle
+  // Already established as this record's own session by `shouldRetireSleepingRecord`, so the prior
+  // marker carries over directly. See `resolveInterruptedMarker` for why omission cannot clear it.
+  const interrupted = entry.interrupted ?? record.interrupted === true
+  if (
+    record.state === entry.state &&
+    record.prompt === prompt &&
+    record.updatedAt === entry.updatedAt &&
+    record.terminalTitle === terminalTitle &&
+    record.lastAssistantMessage === lastAssistantMessage &&
+    (record.interrupted === true) === interrupted
+  ) {
+    return record
+  }
+  const next: SleepingAgentSessionRecord = {
+    ...record,
+    state: entry.state,
+    prompt,
+    updatedAt: entry.updatedAt
+  }
+  if (terminalTitle === undefined) {
+    delete next.terminalTitle
+  } else {
+    next.terminalTitle = terminalTitle
+  }
+  if (lastAssistantMessage === undefined) {
+    delete next.lastAssistantMessage
+  } else {
+    next.lastAssistantMessage = lastAssistantMessage
+  }
+  if (interrupted) {
+    next.interrupted = true
+  } else {
+    delete next.interrupted
+  }
+  return next
 }
 
 export type CollectSleepingAgentSessionRecordsOptions = {

@@ -8,6 +8,10 @@ import {
 } from './agent-status-capacity-eviction'
 import { removePaneKeys } from './agent-status-pane-keyed-records'
 import { recoveryRecordMatches } from './agent-status-recovery-equivalence'
+import {
+  refreshRetainedSleepingRecord,
+  shouldRetireSleepingRecord
+} from './agent-status-sleeping-records'
 import type { AgentStatusLiveEntryBuild } from './agent-status-live-entry-builder'
 import { agentProviderSessionsEqual } from '../../../../shared/agent-session-resume'
 
@@ -50,6 +54,10 @@ export function reduceAgentStatusLiveUpdate(
   }
   let nextSleepingAgentSessions = state.sleepingAgentSessionsByPaneKey
   let nextLaunchConfigs = state.agentLaunchConfigByPaneKey
+  const retainsSleepingRecord =
+    existingSleepingRecord !== undefined &&
+    !liveRecoveryRecord &&
+    !shouldRetireSleepingRecord({ entry, existingRecord: existingSleepingRecord, providerSession })
   if (
     registryMatched &&
     registryEntry &&
@@ -65,9 +73,11 @@ export function reduceAgentStatusLiveUpdate(
       [paneKey]: { ...registryEntry, identity: { ...registryEntry.identity, providerSession } }
     }
   }
-  // Launch tokens authorize only the session they started; a completed turn or changed provider id consumes them.
+  // Launch tokens authorize only the session they started; a retained resume handle keeps its
+  // token, or it wakes with default flags.
   if (
     (providerSessionChanged || (entry.state === 'done' && entry.sessionBoundary !== true)) &&
+    !retainsSleepingRecord &&
     paneKey in state.agentLaunchConfigByPaneKey
   ) {
     nextLaunchConfigs = { ...state.agentLaunchConfigByPaneKey }
@@ -80,9 +90,14 @@ export function reduceAgentStatusLiveUpdate(
         [paneKey]: liveRecoveryRecord
       }
     }
-  } else if (existingSleepingRecord) {
+  } else if (existingSleepingRecord && !retainsSleepingRecord) {
     nextSleepingAgentSessions = { ...state.sleepingAgentSessionsByPaneKey }
     delete nextSleepingAgentSessions[paneKey]
+  } else if (existingSleepingRecord) {
+    const refreshed = refreshRetainedSleepingRecord(existingSleepingRecord, entry)
+    if (refreshed !== existingSleepingRecord) {
+      nextSleepingAgentSessions = { ...state.sleepingAgentSessionsByPaneKey, [paneKey]: refreshed }
+    }
   }
   const previousLive = state.agentStatusByPaneKey
   const nextLive = { ...previousLive, [paneKey]: entry }
