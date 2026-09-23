@@ -14,6 +14,7 @@ import {
 } from './folder-workspace-lanes'
 import { PR_GROUP_META, PR_GROUP_ORDER, getPRGroupKey, getPRLaneKey } from './group-keys'
 import type { PRGroupKey } from './group-keys'
+import { getWorktreeHostIdentity } from '../../../../../../shared/worktree/host-qualified-identity'
 import { addRepoIdToGroup, getProjectGroupingForRepo } from './project-grouping'
 import type {
   OrderedGroupEntry,
@@ -60,6 +61,8 @@ export function buildOrderedGroups(args: {
   repoOrder: Map<string, number> | undefined
   projectOrderBy: ProjectOrderBy
   folderWorkspaces?: readonly RenderableFolderWorkspace[]
+  /** Delegated children bucket with their coordinator, not their own repo (see delegated-worktree-nesting). */
+  sectionAnchorByChildIdentity?: ReadonlyMap<string, Worktree>
 }): OrderedGroupEntry[] {
   const {
     groupBy,
@@ -75,7 +78,8 @@ export function buildOrderedGroups(args: {
     pendingByRepo,
     repoOrder,
     projectOrderBy,
-    folderWorkspaces = []
+    folderWorkspaces = [],
+    sectionAnchorByChildIdentity
   } = args
 
   const grouped = new Map<string, WorktreeGroupEntry>()
@@ -83,8 +87,9 @@ export function buildOrderedGroups(args: {
     let key: string
     let label: string
     let repo: Repo | undefined
+    const anchor = sectionAnchorByChildIdentity?.get(getWorktreeHostIdentity(w)) ?? w
     if (groupBy === 'repo') {
-      const grouping = getProjectGroupingForRepo(w.repoId, repoMap, projectIndex)
+      const grouping = getProjectGroupingForRepo(anchor.repoId, repoMap, projectIndex)
       key = grouping.key
       label = grouping.label
       repo = grouping.repo
@@ -103,7 +108,7 @@ export function buildOrderedGroups(args: {
     }
     const group = grouped.get(key)!
     group.items.push(w)
-    addRepoIdToGroup(group, w.repoId)
+    addRepoIdToGroup(group, anchor.repoId)
   }
   // Why: folder workspaces are not worktrees, so they never appear in the loop
   // above. Bucketing them here — and creating the lane when no worktree opened

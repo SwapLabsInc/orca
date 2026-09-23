@@ -1,4 +1,5 @@
 import type { AgentStatusOrchestrationContext } from './agent-status-types'
+import type { DelegatedWorktreeEdge } from './worktree/delegated-worktree-edge'
 import type { RemoteServerUpdateSupport } from './remote-server-update'
 import type { RemoteRuntimeSharedConnectionDiagnostics } from './remote-runtime-shared-control-types'
 import type { RuntimeHostConnectionState } from './runtime-host-connection-state'
@@ -166,6 +167,8 @@ export type RuntimeNativeChatLaunchDraftResolution = {
 
 export type RuntimeSyncWindowGraphResult = RuntimeStatus & {
   agentOrchestrationByPaneKey?: Record<string, AgentStatusOrchestrationContext>
+  /** Cross-host worker placements this runtime coordinated; absent means none, not unsupported. */
+  delegatedWorktreeEdges?: DelegatedWorktreeEdge[]
   nativeChatLaunchDraftResolutions?: RuntimeNativeChatLaunchDraftResolution[]
   mobileSessionResyncWorktrees?: string[]
 }
