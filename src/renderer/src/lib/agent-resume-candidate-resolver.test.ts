@@ -320,3 +320,48 @@ describe('equivalent path spellings', () => {
     ).toBe('none:no-candidates')
   })
 })
+
+describe('a WSL workspace and its distro-side transcripts', () => {
+  // The workspace is stored as its UNC spelling; the agent running inside the distro records the
+  // Linux cwd. They normalize to different strings, so a single key discarded every WSL candidate
+  // and recovery never ran on WSL at all.
+  const WSL_UNC = '\\\\wsl.localhost\\Ubuntu\\home\\me\\repo'
+
+  it('matches a transcript reporting the distro Linux path', () => {
+    expect(
+      summarize(
+        resolve({ worktreePath: WSL_UNC, candidates: [candidate('s1', { cwd: '/home/me/repo' })] })
+      )
+    ).toBe('resume:s1:sole-candidate')
+  })
+
+  it('still matches a transcript reporting the UNC spelling', () => {
+    expect(
+      summarize(
+        resolve({
+          worktreePath: WSL_UNC,
+          candidates: [candidate('s1', { cwd: '//wsl$/Ubuntu/home/me/repo' })]
+        })
+      )
+    ).toBe('resume:s1:sole-candidate')
+  })
+
+  it('still refuses a sibling worktree inside the distro', () => {
+    expect(
+      summarize(
+        resolve({
+          worktreePath: WSL_UNC,
+          candidates: [candidate('s1', { cwd: '/home/me/repo-two' })]
+        })
+      )
+    ).toBe('none:no-candidates')
+  })
+
+  it('still refuses the parent of the distro path', () => {
+    expect(
+      summarize(
+        resolve({ worktreePath: WSL_UNC, candidates: [candidate('s1', { cwd: '/home/me' })] })
+      )
+    ).toBe('none:no-candidates')
+  })
+})

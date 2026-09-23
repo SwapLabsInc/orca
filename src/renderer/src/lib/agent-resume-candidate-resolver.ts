@@ -9,6 +9,7 @@ import {
   type ResumableTuiAgent
 } from '../../../shared/agent-session-resume'
 import { normalizeRuntimePathForComparison } from '../../../shared/cross-platform-path'
+import { parseWslUncPath } from '../../../shared/wsl-paths'
 
 export type ResolveAgentResumeCandidateArgs = {
   candidates: readonly AgentResumeCandidate[]
@@ -33,16 +34,11 @@ export function resolveAgentResumeCandidate(
     idCounts.set(id, (idCounts.get(id) ?? 0) + 1)
   }
 
-  // Compared as normalized keys on BOTH sides, through the same normalizer the vault's own scope
-  // machinery uses: raw equality false-negatives on `C:\\repo` vs `C:/repo`, drive-letter casing,
-  // a trailing separator, and macOS NFD against an agent's NFC cwd. Still EQUALITY, not containment
-  // — a sibling worktree or the repo root must keep missing, which is what scopes the resume.
-  const scopeKey = worktreePath.length > 0 ? normalizeRuntimePathForComparison(worktreePath) : null
+  const scopeKeys = agentResumeScopeKeys(worktreePath)
   const scoped = identified.filter(
     (candidate) =>
       (paneAgent === null || candidate.agent === paneAgent) &&
-      scopeKey !== null &&
-      normalizeRuntimePathForComparison(candidate.cwd) === scopeKey
+      scopeKeys.has(normalizeRuntimePathForComparison(candidate.cwd))
   )
 
   const survivors: AgentResumeCandidate[] = []
@@ -100,6 +96,36 @@ export function resolveAgentResumeCandidate(
           : 0)
   )
   return { kind: 'choose', candidates: ranked }
+}
+
+/**
+ * The normalized spellings that name THIS workspace directory, for equality against a candidate's
+ * cwd.
+ *
+ * Compared as normalized keys on BOTH sides, through the same normalizer the vault's own scope
+ * machinery uses: raw equality false-negatives on `C:\\repo` vs `C:/repo`, drive-letter casing, a
+ * trailing separator, and macOS NFD against an agent's NFC cwd.
+ *
+ * A WSL workspace is stored as its UNC spelling (`\\\\wsl.localhost\\Ubuntu\\home\\me\\repo`) while the
+ * transcripts inside the distro report cwd as `/home/me/repo`; they normalize to different strings,
+ * so a single key discarded every WSL candidate and recovery never ran there. Both spellings of one
+ * directory are admitted, the same representation pair
+ * main/ai-vault/session-scanner-scope-discovery.ts already expands for the scan itself.
+ *
+ * Still EQUALITY, not containment — a sibling worktree or the repo root must keep missing, which is
+ * what scopes the resume.
+ */
+function agentResumeScopeKeys(worktreePath: string): Set<string> {
+  const keys = new Set<string>()
+  if (worktreePath.length === 0) {
+    return keys
+  }
+  keys.add(normalizeRuntimePathForComparison(worktreePath))
+  const wslWorktreePath = parseWslUncPath(worktreePath)
+  if (wslWorktreePath) {
+    keys.add(normalizeRuntimePathForComparison(wslWorktreePath.linuxPath))
+  }
+  return keys
 }
 
 function hasResumableIdentity(candidate: AgentResumeCandidate): boolean {

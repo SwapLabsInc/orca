@@ -16399,6 +16399,14 @@
         "days": "{{value0}} j",
         "underOneMinute": "<1 min"
       }
+    },
+    "terminalPane": {
+      "AgentResumeChooser": {
+        "label": "Choisissez une session à reprendre",
+        "title": "Quelle session ce terminal doit-il reprendre ?",
+        "help": "Appuyez sur un chiffre ou Enter pour reprendre, Esc pour un shell simple.",
+        "dismiss": "Démarrer un shell simple"
+      }
     }
   },
   "dashboardPopout": {

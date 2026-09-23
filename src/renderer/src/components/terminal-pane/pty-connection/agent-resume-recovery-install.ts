@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store'
 import { fetchAgentResumeCandidates } from '@/lib/agent-resume-candidate-source'
 import { recoverAgentSessionForPane } from '@/lib/agent-resume-recovery'
+import { agentResumeSessionsClaimedByOtherPanes } from '@/lib/agent-resume-session-claims'
 import { registerAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
 import { setPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
 import {
@@ -15,17 +16,16 @@ import { isResumableTuiAgent } from '../../../../../shared/agent-session-resume'
 import { buildCandidateResumeStartup } from './candidate-resume-startup'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
-/** Session ids a live pane already holds, plus the ones another pane has reserved but not yet
- *  spawned. Resuming one into a second pane would put two agents on one transcript. */
+/** Session ids another pane holds under THE PANE-IDENTITY CLAIM RULE, plus the ones another pane
+ *  has reserved but not yet spawned. Resuming one into a second pane would put two agents on one
+ *  transcript. */
 function claimedProviderSessionIds(
   state: ReturnType<typeof useAppStore.getState>,
   paneKey: string
 ): Set<string> {
   const claimed = agentResumeSessionsReservedElsewhere(paneKey)
-  for (const entry of Object.values(state.agentStatusByPaneKey)) {
-    if (entry.providerSession && entry.state !== 'done') {
-      claimed.add(entry.providerSession.id)
-    }
+  for (const sessionId of agentResumeSessionsClaimedByOtherPanes(state, paneKey)) {
+    claimed.add(sessionId)
   }
   return claimed
 }
