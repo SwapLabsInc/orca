@@ -62,13 +62,19 @@ function makeApi(partitions: Record<string, WorkspaceSessionState>) {
 }
 
 describe('a sleeping-record field emptied on a non-local partition', () => {
-  it('sends no clear to the ssh partition the last record left', async () => {
+  it('parks an unprovable connectionId locally instead of guessing an ssh partition', async () => {
     const { api, patch } = makeApi({})
     await patchWorkspaceSessionByHost(api, withRecord, catalog)
     await patchWorkspaceSessionByHost(api, cleared, catalog)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    // The row write went out; the emptying patch names no ssh host, so the copy there survives.
-    expect(sshPatches(patch)).toEqual([withRecord])
+    // The target list has not hydrated, so nothing proves this id names an ssh host. The two
+    // outcomes are not symmetric: `fetchWorkspaceSessionWithRuntimeHostOwners` enumerates only
+    // KNOWN ssh hosts, so a wrong `ssh:<id>` guess is never fetched again and the pane's only
+    // resume handle is gone for good. `local` is always fetched, and the next write re-routes the
+    // record once the list names it — a mis-park corrects itself, a mis-guess does not.
+    expect(sshPatches(patch)).toEqual([])
+    // Still the accepted leak: no clear is sent anywhere on the emptying patch.
+    expect(patch.mock.calls.filter(([args]) => args === cleared)).toEqual([])
   })
 
   it('never clears a partition holding rows the boot merge parked', async () => {
