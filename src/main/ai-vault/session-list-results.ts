@@ -5,7 +5,7 @@ import type {
 } from '../../shared/ai-vault-types'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import { sessionSortTime } from './session-scanner-accumulator'
-import { aiVaultScanLimit } from '../../shared/ai-vault-session-depth'
+import { aiVaultScanLimit, type AiVaultSessionDepth } from '../../shared/ai-vault-session-depth'
 
 export function aiVaultScanIssueResult(args: {
   executionHostId?: ExecutionHostId
@@ -52,8 +52,31 @@ export function restampAiVaultListResult(
           }
     ),
     issues: result.issues.map((issue) => ({ ...issue, executionHostId })),
-    scannedAt: result.scannedAt
+    scannedAt: result.scannedAt,
+    ...(result.appliedSessionDepth === undefined
+      ? {}
+      : { appliedSessionDepth: result.appliedSessionDepth })
   }
+}
+
+/** The tightest bound any leg applied, or undefined when a leg did not say — one unprovable leg
+ *  makes the merged answer unprovable, because the rows it withheld are the ones this merge is
+ *  missing. */
+function mergedAppliedSessionDepth(
+  results: readonly AiVaultListResult[],
+  ownDepth: AiVaultSessionDepth
+): AiVaultSessionDepth | undefined {
+  let tightest = ownDepth
+  for (const result of results) {
+    const depth = result.appliedSessionDepth
+    if (depth === undefined) {
+      return undefined
+    }
+    if (depth !== 'unlimited' && (tightest === 'unlimited' || depth < tightest)) {
+      tightest = depth
+    }
+  }
+  return tightest
 }
 
 export function mergeAiVaultListResults(
@@ -74,6 +97,7 @@ export function mergeAiVaultListResults(
     sessions: [...byId.values()]
       .sort((left, right) => sessionSortTime(right) - sessionSortTime(left))
       .slice(0, limit),
+    appliedSessionDepth: mergedAppliedSessionDepth(results, unlimited ? 'unlimited' : limit),
     issues,
     // Why: a merge is not a new scan. Reminting here made every all-host cache
     // hit look fresh to the renderer, which only skipped apply when scannedAt

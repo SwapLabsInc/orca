@@ -100,7 +100,13 @@ const aiVaultScanIssueSchema = z.object({
 const aiVaultListResultEnvelopeSchema = z.object({
   sessions: z.array(z.unknown()),
   issues: z.array(z.unknown()),
-  scannedAt: z.string()
+  scannedAt: z.string(),
+  // Absent from a host older than the field, and that absence is the answer: the caller reads it
+  // as "coverage unprovable". A malformed value is the same thing, so it is dropped, not coerced.
+  appliedSessionDepth: z
+    .union([z.literal('unlimited'), z.number().int().positive()])
+    .optional()
+    .catch(undefined)
 })
 
 export function parseAiVaultListResult(value: unknown): AiVaultListResult {
@@ -151,5 +157,12 @@ export function parseAiVaultListResult(value: unknown): AiVaultListResult {
       message: `Skipped ${invalidCount} invalid Agent Session History result ${invalidCount === 1 ? 'entry' : 'entries'}.`
     })
   }
-  return { sessions, issues, scannedAt: envelope.data.scannedAt }
+  return {
+    sessions,
+    issues,
+    scannedAt: envelope.data.scannedAt,
+    ...(envelope.data.appliedSessionDepth === undefined
+      ? {}
+      : { appliedSessionDepth: envelope.data.appliedSessionDepth })
+  }
 }

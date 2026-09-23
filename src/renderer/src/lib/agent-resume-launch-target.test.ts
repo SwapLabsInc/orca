@@ -89,6 +89,19 @@ describe('resolveAgentResumeLaunchTarget on a Windows client', () => {
     ).resolves.toEqual({ platform: 'linux', shell: undefined })
   })
 
+  it('quotes for the SSH host its own scan row named, not for Linux', async () => {
+    // SSH is a transport, not a platform. A Windows SSH host quoted for POSIX produces a resume
+    // argv its own shell rejects, and those hosts are supported.
+    await expect(
+      resolveWith({
+        connectionId: 'ssh-1',
+        executionHostId: 'ssh:ssh-1',
+        hostPlatform: 'win32',
+        terminalWindowsShell: 'cmd.exe'
+      })
+    ).resolves.toEqual({ platform: 'win32', shell: undefined })
+  })
+
   it('does not describe a remote runtime host with the local Windows shell setting', async () => {
     await expect(
       resolveWith({

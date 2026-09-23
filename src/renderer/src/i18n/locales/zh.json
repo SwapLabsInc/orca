@@ -14973,6 +14973,19 @@
         "copySessionId": "复制会话 ID",
         "copySessionIdSuccess": "已复制会话 ID",
         "copySessionIdError": "复制会话 ID 失败"
+      },
+      "AgentResumeChooser": {
+        "label": "选择要恢复的会话",
+        "title": "此终端应恢复哪个会话?",
+        "help": "按数字键或 Enter 恢复，按 Esc 启动普通 Shell。",
+        "dismiss": "改为启动普通 Shell",
+        "age": {
+          "unknown": "未知",
+          "newest": "最新",
+          "minutes_other": "{{count}} 分钟前",
+          "hours_other": "{{count}} 小时前",
+          "days_other": "{{count}} 天前"
+        }
       }
     }
   },

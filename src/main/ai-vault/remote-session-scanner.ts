@@ -35,7 +35,7 @@ import { recordSessionScanIssue } from './session-scan-issues'
 import { canStopParsingSessions } from './session-scan-cutoff'
 import { refreshCodexTitleFromIndex } from './session-scanner-codex-cached-title'
 import { limitRemoteScanFilesystemConcurrency } from './remote-session-scan-concurrency'
-import { aiVaultScanLimit } from '../../shared/ai-vault-session-depth'
+import { aiVaultScanLimit, requestedAiVaultSessionDepth } from '../../shared/ai-vault-session-depth'
 
 const REMOTE_SCAN_CONCURRENCY = 8
 const REMOTE_PARSE_CANDIDATE_MULTIPLIER = 2
@@ -129,7 +129,10 @@ export async function scanRemoteAiVaultSessions(args: {
   return {
     sessions: mergeRemoteSessions(cappedSessions, scopeSessions),
     issues,
-    scannedAt: new Date().toISOString()
+    scannedAt: new Date().toISOString(),
+    // Echo the bound this scan ran under. Silence here is read downstream as a possible slice,
+    // which refuses recovery on every SSH host.
+    appliedSessionDepth: requestedAiVaultSessionDepth(args)
   }
 }
 

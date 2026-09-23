@@ -14,7 +14,10 @@ import { inspectRuntimeTerminalProcess } from '@/runtime/runtime-terminal-inspec
 import { parseAppSshPtyId } from '../../../../../shared/ssh-pty-id'
 import { dispatchTerminalCommandFinishedEvent } from '@/hooks/terminal-command-finished-event'
 import { getExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
-import { resolveCommittedTitleAgentType } from '@/lib/pane-agent-evidence'
+import {
+  resolveCommittedTitleAgentType,
+  resolvePaneScopedLaunchTuiAgent
+} from '@/lib/pane-agent-evidence'
 import type { TuiAgent } from '../../../../../shared/tui-agent'
 import { isTuiAgent, TUI_AGENT_CONFIG } from '../../../../../shared/tui-agent-config'
 
@@ -53,6 +56,20 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
   session.resolveExpectedLaunchTuiAgent = (): TuiAgent | null => {
     const candidate = resolveLaunchAgentCandidate(useAppStore.getState())
     return isTuiAgent(candidate) ? candidate : null
+  }
+  /** The agent THIS PANE hosted, from pane-keyed evidence only. `resolveExpectedLaunchTuiAgent`
+   *  also accepts the tab's `launchAgent`, which names the tab's original pty and leaks onto a
+   *  plain-shell split; a destructive decision (replacing a live shell with a recovered
+   *  conversation) may not rest on it. Null means no evidence, never "an ordinary shell". */
+  session.resolvePaneScopedTuiAgent = (): TuiAgent | null => {
+    const state = useAppStore.getState()
+    return resolvePaneScopedLaunchTuiAgent({
+      paneStartupLaunchAgent: session.paneStartup?.launchAgent,
+      paneStartupStatusAgent: session.paneStartup?.initialAgentStatus?.agent,
+      registeredLaunchAgent: state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity.agentType,
+      statusEntryAgent: state.agentStatusByPaneKey[session.cacheKey]?.agentType,
+      foregroundAgent: state.paneForegroundAgentByPaneKey[session.cacheKey]?.agent
+    })
   }
   // Why: a launched/hook-known agent pane must confirm — not trust — a 133;D so a
   // full-screen agent's leaked nested-shell 133;D can't clear its tab identity,

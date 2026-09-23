@@ -109,7 +109,7 @@ export async function listAiVaultSessions(
     force: args?.force,
     signal: options.signal,
     start: async (scanSignal) => {
-      const result = await scanAiVaultSessionsInBackground(
+      const scanned = await scanAiVaultSessionsInBackground(
         {
           limit: args?.limit,
           unlimited: args?.unlimited,
@@ -118,6 +118,9 @@ export async function listAiVaultSessions(
         },
         scanSignal
       )
+      // The bound this scan ran under, echoed so a reader can tell a whole answer from a slice
+      // instead of guessing from the row count.
+      const result: AiVaultListResult = { ...scanned, appliedSessionDepth: depth }
       // A delete (or other invalidation) landed while this scan was running:
       // its result predates the delete, so caching it would resurrect the
       // deleted session for the TTL. Return it to this caller but don't cache.

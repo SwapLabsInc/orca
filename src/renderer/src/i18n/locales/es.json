@@ -14832,6 +14832,22 @@
         "copySessionId": "Copiar ID de sesión",
         "copySessionIdSuccess": "ID de sesión copiado",
         "copySessionIdError": "No se pudo copiar el ID de sesión"
+      },
+      "AgentResumeChooser": {
+        "label": "Elige una sesión para reanudar",
+        "title": "¿Qué sesión debe reanudar esta terminal?",
+        "help": "Pulsa un número o Enter para reanudar, Esc para una shell simple.",
+        "dismiss": "Iniciar una shell simple",
+        "age": {
+          "unknown": "desconocido",
+          "newest": "la más reciente",
+          "minutes_one": "{{count}} min más antigua",
+          "minutes_other": "{{count}} min más antiguas",
+          "hours_one": "{{count}} h más antigua",
+          "hours_other": "{{count}} h más antiguas",
+          "days_one": "{{count}} d más antigua",
+          "days_other": "{{count}} d más antiguas"
+        }
       }
     }
   },

@@ -2,11 +2,11 @@ import {
   createNormalizedPathInsideOrEqualMatcher,
   normalizeRuntimePathForComparison
 } from './cross-platform-path'
-import type { AiVaultListArgs, AiVaultListResult } from './ai-vault-types'
+import type { AiVaultListArgs, AiVaultListResult, AiVaultSessionDepth } from './ai-vault-types'
 
 export const DEFAULT_AI_VAULT_SCAN_LIMIT = 1000
 
-export type AiVaultSessionDepth = number | 'unlimited'
+export type { AiVaultSessionDepth }
 
 export function requestedAiVaultSessionDepth(
   args?: Pick<AiVaultListArgs, 'limit' | 'unlimited'>
@@ -56,5 +56,10 @@ export function truncateAiVaultListResult(
       }
     }
   }
-  return { ...result, sessions: result.sessions.filter((session) => selectedIds.has(session.id)) }
+  // The narrowing bound is now the one this answer was actually cut to.
+  return {
+    ...result,
+    sessions: result.sessions.filter((session) => selectedIds.has(session.id)),
+    appliedSessionDepth: depth
+  }
 }

@@ -155,10 +155,13 @@ function withRuntimeExecutionHost(
   result: AiVaultListResult,
   executionHostId: `runtime:${string}`
 ): AiVaultListResult {
+  // Spread, not a field list: retagging owns host identity only. Rebuilding the result by hand
+  // silently drops whatever else the host answered — `appliedSessionDepth` went that way, and its
+  // absence reads as a truncated scan, which disables recovery for every runtime host.
   return {
+    ...result,
     sessions: result.sessions.map((session) => retagRuntimeSession(session, executionHostId)),
-    issues: result.issues.map((issue) => ({ ...issue, executionHostId })),
-    scannedAt: result.scannedAt
+    issues: result.issues.map((issue) => ({ ...issue, executionHostId }))
   }
 }
 

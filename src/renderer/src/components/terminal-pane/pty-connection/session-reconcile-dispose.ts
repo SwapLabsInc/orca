@@ -1,3 +1,4 @@
+import { releaseAgentResumeReservationOnDispose } from './agent-resume-reservation-release'
 import { useAppStore } from '@/store'
 import {
   shouldReconcileDeadSession,
@@ -7,6 +8,7 @@ import {
 import { cancelPendingSafeFitContinuations } from '@/lib/pane-manager/pane-tree-ops'
 import { PANE_PTY_RESIZE_HOLD_FLUSH_EVENT } from '@/lib/pane-manager/pane-pty-resize-hold'
 import { discardTerminalOutput } from '@/lib/pane-manager/pane-terminal-output-scheduler'
+import { clearPendingAgentResumeChoicesForOwner } from '@/lib/pending-agent-resume-choices'
 import {
   getProviderSessionClaimKey,
   isPassiveCompletedHibernationEvidence
@@ -108,6 +110,9 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       session.consumeHibernatedAgentWake()
       session.requestKnownWindowsShiftEnterReconfirmation()
       session.sampleVisiblePaneForegroundAgent()
+      // Why here: a pane that lost its resume handle recovers only once it is actually looked
+      // at, so a host restart never respawns a whole workspace behind the user's back.
+      void session.attemptAgentResumeRecovery?.()
     },
     reassertPtySizeAfterWindowWake() {
       session.armVisibleRemoteViewportClaim()
@@ -176,12 +181,24 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       session.spawnedFreshPtyId === ptyId && !Number.isFinite(session.lastTerminalInputAt),
     dispose() {
       session.disposed = true
+      // A replaced connection must not leave a resume handler pointing at a transport that no
+      // longer owns this pane.
+      session.agentResumeRecoveryUnregister?.()
+      // The hydration retry watches the store for the life of the connection; a retired binding
+      // must stop watching or it keeps re-asking on behalf of a pane it no longer owns.
+      session.agentResumeRecoveryStatusUnsubscribe?.()
+      session.agentResumeRecoveryStatusUnsubscribe = null
+      // Identity, not the pane slot, decides whose chooser this is: a published choice names the
+      // binding that scanned it, so a retired one is dropped here and a successor's is left be.
+      // Without that, the stale chooser stayed up and reached the successor's handler.
+      clearPendingAgentResumeChoicesForOwner(session.cacheKey, session.transport)
       session.startupTiming?.finish('disposed')
       // A successor can claim the numeric pane slot before this retired
       // binding's disposal callback runs; do not clear its pane-scoped error.
       const currentPaneTransport = session.deps.paneTransportsRef.current.get(session.pane.id)
       if (!currentPaneTransport || currentPaneTransport === session.transport) {
         session.deps.onPtyErrorClearedRef?.current?.(session.pane.id)
+        releaseAgentResumeReservationOnDispose(session)
       }
       // Why: a detached client stops observing the pane's bytes, so it must cede
       // agent-status authority back to the host on the next mirrored snapshot.

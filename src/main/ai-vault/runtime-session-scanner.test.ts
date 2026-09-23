@@ -116,6 +116,19 @@ describe('runtime AI Vault session scanner', () => {
     ])
   })
 
+  it('keeps the scan depth the host applied, so coverage is not read as truncated', async () => {
+    mocks.callRuntimeEnvironment.mockResolvedValueOnce({
+      ok: true,
+      result: { ...result([session('local', 'session-1')]), appliedSessionDepth: 'unlimited' }
+    })
+
+    const scanResult = await scanRuntimeAiVaultSessions('/user-data', 'env-1', {})
+
+    // Retagging owns host identity only. Dropping this field reads downstream as a truncated
+    // scan, which refuses recovery on every runtime host.
+    expect(scanResult.appliedSessionDepth).toBe('unlimited')
+  })
+
   it('stamps accepted sessions with the requested runtime host', async () => {
     const scanResult = await scanRuntimeAiVaultSessions('/user-data', 'env-1', {})
 
