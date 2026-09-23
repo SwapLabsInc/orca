@@ -2,10 +2,13 @@ import type { WorkspaceSessionState } from '../../../shared/workspace-session-st
 import {
   LOCAL_EXECUTION_HOST_ID,
   parseExecutionHostId,
-  toSshExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import { isWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
+import {
+  sleepingRecordOriginHostId,
+  type SleepingRecordOriginHosts
+} from './sleeping-record-origin-host'
 import {
   GLOBAL_WORKSPACE_SESSION_FIELDS,
   hostPartitionSliceTemplate,
@@ -53,7 +56,8 @@ export type HostIdByWorktreeId = (worktreeId: string) => ExecutionHostId
  *    page record's own worktreeId.
  *  - fileKeyed: Record keyed by editor file id; follows the open file's worktree.
  *  - sleepingAgentKeyed: Record keyed by pane key; follows the record's worktreeId, falling back
- *    to the ssh connection the record itself names when routing has no row for that worktree.
+ *    to the host the record's own capture names when routing has no row for that worktree
+ *    (sleeping-record-origin-host.ts proves that stamp's host kind first).
  *  - surfaceTombstoneKeyed: Record under an opaque key whose value names its own worktreeId --
  *    the only routing available once the tab or pane it describes is gone. */
 type SplitContext = {
@@ -127,17 +131,6 @@ function assignVisitRecencyByHost(
   }
 }
 
-/** The ssh host a sleeping record's own capture names, or null. Catalog routing sends an ssh
- *  worktree it has no row for to 'local'. Ssh only: `null` (local or runtime) and `undefined`
- *  (unstamped) name no host (sleeping-record-execution-host-scope.ts). */
-function sleepingRecordOriginHostId(entry: unknown): ExecutionHostId | null {
-  if (!isWorkspaceSessionRecord(entry) || typeof entry.connectionId !== 'string') {
-    return null
-  }
-  const targetId = entry.connectionId.trim()
-  return targetId ? toSshExecutionHostId(targetId) : null
-}
-
 function assignKeyedByResolvedWorktree(
   slices: HostSessionSlices,
   templates: SliceTemplates,
@@ -184,7 +177,10 @@ function buildSliceTemplates(state: WorkspaceSessionState): SliceTemplates {
 export function splitWorkspaceSessionByHost(
   state: WorkspaceSessionState,
   hostIdByWorktreeId: HostIdByWorktreeId,
-  options: { worktreeIdByTabId?: Map<string, string> } = {}
+  options: {
+    worktreeIdByTabId?: Map<string, string>
+    sleepingRecordOrigins?: SleepingRecordOriginHosts
+  } = {}
 ): HostSessionSlices {
   const templates = buildSliceTemplates(state)
 
@@ -286,7 +282,7 @@ export function splitWorkspaceSessionByHost(
               ? record.worktreeId
               : undefined,
           ctx,
-          sleepingRecordOriginHostId
+          (record) => sleepingRecordOriginHostId(record, options.sleepingRecordOrigins)
         )
         break
       case 'paneKeyed':
