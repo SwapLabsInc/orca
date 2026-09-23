@@ -45,6 +45,18 @@ function sshPatches(patch: ReturnType<typeof vi.fn>): unknown[] {
   return patch.mock.calls.filter(([, hostId]) => hostId === SSH_HOST_ID).map(([args]) => args)
 }
 
+function localRecordWrites(patch: ReturnType<typeof vi.fn>): unknown[] {
+  return (
+    patch.mock.calls
+      // The local slice is written with no host argument at all, not with the local id.
+      .filter(([, hostId]) => hostId === undefined || hostId === LOCAL_EXECUTION_HOST_ID)
+      .map(([args]) => {
+        const slice: Partial<WorkspaceSessionState> = args
+        return slice.sleepingAgentSessionsByPaneKey
+      })
+  )
+}
+
 function makeApi(partitions: Record<string, WorkspaceSessionState>) {
   const patch = vi.fn().mockResolvedValue(undefined)
   return {
@@ -67,14 +79,10 @@ describe('a sleeping-record field emptied on a non-local partition', () => {
     await patchWorkspaceSessionByHost(api, withRecord, catalog)
     await patchWorkspaceSessionByHost(api, cleared, catalog)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    // The target list has not hydrated, so nothing proves this id names an ssh host. The two
-    // outcomes are not symmetric: `fetchWorkspaceSessionWithRuntimeHostOwners` enumerates only
-    // KNOWN ssh hosts, so a wrong `ssh:<id>` guess is never fetched again and the pane's only
-    // resume handle is gone for good. `local` is always fetched, and the next write re-routes the
-    // record once the list names it — a mis-park corrects itself, a mis-guess does not.
+    // Local is always fetched; an unproven `ssh:<id>` partition never is, so guessing it loses
+    // the handle for good while parking locally corrects itself on the next write.
     expect(sshPatches(patch)).toEqual([])
-    // Still the accepted leak: no clear is sent anywhere on the emptying patch.
-    expect(patch.mock.calls.filter(([args]) => args === cleared)).toEqual([])
+    expect(localRecordWrites(patch)).toContainEqual({ [record.paneKey]: record })
   })
 
   it('never clears a partition holding rows the boot merge parked', async () => {
