@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { translate } from '@/i18n/i18n'
 import {
   getRepoExecutionHostId,
   isRuntimeOwnedSshTargetId,
+  parseExecutionHostId,
   type ExecutionHostId
 } from '../../../../shared/execution-host'
 
@@ -30,6 +31,15 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const repoId = typeof modalData.repoId === 'string' ? modalData.repoId : ''
   const displayName = typeof modalData.displayName === 'string' ? modalData.displayName : ''
   const hostId = typeof modalData.hostId === 'string' ? (modalData.hostId as ExecutionHostId) : null
+
+  // Why: the owning host never answered the first attempt, so it still holds the project. The
+  // dialog stays open on that answer and re-offers the removal as a client-only forget.
+  const [ownerUnverifiable, setOwnerUnverifiable] = useState(false)
+  const [isRemoving, setIsRemoving] = useState(false)
+  useEffect(() => {
+    setOwnerUnverifiable(false)
+    setIsRemoving(false)
+  }, [isOpen, repoId, hostId])
 
   // Why: for an SSH project the files live on the remote host's disk, not the
   // user's — "still on your disk" would be misleading. Name the host (using the
@@ -51,38 +61,67 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
       sshConnectionId
     )
   })
+  // Only a `runtime:` owner can answer `owner-unverifiable`, so its name is the one the
+  // forget copy needs; fall back to the environment id when the catalog has no row for it.
+  const runtimeOwnerLabel = useAppStore((s) => {
+    const parsed = parseExecutionHostId(hostId)
+    if (parsed?.kind !== 'runtime') {
+      return null
+    }
+    return (
+      s.runtimeEnvironments.find((environment) => environment.id === parsed.environmentId)?.name ||
+      parsed.environmentId
+    )
+  })
 
   // Why: fragment concatenation around the styled name cannot be reordered by
   // SOV locales (#9294). Translate one full sentence with the name as a
   // sentinel token, then split on it to re-apply the inline emphasis.
-  const description = isRuntimeOwnedSshTargetId(sshConnectionId)
+  const description = ownerUnverifiable
     ? translate(
-        'auto.components.sidebar.RemoveFolderDialog.removeDescriptionVmRecipe',
-        'This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.',
-        { name: NAME_TOKEN }
+        'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiable',
+        '{{host}} did not answer, so {{name}} is still registered there. Removing it now only clears this computer’s records — nothing on {{host}} is touched, and the project returns if that host reconnects.',
+        { name: NAME_TOKEN, host: runtimeOwnerLabel ?? '' }
       )
-    : sshHostLabel
+    : isRuntimeOwnedSshTargetId(sshConnectionId)
       ? translate(
-          'auto.components.sidebar.RemoveFolderDialog.removeDescriptionSsh',
-          'This only removes {{name}} from Orca. Its files stay on {{host}} — re-add that SSH host to recover it.',
-          { name: NAME_TOKEN, host: sshHostLabel }
-        )
-      : translate(
-          'auto.components.sidebar.RemoveFolderDialog.removeDescriptionLocal',
-          'This only removes {{name}} from Orca. It is still on your disk.',
+          'auto.components.sidebar.RemoveFolderDialog.removeDescriptionVmRecipe',
+          'This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.',
           { name: NAME_TOKEN }
         )
+      : sshHostLabel
+        ? translate(
+            'auto.components.sidebar.RemoveFolderDialog.removeDescriptionSsh',
+            'This only removes {{name}} from Orca. Its files stay on {{host}} — re-add that SSH host to recover it.',
+            { name: NAME_TOKEN, host: sshHostLabel }
+          )
+        : translate(
+            'auto.components.sidebar.RemoveFolderDialog.removeDescriptionLocal',
+            'This only removes {{name}} from Orca. It is still on your disk.',
+            { name: NAME_TOKEN }
+          )
   const [descriptionBeforeName, descriptionAfterName] = description.split(NAME_TOKEN)
 
-  const handleConfirm = useCallback(() => {
-    if (repoId) {
-      void removeProject(repoId, {
-        ...(hostId ? { hostId } : {}),
-        errorFeedback: 'toast'
-      })
+  const handleConfirm = useCallback(async () => {
+    if (!repoId) {
+      closeModal()
+      return
+    }
+    setIsRemoving(true)
+    const outcome = await removeProject(repoId, {
+      ...(hostId ? { hostId } : {}),
+      errorFeedback: 'toast',
+      ...(ownerUnverifiable ? { mode: 'forget-local' as const } : {})
+    })
+    setIsRemoving(false)
+    // Why: an unanswered host is not a failure to report and not a removal to celebrate — keep
+    // the dialog open so the only honest remaining action is the one the user now sees.
+    if (outcome.status === 'owner-unverifiable') {
+      setOwnerUnverifiable(true)
+      return
     }
     closeModal()
-  }, [closeModal, hostId, removeProject, repoId])
+  }, [closeModal, hostId, ownerUnverifiable, removeProject, repoId])
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -110,8 +149,13 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             {translate('auto.components.sidebar.RemoveFolderDialog.d36883e046', 'Cancel')}
           </Button>
-          <Button variant="destructive" onClick={handleConfirm}>
-            {translate('auto.components.sidebar.RemoveFolderDialog.4dc5b5065b', 'Remove')}
+          <Button variant="destructive" disabled={isRemoving} onClick={() => void handleConfirm()}>
+            {ownerUnverifiable
+              ? translate(
+                  'auto.components.sidebar.RemoveFolderDialog.removeFromOrcaOnly',
+                  'Remove from Orca'
+                )
+              : translate('auto.components.sidebar.RemoveFolderDialog.4dc5b5065b', 'Remove')}
           </Button>
         </DialogFooter>
       </DialogContent>

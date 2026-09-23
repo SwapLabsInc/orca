@@ -5286,7 +5286,9 @@
           "b79b39d865": "Remove Project",
           "removeDescriptionSsh": "This only removes {{name}} from Orca. Its files stay on {{host}} — re-add that SSH host to recover it.",
           "removeDescriptionLocal": "This only removes {{name}} from Orca. It is still on your disk.",
-          "removeDescriptionVmRecipe": "This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted."
+          "removeDescriptionVmRecipe": "This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.",
+          "removeDescriptionOwnerUnverifiable": "{{host}} did not answer, so {{name}} is still registered there. Removing it now only clears this computer’s records — nothing on {{host}} is touched, and the project returns if that host reconnects.",
+          "removeFromOrcaOnly": "Remove from Orca"
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "Reveal active workspace"
@@ -12041,6 +12043,10 @@
         "TerminalRenderingSection": {
           "6d4c55bacc": "Inline Images",
           "fffab5890b": "Display images directly in the terminal using SIXEL, iTerm2 (IIP), and Kitty graphics protocols."
+        },
+        "settingsProjectList": {
+          "removeOwnerUnverifiable": "Could not reach the host that owns this project",
+          "removeOwnerUnverifiableDescription": "It is still registered on {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only."
         }
       },
       "right": {

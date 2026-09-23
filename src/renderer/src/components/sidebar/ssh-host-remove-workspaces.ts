@@ -54,13 +54,16 @@ export async function clearSshHostWorkspaces(
   // clearing Orca's records without a successful remote call.
   for (const repoId of resolution.hostRepoIds) {
     try {
-      await store.removeProject(repoId, { hostId })
+      const outcome = await store.removeProject(repoId, { hostId })
+      if (outcome.status !== 'removed') {
+        failedIds.push(repoId)
+      }
     } catch {
       failedIds.push(repoId)
     }
-    // Why: removeProject swallows its own errors and returns void, so the
-    // try/catch above can't observe a failure. Verify the host's repo row is
-    // actually gone; if it lingers, the removal did not succeed.
+    // Why: removeProject reports its own outcome, but a returned status is not proof of the
+    // durable change. Verify the host's repo row is actually gone; if it lingers, the removal
+    // did not succeed.
     const stillPresent = useAppStore
       .getState()
       .repos.some((repo) => repo.id === repoId && getRepoExecutionHostId(repo) === hostId)

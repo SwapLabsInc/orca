@@ -1,5 +1,8 @@
+import { toast } from 'sonner'
 import type { Project, ProjectHostSetup } from '../../../../shared/project-types'
 import type { Repo } from '../../../../shared/repo-types'
+import type { RemoveProjectOutcome } from '../../store/repos/project-removal-outcome'
+import { translate } from '@/i18n/i18n'
 import {
   getRepoExecutionHostId,
   LOCAL_EXECUTION_HOST_ID,
@@ -177,12 +180,32 @@ export async function removeSettingsProjectFromAllHosts(
   removeProject: (
     repoId: string,
     options: { hostId: ExecutionHostId; errorFeedback?: 'toast' | 'silent' }
-  ) => Promise<void>
+  ) => Promise<RemoveProjectOutcome>
 ): Promise<void> {
   for (const setup of setups) {
     if (setup.repoId.trim().length > 0) {
       // Why: user-initiated single-project removal, so a failure must be visible rather than silent (#11994).
-      await removeProject(setup.repoId, { hostId: setup.hostId, errorFeedback: 'toast' })
+      const outcome = await removeProject(setup.repoId, {
+        hostId: setup.hostId,
+        errorFeedback: 'toast'
+      })
+      // Why: an unanswered host is not a store failure, so it carries no toast of its own. This
+      // pane has no per-host forget affordance, so say what happened rather than look successful.
+      if (outcome.status === 'owner-unverifiable') {
+        toast.error(
+          translate(
+            'auto.components.settings.settingsProjectList.removeOwnerUnverifiable',
+            'Could not reach the host that owns this project'
+          ),
+          {
+            description: translate(
+              'auto.components.settings.settingsProjectList.removeOwnerUnverifiableDescription',
+              'It is still registered on {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only.',
+              { host: setup.hostId }
+            )
+          }
+        )
+      }
     }
   }
 }
