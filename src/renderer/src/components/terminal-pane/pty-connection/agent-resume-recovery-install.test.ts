@@ -25,7 +25,21 @@ function bindLayout(tabId: string, leafId: string, ptyId: string | undefined): v
   storeState.terminalLayoutsByTabId[tabId] = { ptyIdsByLeafId: { [leafId]: ptyId } }
 }
 
-vi.mock('@/store', () => ({ useAppStore: { getState: () => storeState } }))
+const storeSubscribers: (() => void)[] = []
+vi.mock('@/store', () => ({
+  useAppStore: {
+    getState: () => storeState,
+    subscribe: (listener: () => void) => {
+      storeSubscribers.push(listener)
+      return () => {
+        const at = storeSubscribers.indexOf(listener)
+        if (at !== -1) {
+          storeSubscribers.splice(at, 1)
+        }
+      }
+    }
+  }
+}))
 vi.mock('@/runtime/sync-runtime-graph', () => ({ scheduleRuntimeGraphSync: vi.fn() }))
 vi.mock('@/lib/codex-stale-pane-sweep', () => ({ notifyCodexPaneBoundForStaleSweep: vi.fn() }))
 vi.mock('@/lib/agent-resume-launch-target', () => ({
@@ -183,6 +197,29 @@ describe('recovery triggers', () => {
     await session.attemptAgentResumeRecovery()
     expect(fetchCandidates).not.toHaveBeenCalled()
     expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  it('retries once pane-scoped agent status hydrates, with no visibility flip', async () => {
+    // The hook server's persisted snapshot can land after onPtySpawn already ran the gate. An
+    // already-visible pane gets no later reveal, so without this the pane stays a plain shell.
+    let paneAgent: string | null = null
+    const session = buildSession('tab-1:leaf-late-status', {
+      resolveExpectedLaunchTuiAgent: () => null,
+      resolvePaneScopedTuiAgent: () => paneAgent
+    })
+    const before = storeSubscribers.length
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(storeSubscribers.length).toBe(before + 1)
+
+    paneAgent = 'claude'
+    for (const listener of storeSubscribers.slice()) {
+      listener()
+    }
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(fetchCandidates).toHaveBeenCalled()
   })
 
   it('leaves a reattached PTY alone', async () => {

@@ -66,6 +66,14 @@ export function AgentResumeChooser({
         setSelected((current) => (current - 1 + rows.length) % rows.length)
         return
       }
+      // The Radix focus trap also holds the close and dismiss buttons, so one Tab moves focus off
+      // this listbox and every key below stops firing while the selected row still looks active —
+      // a dialog whose help text promises "press a number or Enter" with a dead keyboard. Rows are
+      // deliberately not tabbable, so holding focus here costs no reachable stop.
+      if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault()
+        return
+      }
       if (event.key === 'Enter') {
         event.preventDefault()
         const row = rows[selected]

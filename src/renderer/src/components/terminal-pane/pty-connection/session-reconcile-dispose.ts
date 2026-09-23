@@ -1,3 +1,4 @@
+import { releaseAgentResumeReservationOnDispose } from './agent-resume-reservation-release'
 import { useAppStore } from '@/store'
 import {
   shouldReconcileDeadSession,
@@ -8,7 +9,6 @@ import { cancelPendingSafeFitContinuations } from '@/lib/pane-manager/pane-tree-
 import { PANE_PTY_RESIZE_HOLD_FLUSH_EVENT } from '@/lib/pane-manager/pane-pty-resize-hold'
 import { discardTerminalOutput } from '@/lib/pane-manager/pane-terminal-output-scheduler'
 import { clearPendingAgentResumeChoicesForOwner } from '@/lib/pending-agent-resume-choices'
-import { releaseAgentResumeSessionsForPane } from '@/lib/agent-resume-session-reservations'
 import {
   getProviderSessionClaimKey,
   isPassiveCompletedHibernationEvidence
@@ -184,6 +184,10 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       // A replaced connection must not leave a resume handler pointing at a transport that no
       // longer owns this pane.
       session.agentResumeRecoveryUnregister?.()
+      // The hydration retry watches the store for the life of the connection; a retired binding
+      // must stop watching or it keeps re-asking on behalf of a pane it no longer owns.
+      session.agentResumeRecoveryStatusUnsubscribe?.()
+      session.agentResumeRecoveryStatusUnsubscribe = null
       // Identity, not the pane slot, decides whose chooser this is: a published choice names the
       // binding that scanned it, so a retired one is dropped here and a successor's is left be.
       // Without that, the stale chooser stayed up and reached the successor's handler.
@@ -194,10 +198,7 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       const currentPaneTransport = session.deps.paneTransportsRef.current.get(session.pane.id)
       if (!currentPaneTransport || currentPaneTransport === session.transport) {
         session.deps.onPtyErrorClearedRef?.current?.(session.pane.id)
-        // Successor guard: the reservation under this stable pane key may already belong to the
-        // connection that replaced this one, and releasing a successor's reservation would reopen
-        // the fork window.
-        releaseAgentResumeSessionsForPane(session.cacheKey)
+        releaseAgentResumeReservationOnDispose(session)
       }
       // Why: a detached client stops observing the pane's bytes, so it must cede
       // agent-status authority back to the host on the next mirrored snapshot.

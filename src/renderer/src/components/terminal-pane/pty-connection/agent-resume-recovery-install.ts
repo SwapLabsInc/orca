@@ -88,7 +88,17 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     ) {
       return false
     }
-    void session.startFreshColdRestoreAgentResume(startup)
+    // Held so disposal can tell "reserved, spawn still settling" from "reserved and claimed".
+    // Releasing in that window frees a transcript a sibling pane can then respawn.
+    const spawned = Promise.resolve(session.startFreshColdRestoreAgentResume(startup)).catch(
+      () => undefined
+    )
+    session.agentResumeSpawnInFlight = spawned
+    void spawned.finally(() => {
+      if (session.agentResumeSpawnInFlight === spawned) {
+        session.agentResumeSpawnInFlight = null
+      }
+    })
     return true
   }
 
@@ -97,6 +107,25 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     session.transport,
     resumeWithCandidate
   )
+
+  // One shot: it re-arms from the same gate if the next attempt still finds no evidence, and the
+  // latch makes a late fire a no-op. Hidden panes and unreachable hosts keep their own retries.
+  const watchForPaneAgentEvidence = (): void => {
+    if (session.agentResumeRecoveryStatusUnsubscribe) {
+      return
+    }
+    session.agentResumeRecoveryStatusUnsubscribe = useAppStore.subscribe(() => {
+      if (session.agentResumeRecoveryAttempted || !bindingStillOwnsPane()) {
+        return
+      }
+      if (!isResumableTuiAgent(session.resolvePaneScopedTuiAgent?.() ?? null)) {
+        return
+      }
+      session.agentResumeRecoveryStatusUnsubscribe?.()
+      session.agentResumeRecoveryStatusUnsubscribe = null
+      void session.attemptAgentResumeRecovery?.()
+    })
+  }
 
   session.attemptAgentResumeRecovery = async (): Promise<void> => {
     // Once per connection: a visibility flip must not re-ask the host, and a pane that already
@@ -118,6 +147,12 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     // split in an agent-launched tab would pass and have its shell destructively replaced.
     const paneAgent = session.resolvePaneScopedTuiAgent?.() ?? null
     if (!isResumableTuiAgent(paneAgent)) {
+      // A restored pane's only pane-scoped evidence can be the hook server's persisted status,
+      // which lands after onPtySpawn has already run this gate. An already-visible pane gets no
+      // later visibility flip, so without a watch it sits as a plain shell until the user
+      // switches away and back. Armed here rather than at install so only a pane actually
+      // waiting on hydration carries a subscription.
+      watchForPaneAgentEvidence()
       return
     }
     const worktreePath = paneAgentResumeScopePath({
