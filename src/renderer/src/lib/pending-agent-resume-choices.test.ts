@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
 import {
   clearPendingAgentResumeChoices,
+  clearPendingAgentResumeChoicesForOwner,
   getPendingAgentResumeChoices,
   resetPendingAgentResumeChoices,
   setPendingAgentResumeChoices,
@@ -19,6 +20,9 @@ const candidate: AgentResumeCandidate = {
   executionHostId: null
 }
 
+/** Stands in for a pty binding's transport: the choice's owner is an opaque identity. */
+const OWNER = {}
+
 afterEach(() => {
   resetPendingAgentResumeChoices()
 })
@@ -30,9 +34,12 @@ describe('pending agent resume choices', () => {
     subscribePendingAgentResumeChoices('pane-a', paneA)
     subscribePendingAgentResumeChoices('pane-b', paneB)
 
-    setPendingAgentResumeChoices('pane-a', [candidate])
+    setPendingAgentResumeChoices('pane-a', OWNER, [candidate])
 
-    expect(getPendingAgentResumeChoices('pane-a')).toEqual([candidate])
+    expect(getPendingAgentResumeChoices('pane-a')).toEqual({
+      owner: OWNER,
+      candidates: [candidate]
+    })
     expect(getPendingAgentResumeChoices('pane-b')).toBeUndefined()
     expect(paneA).toHaveBeenCalledTimes(1)
     expect(paneB).not.toHaveBeenCalled()
@@ -41,17 +48,17 @@ describe('pending agent resume choices', () => {
   // Why: useSyncExternalStore re-renders on every notify and compares by identity, so an
   // unchanged read must keep the same reference.
   it('keeps a stable reference while unchanged', () => {
-    setPendingAgentResumeChoices('pane-a', [candidate])
+    setPendingAgentResumeChoices('pane-a', OWNER, [candidate])
     expect(getPendingAgentResumeChoices('pane-a')).toBe(getPendingAgentResumeChoices('pane-a'))
   })
 
   it('treats an empty candidate list as nothing pending', () => {
     const listener = vi.fn()
     subscribePendingAgentResumeChoices('pane-a', listener)
-    setPendingAgentResumeChoices('pane-a', [candidate])
+    setPendingAgentResumeChoices('pane-a', OWNER, [candidate])
     listener.mockClear()
 
-    setPendingAgentResumeChoices('pane-a', [])
+    setPendingAgentResumeChoices('pane-a', OWNER, [])
 
     expect(getPendingAgentResumeChoices('pane-a')).toBeUndefined()
     expect(listener).toHaveBeenCalledTimes(1)
@@ -64,11 +71,24 @@ describe('pending agent resume choices', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  // Finding: a published choice carried no binding identity, so a chooser left over from a
+  // retired connection could act on the successor that replaced it under the same pane key.
+  it('retires only the owner it was published for', () => {
+    const successor = {}
+    setPendingAgentResumeChoices('pane-a', successor, [candidate])
+
+    clearPendingAgentResumeChoicesForOwner('pane-a', OWNER)
+    expect(getPendingAgentResumeChoices('pane-a')?.owner).toBe(successor)
+
+    clearPendingAgentResumeChoicesForOwner('pane-a', successor)
+    expect(getPendingAgentResumeChoices('pane-a')).toBeUndefined()
+  })
+
   it('stops notifying after unsubscribe', () => {
     const listener = vi.fn()
     const unsubscribe = subscribePendingAgentResumeChoices('pane-a', listener)
     unsubscribe()
-    setPendingAgentResumeChoices('pane-a', [candidate])
+    setPendingAgentResumeChoices('pane-a', OWNER, [candidate])
     expect(listener).not.toHaveBeenCalled()
   })
 })

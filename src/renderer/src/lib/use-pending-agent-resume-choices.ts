@@ -1,14 +1,15 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
 import {
   getPendingAgentResumeChoices,
-  subscribePendingAgentResumeChoices
+  subscribePendingAgentResumeChoices,
+  type PendingAgentResumeChoice
 } from './pending-agent-resume-choices'
 
-/** The chooser candidates pending for one pane, or undefined when it has none. */
+/** The choice pending for one pane — its candidates and the binding that scanned them — or
+ *  undefined when it has none. */
 export function usePendingAgentResumeChoices(
   paneKey: string
-): readonly AgentResumeCandidate[] | undefined {
+): PendingAgentResumeChoice | undefined {
   const subscribe = useCallback(
     (listener: () => void) => subscribePendingAgentResumeChoices(paneKey, listener),
     [paneKey]

@@ -8,6 +8,7 @@ import {
   reserveAgentResumeSession
 } from '@/lib/agent-resume-session-reservations'
 import { resolveAgentResumeLaunchTarget } from '@/lib/agent-resume-launch-target'
+import { paneAgentResumeScopePath } from '@/lib/agent-resume-workspace-scope'
 import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
 import { isResumableTuiAgent } from '../../../../../shared/agent-session-resume'
 
@@ -29,6 +30,17 @@ function claimedProviderSessionIds(
   return claimed
 }
 
+/** Refusals that mean "we never got an answer", so the pane keeps its one attempt. Every other
+ *  refusal is a real verdict about this pane and stays spent. */
+const UNSPENT_AGENT_RESUME_REFUSALS: ReadonlySet<string> = new Set([
+  // The host scan was cancelled, partial, truncated or unreachable.
+  'scan-unverifiable',
+  // The contract is that a hidden pane does not spend its attempt and retries when revealed. The
+  // pre-scan return below covers a pane hidden at the start; the ~2s scan is long enough for the
+  // user to switch away inside it, and the post-scan gate answers `pane-hidden` for that too.
+  'pane-hidden'
+])
+
 export function installAgentResumeRecovery(session: ConnectPanePtySession): void {
   const bindingStillOwnsPane = (): boolean =>
     !session.disposed &&
@@ -43,7 +55,10 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
       projectRuntime: session.projectRuntime,
       connectionId: session.connectionId,
       executionHostId: session.executionHostId,
-      worktreePath: session.worktree?.path,
+      worktreePath: paneAgentResumeScopePath({
+        worktreePath: session.worktree?.path,
+        folderWorkspacePath: session.folderWorkspace?.folderPath
+      }),
       terminalWindowsShell: state.settings?.terminalWindowsShell,
       tabShellOverride: session.shellOverride
     })
@@ -58,9 +73,19 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     if (!startup) {
       return false
     }
-    // Last step before the spawn, and synchronous: two panes that resolved the same sole
-    // candidate while both scans were in flight cannot both get past this line.
-    if (!reserveAgentResumeSession(candidate.providerSession.id, session.cacheKey)) {
+    // EP-STATE: revalidate the identity that authorized this candidate, immediately before the
+    // spawn and in one synchronous step with the claim. The chooser's rows were scanned seconds
+    // ago, and the renderer-local reservation map is not the only way a candidate goes live —
+    // another pane's cold restore and an Agent Session History launch both reserve nothing here,
+    // so the host-owned status store is the evidence that settles it.
+    if (
+      claimedProviderSessionIds(useAppStore.getState(), session.cacheKey).has(
+        candidate.providerSession.id
+      ) ||
+      // Two panes that resolved the same sole candidate while both scans were in flight cannot
+      // both get past this line.
+      !reserveAgentResumeSession(candidate.providerSession.id, session.cacheKey)
+    ) {
       return false
     }
     void session.startFreshColdRestoreAgentResume(startup)
@@ -69,6 +94,7 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
 
   session.agentResumeRecoveryUnregister = registerAgentResumePaneHandler(
     session.cacheKey,
+    session.transport,
     resumeWithCandidate
   )
 
@@ -94,7 +120,10 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     if (!isResumableTuiAgent(paneAgent)) {
       return
     }
-    const worktreePath = session.worktree?.path
+    const worktreePath = paneAgentResumeScopePath({
+      worktreePath: session.worktree?.path,
+      folderWorkspacePath: session.folderWorkspace?.folderPath
+    })
     if (!worktreePath) {
       return
     }
@@ -125,12 +154,11 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
         offerChoice: (paneKey, candidates) => {
           // A choice that arrives after the pane is gone would outlive it on the stable pane key.
           if (bindingStillOwnsPane()) {
-            setPendingAgentResumeChoices(paneKey, candidates)
+            setPendingAgentResumeChoices(paneKey, session.transport, candidates)
           }
         }
       })
-      if (action.kind === 'none' && action.reason === 'scan-unverifiable') {
-        // The host answered about nothing, so this pane has not had its attempt yet.
+      if (action.kind === 'none' && UNSPENT_AGENT_RESUME_REFUSALS.has(action.reason)) {
         session.agentResumeRecoveryAttempted = false
       }
     } catch (err) {

@@ -1,4 +1,3 @@
-import { createPortal } from 'react-dom'
 import type { AgentResumeCandidate } from '../../../../shared/agent-resume-candidate'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { getAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
@@ -9,7 +8,6 @@ import { AgentResumeChooser } from './AgentResumeChooser'
 export type AgentResumeChooserPane = {
   id: number
   leafId: string
-  container: HTMLElement
 }
 
 type AgentResumeChooserPortalsProps = {
@@ -18,33 +16,28 @@ type AgentResumeChooserPortalsProps = {
 }
 
 /** One pane's chooser. A child component because the pending-choice subscription is a hook
- *  and the parent renders a list. */
-function AgentResumeChooserPortal({
-  paneKey,
-  container
-}: {
-  paneKey: string
-  container: HTMLElement
-}): React.JSX.Element | null {
-  const candidates = usePendingAgentResumeChoices(paneKey)
-  if (!candidates || candidates.length === 0) {
+ *  and the parent renders a list. The chooser portals itself through `Dialog`, so nothing is
+ *  mounted into the pane's own container — a modal decision surface belongs above the app. */
+function AgentResumeChooserPortal({ paneKey }: { paneKey: string }): React.JSX.Element | null {
+  const choice = usePendingAgentResumeChoices(paneKey)
+  if (!choice || choice.candidates.length === 0) {
     return null
   }
   const resume = (candidate: AgentResumeCandidate): void => {
+    // Why the owner: the pane key is the same across a reconnect, so a choice scanned for a
+    // retired binding would otherwise invoke the SUCCESSOR's handler and replace its shell.
     // Kept open when the handler refuses: another pane reserved that session between the offer
     // and the click, and the remaining rows are still the user's to choose from.
-    if (getAgentResumePaneHandler(paneKey)?.(candidate) === true) {
+    if (getAgentResumePaneHandler(paneKey, choice.owner)?.(candidate) === true) {
       clearPendingAgentResumeChoices(paneKey)
     }
   }
-  return createPortal(
+  return (
     <AgentResumeChooser
-      candidates={candidates}
+      candidates={choice.candidates}
       onResume={resume}
       onDismiss={() => clearPendingAgentResumeChoices(paneKey)}
-    />,
-    container,
-    `agent-resume-chooser-${paneKey}`
+    />
   )
 }
 
@@ -55,11 +48,7 @@ export function AgentResumeChooserPortals({
   return (
     <>
       {panes.map((pane) => (
-        <AgentResumeChooserPortal
-          key={pane.id}
-          paneKey={makePaneKey(tabId, pane.leafId)}
-          container={pane.container}
-        />
+        <AgentResumeChooserPortal key={pane.id} paneKey={makePaneKey(tabId, pane.leafId)} />
       ))}
     </>
   )
