@@ -8,7 +8,22 @@ import { installAgentResumeRecovery } from './agent-resume-recovery-install'
 import { installPanePtyVisibilityBind } from './pane-pty-visibility-bind'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
-const storeState = { agentStatusByPaneKey: {}, settings: {} }
+const storeState: {
+  agentStatusByPaneKey: Record<string, unknown>
+  terminalLayoutsByTabId: Record<string, unknown>
+  settings: Record<string, unknown>
+} = { agentStatusByPaneKey: {}, terminalLayoutsByTabId: {}, settings: {} }
+
+// Real leaf UUIDs: the claim rule resolves a row's pane from its key, and `parsePaneKey` rejects
+// anything else. Only the liveness-sensitive cases below need them.
+const OWN_LEAF = 'c6d5f4aa-2f0e-4a31-9c1e-1d6f1a0b2c30'
+const SIBLING_LEAF = 'd7e6a5bb-3f1f-4b42-8d2f-2e7f2b1c3d41'
+const OWN_PANE_KEY = `tab-1:${OWN_LEAF}`
+const SIBLING_PANE_KEY = `tab-9:${SIBLING_LEAF}`
+
+function bindLayout(tabId: string, leafId: string, ptyId: string | undefined): void {
+  storeState.terminalLayoutsByTabId[tabId] = { ptyIdsByLeafId: { [leafId]: ptyId } }
+}
 
 vi.mock('@/store', () => ({ useAppStore: { getState: () => storeState } }))
 vi.mock('@/runtime/sync-runtime-graph', () => ({ scheduleRuntimeGraphSync: vi.fn() }))
@@ -92,6 +107,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   resetAgentResumeSessionReservations()
   storeState.agentStatusByPaneKey = {}
+  storeState.terminalLayoutsByTabId = {}
   fetchCandidates.mockResolvedValue({ kind: 'complete', candidates: [makeCandidate()] })
 })
 
@@ -238,26 +254,63 @@ describe('revalidating a claim at chooser selection', () => {
   // only way a candidate goes live: another pane's cold restore and an Agent Session History
   // launch both reserve nothing here, so the host-owned status store is the evidence.
   it('refuses a candidate that went live after the chooser was populated', async () => {
-    const session = buildSession('tab-1:leaf-revalidate')
+    const session = buildSession(OWN_PANE_KEY)
     const candidate = makeCandidate()
     storeState.agentStatusByPaneKey = {
-      'tab-9:leaf-other': { providerSession: candidate.providerSession, state: 'working' }
+      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'working' }
     }
+    bindLayout('tab-9', SIBLING_LEAF, 'pty-9')
 
-    const handler = getAgentResumePaneHandler('tab-1:leaf-revalidate', session.transport)
+    const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
     expect(handler?.(candidate)).toBe(false)
     expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
   })
 
-  it('still resumes a candidate whose only live row is a finished pane', async () => {
-    const session = buildSession('tab-1:leaf-revalidate-done')
+  // TOO NARROW, fixed: `done` is "task complete but pane LIVE" (agent-status.ts), so a finished
+  // sibling still owns its transcript and resuming it here would run two agents on one.
+  it('refuses a candidate whose only row is a done-but-live sibling pane', async () => {
+    const session = buildSession(OWN_PANE_KEY)
     const candidate = makeCandidate()
     storeState.agentStatusByPaneKey = {
-      'tab-9:leaf-other': { providerSession: candidate.providerSession, state: 'done' }
+      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'done' }
+    }
+    bindLayout('tab-9', SIBLING_LEAF, 'pty-9')
+
+    const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
+    expect(handler?.(candidate)).toBe(false)
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  it('resumes once the pane that held the row is gone from this renderer', async () => {
+    const session = buildSession(OWN_PANE_KEY)
+    const candidate = makeCandidate()
+    storeState.agentStatusByPaneKey = {
+      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'done' }
     }
 
-    const handler = getAgentResumePaneHandler('tab-1:leaf-revalidate-done', session.transport)
+    const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
     expect(handler?.(candidate)).toBe(true)
+  })
+})
+
+describe('the restart this feature exists for', () => {
+  // TOO BROAD, fixed: the hook server republishes the recovering pane's OWN persisted row as
+  // `restoredUnconfirmed` (server-hydration.ts). Counting it as a claim filtered out the sole
+  // candidate, so a restart during working/blocked/waiting left a plain shell.
+  it('recovers a pane whose own nonterminal row came back restoredUnconfirmed', async () => {
+    const candidate = makeCandidate()
+    const session = buildSession(OWN_PANE_KEY)
+    storeState.agentStatusByPaneKey = {
+      [OWN_PANE_KEY]: {
+        providerSession: candidate.providerSession,
+        state: 'working',
+        restoredUnconfirmed: true
+      }
+    }
+    bindLayout('tab-1', OWN_LEAF, 'pty-1')
+
+    await session.attemptAgentResumeRecovery()
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
   })
 })
 
