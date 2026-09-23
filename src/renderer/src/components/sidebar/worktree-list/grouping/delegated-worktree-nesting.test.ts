@@ -6,6 +6,7 @@ import { resolveDelegatedWorktreeNesting } from './delegated-worktree-nesting'
 import { repo, remoteRepo, worktree } from '../../worktree-list-groups-test-fixtures'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
 import type { WorktreeLineage } from '../../../../../../shared/worktree/lineage-types'
+import type { Repo } from '../../../../../../shared/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import type {
   ImportedWorktreesCardCandidate,
@@ -42,6 +43,28 @@ const remoteSibling: Worktree = {
   hostId: REMOTE_HOST,
   instanceId: 'sibling-instance',
   displayName: 'sibling'
+}
+
+const otherRepo: Repo = { ...remoteRepo, id: 'repo-other', displayName: 'other' }
+
+// Why: a second coordinator in a different repo section, with its own delegated child of the
+// same remote repo — the case where two sections each claim that repo.
+const otherCoordinator: Worktree = {
+  ...worktree,
+  id: 'repo-other::/home/alex/orca/other-coordinator',
+  repoId: otherRepo.id,
+  hostId: 'local',
+  instanceId: 'other-coordinator-instance',
+  displayName: 'other-coordinator'
+}
+
+const secondRemoteWorker: Worktree = {
+  ...worktree,
+  id: 'repo-remote::/home/ubuntu/orca/worker-2',
+  repoId: remoteRepo.id,
+  hostId: REMOTE_HOST,
+  instanceId: 'worker-2-instance',
+  displayName: 'worker-2'
 }
 
 const edge: DelegatedWorktreeEdge = {
@@ -130,7 +153,8 @@ function findItem(
 describe('buildRows with delegated edges', () => {
   const repoMapWithRemote = new Map([
     [repo.id, repo],
-    [remoteRepo.id, remoteRepo]
+    [remoteRepo.id, remoteRepo],
+    [otherRepo.id, otherRepo]
   ])
   const lineage: Record<string, WorktreeLineage> = {}
 
@@ -249,5 +273,29 @@ describe('buildRows with delegated edges', () => {
       )
       .map((row) => row.key)
     expect(new Set(noticeKeys).size).toBe(noticeKeys.length)
+  })
+
+  it('leaves one claim when two coordinators in different sections anchor the same repo', () => {
+    const secondEdge: DelegatedWorktreeEdge = {
+      parentWorktreeId: otherCoordinator.id,
+      childHostId: REMOTE_HOST,
+      childWorktreeId: secondRemoteWorker.id,
+      dispatchId: 'ctx_2'
+    }
+    const rows = rowsFor([edge, secondEdge], {
+      extraWorktrees: [otherCoordinator, secondRemoteWorker],
+      importedWorktreesByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
+      ]),
+      newExternalWorktreesInboxByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
+      ]),
+      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+    })
+    // Both coordinators bucket a child of remoteRepo, so both claimed it. Only one may keep
+    // the claim, or the repo-keyed notice rows are emitted from each section.
+    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
   })
 })

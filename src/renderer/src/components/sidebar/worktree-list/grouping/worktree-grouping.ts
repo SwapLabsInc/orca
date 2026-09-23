@@ -87,6 +87,9 @@ export function buildOrderedGroups(args: {
   // section, so the repo gets no section of its own and its notice rows must
   // follow it there rather than open an empty second section for the same repo.
   const anchoredSectionKeyByRepoId = new Map<string, string>()
+  // Every section that took a claim on a repo this way. Two children of one repo can anchor
+  // to coordinators in different sections, and all but one must give the claim back.
+  const claimedSectionKeysByRepoId = new Map<string, Set<string>>()
   for (const w of naturalWorktrees) {
     let key: string
     let label: string
@@ -116,21 +119,29 @@ export function buildOrderedGroups(args: {
     if (anchor !== w) {
       addRepoIdToGroup(group, w.repoId)
       anchoredSectionKeyByRepoId.set(w.repoId, key)
+      const claims = claimedSectionKeysByRepoId.get(w.repoId) ?? new Set<string>()
+      claims.add(key)
+      claimedSectionKeysByRepoId.set(w.repoId, claims)
     }
   }
-  for (const [repoId, sectionKey] of anchoredSectionKeyByRepoId) {
+  for (const [repoId, claimedKeys] of claimedSectionKeysByRepoId) {
     const ownKey = getProjectGroupingForRepo(repoId, repoMap, projectIndex).key
-    if (ownKey === sectionKey) {
-      // The coordinator's section is this repo's own section, so its rows already belong here.
-      anchoredSectionKeyByRepoId.delete(repoId)
-      continue
+    // Exactly one section may carry a repo's notice rows. Their ids are repo-keyed, so a
+    // second emission duplicates the card and collides the key. The repo's own section wins
+    // when it has one; otherwise the last coordinator to anchor a child of it does.
+    const keeper =
+      claimedKeys.has(ownKey) || grouped.has(ownKey)
+        ? ownKey
+        : (anchoredSectionKeyByRepoId.get(repoId) ?? ownKey)
+    for (const key of claimedKeys) {
+      if (key !== keeper) {
+        grouped.get(key)?.repoIds.delete(repoId)
+      }
     }
-    if (grouped.has(ownKey)) {
-      // The repo has a section of its own after all. Drop the claim here as well as the
-      // redirect: the repo-keyed row ids are identical in both sections, so emitting from
-      // each would duplicate the card and collide the keys.
-      grouped.get(sectionKey)?.repoIds.delete(repoId)
+    if (keeper === ownKey) {
       anchoredSectionKeyByRepoId.delete(repoId)
+    } else {
+      anchoredSectionKeyByRepoId.set(repoId, keeper)
     }
   }
   // Why: folder workspaces are not worktrees, so they never appear in the loop
