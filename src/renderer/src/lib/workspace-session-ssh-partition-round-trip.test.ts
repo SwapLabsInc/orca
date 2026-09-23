@@ -502,7 +502,7 @@ describe('ssh host partition write/read round trip', () => {
   async function roundTrip(payload: WorkspaceSessionState): Promise<WorkspaceSessionState> {
     const { buildWorkspaceSessionHostSnapshots } =
       await import('./workspace-session-host-persistence')
-    const snapshots = buildWorkspaceSessionHostSnapshots({}, payload, {
+    const snapshots = buildWorkspaceSessionHostSnapshots(payload, {
       repos: [{ id: REPO_ID, connectionId: TARGET_ID, executionHostId: null }],
       worktreesByRepo: {}
     })
@@ -562,7 +562,7 @@ describe('ssh host partition and the closed-last-terminal tombstone', () => {
   }> {
     const { buildWorkspaceSessionHostSnapshots } =
       await import('./workspace-session-host-persistence')
-    const snapshots = buildWorkspaceSessionHostSnapshots({}, payload, {
+    const snapshots = buildWorkspaceSessionHostSnapshots(payload, {
       repos: [{ id: REPO_ID, connectionId: TARGET_ID, executionHostId: null }],
       worktreesByRepo: {}
     })

@@ -28,10 +28,6 @@ import {
   type HostIdByWorktreeId
 } from './workspace-session-host-split'
 import {
-  clearSnapshotPartitionFields,
-  nonLocalPartitionPatches
-} from './workspace-session-partition-field-clearing'
-import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
 } from './workspace-runtime-host-ownership'
@@ -220,8 +216,7 @@ export function buildHostIdByWorktreeId(state: HostPersistenceState): HostIdByWo
 function splitWorkspaceSessionForWrite(
   payload: WorkspaceSessionState,
   state: HostPersistenceState,
-  mode: HostSessionWriteMode,
-  writer?: object
+  mode: HostSessionWriteMode
 ): HostSessionSlices {
   const routing = buildHostSessionRouting(state)
   // Why the live catalogs: a debounced patch carries only the fields that changed, so a park
@@ -232,16 +227,24 @@ function splitWorkspaceSessionForWrite(
   const slices = splitWorkspaceSessionByHost(payload, routing.hostIdByWorktreeId, {
     worktreeIdByTabId
   })
-  if (writer && mode === 'replace') {
-    clearSnapshotPartitionFields(writer, payload, slices)
-  }
   attachHostSessionShadow(slices, state.contestedHostWorkspaceSessions, routing.claims, mode)
   return slices
 }
 
 /** Patch path of the debounced session writer: split the partial patch by owner
  *  host and patch each partition. Returns the promise for the local write so
- *  App.tsx can keep chaining the SSH remote-workspace upload off it. */
+ *  App.tsx can keep chaining the SSH remote-workspace upload off it.
+ *
+ *  KNOWN LIMITATION, deliberately unfixed: a patch names only the hosts this split routes rows to,
+ *  so once the LAST row of a keyed field leaves a non-local partition, that partition keeps its
+ *  stale copy and the next boot's merge reads it back. Emitting `{ field: {} }` to close that gap
+ *  is what an earlier revision did, and it cannot be made safe: a field-level patch replaces the
+ *  whole record, and this renderer's view of a partition is incomplete by construction — the boot
+ *  merge PARKS rows it declines to adopt, and main's own migrations rewrite the same field. Such a
+ *  clear therefore deletes resume handles nobody here ever saw, which docs/reference/
+ *  ssh-execution-boundary.md forbids: leak is the safe direction, never kill. A stale row costs one
+ *  resurrected entry the pane's own evidence check discards; a wrong clear is unrecoverable.
+ *  Closing it properly needs a key-scoped delete in the persistence API, not a renderer-side guess. */
 export function patchWorkspaceSessionByHost(
   api: SessionApi,
   patch: WorkspaceSessionPatch,
@@ -250,13 +253,9 @@ export function patchWorkspaceSessionByHost(
   const slices = splitWorkspaceSessionForWrite(patch as WorkspaceSessionState, state, 'patch')
   const local = (slices[LOCAL_EXECUTION_HOST_ID] ?? patch) as WorkspaceSessionPatch
   const localWrite = api.patch(local)
-  for (const { hostId, patch: hostPatch, onPersisted } of nonLocalPartitionPatches(
-    api,
-    patch,
-    slices
-  )) {
+  for (const [hostId, slice] of nonLocalHostSessionEntries(slices)) {
     // Why: a failed runtime-partition write must not reject the local chain.
-    void api.patch(hostPatch, hostId).then(onPersisted, (err) => {
+    void api.patch(slice as WorkspaceSessionPatch, hostId).catch((err) => {
       console.warn(`[session] host partition patch failed for ${hostId}:`, err)
     })
   }
@@ -273,7 +272,7 @@ export async function persistWorkspaceSessionByHost(
 ): Promise<void> {
   // Why 'replace': api.set swaps the whole partition, so parked rows must ride along even for
   // fields nothing else routed to this host.
-  const slices = splitWorkspaceSessionForWrite(payload, state, 'replace', api)
+  const slices = splitWorkspaceSessionForWrite(payload, state, 'replace')
   const writes: Promise<void>[] = [api.set(slices[LOCAL_EXECUTION_HOST_ID] ?? payload)]
   for (const [hostId, slice] of nonLocalHostSessionEntries(slices)) {
     writes.push(api.set(slice, hostId))
@@ -282,16 +281,13 @@ export async function persistWorkspaceSessionByHost(
   await api.flush()
 }
 
-/** Build local-first full-session snapshots for the beforeunload / quit paths. `writer` is the
- *  session api the patch path writes through — its clear tracker is what names the partitions this
- *  renderer filled, and a snapshot that omits one leaves its stale rows to merge back. */
+/** Build local-first full-session snapshots for the beforeunload / quit paths. */
 export function buildWorkspaceSessionHostSnapshots(
-  writer: object,
   payload: WorkspaceSessionState,
   state: HostPersistenceState
 ): WorkspaceSessionHostSnapshot[] {
   // Why 'replace': quit snapshots are applied as full partition sets.
-  const slices = splitWorkspaceSessionForWrite(payload, state, 'replace', writer)
+  const slices = splitWorkspaceSessionForWrite(payload, state, 'replace')
   return [
     { state: slices[LOCAL_EXECUTION_HOST_ID] ?? payload },
     ...nonLocalHostSessionEntries(slices).map(([hostId, hostState]) => ({
@@ -307,7 +303,7 @@ export function persistWorkspaceSessionByHostSync(
   payload: WorkspaceSessionState,
   state: HostPersistenceState
 ): void {
-  for (const snapshot of buildWorkspaceSessionHostSnapshots(api, payload, state)) {
+  for (const snapshot of buildWorkspaceSessionHostSnapshots(payload, state)) {
     api.setSync(snapshot.state, snapshot.hostId)
   }
 }

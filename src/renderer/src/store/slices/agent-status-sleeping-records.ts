@@ -20,6 +20,30 @@ export function copyLaunchConfig(config: SleepingAgentLaunchConfig): SleepingAge
   }
 }
 
+/** Omission is not evidence. `interrupted` is refreshed from every payload, so a payload that says
+ *  nothing about it must not clear a prior marker — the row then reads as passive hibernation and
+ *  the resume path clears it instead of resuming. Cleared only on an explicit negative, and
+ *  inherited only from a record that names the same session this entry does (EP-STATE). */
+function resolveInterruptedMarker(
+  entry: AgentStatusEntry,
+  priorRecord: SleepingAgentSessionRecord | undefined
+): boolean {
+  if (entry.interrupted !== undefined) {
+    return entry.interrupted
+  }
+  if (!priorRecord || !entry.providerSession || entry.agentType !== priorRecord.agent) {
+    return false
+  }
+  return (
+    priorRecord.interrupted === true &&
+    agentProviderSessionsEqual(
+      priorRecord.agent,
+      priorRecord.providerSession,
+      entry.providerSession
+    )
+  )
+}
+
 export function sleepingRecordFromEntry(args: {
   state: AppState
   entry: AgentStatusEntry
@@ -28,6 +52,8 @@ export function sleepingRecordFromEntry(args: {
   capturedAt: number
   launchConfig?: SleepingAgentLaunchConfig
   origin?: SleepingAgentSessionRecord['origin']
+  /** The record this build replaces, so an omitted `interrupted` keeps its established marker. */
+  priorRecord?: SleepingAgentSessionRecord
 }): SleepingAgentSessionRecord | null {
   const agent = args.entry.agentType
   if (
@@ -59,7 +85,7 @@ export function sleepingRecordFromEntry(args: {
       ? { lastAssistantMessage: args.entry.lastAssistantMessage }
       : {}),
     ...(args.launchConfig ? { launchConfig: copyLaunchConfig(args.launchConfig) } : {}),
-    ...(args.entry.interrupted ? { interrupted: true } : {}),
+    ...(resolveInterruptedMarker(args.entry, args.priorRecord) ? { interrupted: true } : {}),
     ...(args.origin ? { origin: args.origin } : {})
   }
 }
@@ -101,7 +127,9 @@ export function refreshRetainedSleepingRecord(
   const lastAssistantMessage = entry.state === 'done' ? undefined : entry.lastAssistantMessage
   // No title means unknown, not cleared.
   const terminalTitle = entry.terminalTitle ?? record.terminalTitle
-  const interrupted = entry.interrupted === true
+  // Already established as this record's own session by `shouldRetireSleepingRecord`, so the prior
+  // marker carries over directly. See `resolveInterruptedMarker` for why omission cannot clear it.
+  const interrupted = entry.interrupted ?? record.interrupted === true
   if (
     record.state === entry.state &&
     record.prompt === prompt &&

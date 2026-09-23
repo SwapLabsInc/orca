@@ -269,3 +269,71 @@ describe('sleeping record retirement on live status updates', () => {
     expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-evictable']).toBeUndefined()
   })
 })
+
+describe('an interrupted marker on a retained record', () => {
+  /** Omission is not evidence: `interrupted` is refreshed from every payload, but a payload that
+   *  says nothing about it must not turn an interrupted checkpoint into passive hibernation
+   *  evidence that `resumeSleepingAgentSessionsForWorktree` clears instead of resuming. */
+  it('survives a later update that omits interrupted', () => {
+    const store = createTestStore()
+    seedTab(store)
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'done', prompt: 'ship the fix', agentType: 'claude', interrupted: true },
+        'Claude',
+        { updatedAt: 100, stateStartedAt: 100 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { providerSession: { key: 'session_id', id: 'claude-session-1' } }
+      )
+    expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']).toMatchObject({
+      interrupted: true
+    })
+
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'done', prompt: 'ship the fix', agentType: 'claude' },
+        'Claude',
+        { updatedAt: 200, stateStartedAt: 100 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { providerSession: { key: 'session_id', id: 'claude-session-1' } }
+      )
+
+    expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']).toMatchObject({
+      interrupted: true
+    })
+  })
+
+  it('clears on an explicit negative', () => {
+    const store = createTestStore()
+    seedTab(store)
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'done', prompt: 'ship the fix', agentType: 'claude', interrupted: true },
+        'Claude',
+        { updatedAt: 100, stateStartedAt: 100 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { providerSession: { key: 'session_id', id: 'claude-session-1' } }
+      )
+
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'done', prompt: 'ship the fix', agentType: 'claude', interrupted: false },
+        'Claude',
+        { updatedAt: 200, stateStartedAt: 100 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { providerSession: { key: 'session_id', id: 'claude-session-1' } }
+      )
+
+    expect(
+      store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']?.interrupted
+    ).toBeUndefined()
+  })
+})

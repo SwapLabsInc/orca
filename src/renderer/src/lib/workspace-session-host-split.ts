@@ -176,17 +176,6 @@ function buildSliceTemplates(state: WorkspaceSessionState): SliceTemplates {
   return { local: template, nonLocal: hostPartitionSliceTemplate(template) }
 }
 
-/** Give `hostId` an empty `field`, seeding the slice from the same globals template the split uses.
- *  For a host the split routed no rows to whose partition still holds rows under that field. */
-export function seedEmptyPartitionField(
-  slices: HostSessionSlices,
-  hostId: ExecutionHostId,
-  state: WorkspaceSessionState,
-  field: keyof WorkspaceSessionState
-): void {
-  Object.assign(ensureSlice(slices, hostId, buildSliceTemplates(state)), { [field]: {} })
-}
-
 /** Partition a unified session into per-host slices keyed by ExecutionHostId.
  *  Global fields are copied to the 'local' slice; worktree-scoped data is routed
  *  to its owner host. Entries whose owning worktree is unknown to the payload and
