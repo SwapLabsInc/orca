@@ -188,6 +188,10 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
             paneHasReceivedInput: Number.isFinite(session.lastTerminalInputAt)
           }
         },
+        // The pane's own row, from the host-owned status store — never the tab's.
+        readPaneProviderSessionId: () =>
+          useAppStore.getState().agentStatusByPaneKey[session.cacheKey]?.providerSession?.id ??
+          null,
         readClaimedSessionIds: () =>
           claimedProviderSessionIds(useAppStore.getState(), session.cacheKey),
         fetchCandidates: (args) =>

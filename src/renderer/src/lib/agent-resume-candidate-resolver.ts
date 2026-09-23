@@ -14,6 +14,9 @@ import { parseWslUncPath } from '../../../shared/wsl-paths'
 export type ResolveAgentResumeCandidateArgs = {
   candidates: readonly AgentResumeCandidate[]
   paneAgent: ResumableTuiAgent | null
+  /** The provider session THIS pane's own status row names, when the host restored one. Its
+   *  transcript is the pane's by identity, so it is not a contender to be judged on substance. */
+  paneProviderSessionId: string | null
   worktreePath: string
   claimedSessionIds: ReadonlySet<string>
 }
@@ -40,6 +43,17 @@ export function resolveAgentResumeCandidate(
       (paneAgent === null || candidate.agent === paneAgent) &&
       scopeKeys.has(normalizeRuntimePathForComparison(candidate.cwd))
   )
+
+  // The pane's own transcript wins outright. Judging it on substance lets a thin-but-correct
+  // conversation lose to a substantial unrelated one, which resumes the wrong transcript.
+  if (args.paneProviderSessionId !== null) {
+    const owned = scoped.find(
+      (candidate) => candidate.providerSession.id === args.paneProviderSessionId
+    )
+    if (owned) {
+      return { kind: 'resume', candidate: owned, reason: 'pane-record' }
+    }
+  }
 
   const survivors: AgentResumeCandidate[] = []
   let tainted = false

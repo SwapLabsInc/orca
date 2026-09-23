@@ -21,6 +21,8 @@ export type RecoverAgentSessionArgs = {
   worktreePath: string
   executionHostId: ExecutionHostId | null
   paneAgent: ResumableTuiAgent | null
+  /** The provider session the authoritative status store names for THIS pane, if any. */
+  readPaneProviderSessionId?: () => string | null
   readPaneState: () => AgentResumePaneGateState
   /** Read AFTER the host scan, never before: the scan takes ~2s, and a sibling pane can claim
    *  or reserve a session inside that window. */
@@ -69,6 +71,7 @@ export async function recoverAgentSessionForPane(
   const resolution = resolveAgentResumeCandidate({
     candidates: scan.candidates,
     paneAgent: args.paneAgent,
+    paneProviderSessionId: args.readPaneProviderSessionId?.() ?? null,
     worktreePath: args.worktreePath,
     claimedSessionIds: args.readClaimedSessionIds()
   })
