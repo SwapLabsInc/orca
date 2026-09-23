@@ -120,8 +120,16 @@ export function buildOrderedGroups(args: {
   }
   for (const [repoId, sectionKey] of anchoredSectionKeyByRepoId) {
     const ownKey = getProjectGroupingForRepo(repoId, repoMap, projectIndex).key
-    if (ownKey === sectionKey || grouped.has(ownKey)) {
-      // The repo has a section of its own after all; leave its notice rows there.
+    if (ownKey === sectionKey) {
+      // The coordinator's section is this repo's own section, so its rows already belong here.
+      anchoredSectionKeyByRepoId.delete(repoId)
+      continue
+    }
+    if (grouped.has(ownKey)) {
+      // The repo has a section of its own after all. Drop the claim here as well as the
+      // redirect: the repo-keyed row ids are identical in both sections, so emitting from
+      // each would duplicate the card and collide the keys.
+      grouped.get(sectionKey)?.repoIds.delete(repoId)
       anchoredSectionKeyByRepoId.delete(repoId)
     }
   }

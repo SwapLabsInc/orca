@@ -33,6 +33,17 @@ const remoteWorker: Worktree = {
   displayName: 'worker'
 }
 
+// Why: a second, undelegated worktree in the child's repo is what gives that repo a
+// section of its own, which is the case where the fallback rows could be emitted twice.
+const remoteSibling: Worktree = {
+  ...worktree,
+  id: 'repo-remote::/home/ubuntu/orca/sibling',
+  repoId: remoteRepo.id,
+  hostId: REMOTE_HOST,
+  instanceId: 'sibling-instance',
+  displayName: 'sibling'
+}
+
 const edge: DelegatedWorktreeEdge = {
   parentWorktreeId: coordinator.id,
   childHostId: REMOTE_HOST,
@@ -130,11 +141,13 @@ describe('buildRows with delegated edges', () => {
       importedWorktreesByRepo?: ReadonlyMap<string, ImportedWorktreesCardCandidate>
       newExternalWorktreesInboxByRepo?: ReadonlyMap<string, NewExternalWorktreesInboxCandidate>
       pendingCreations?: readonly PendingCreationRef[]
+      extraWorktrees?: readonly Worktree[]
     } = {}
   ) {
+    const worktrees = [coordinator, remoteWorker, ...(overrides.extraWorktrees ?? [])]
     return buildRows(
       'repo',
-      [coordinator, remoteWorker],
+      worktrees,
       repoMapWithRemote,
       null,
       new Set(),
@@ -142,10 +155,7 @@ describe('buildRows with delegated edges', () => {
       undefined,
       'manual',
       lineage,
-      new Map([
-        [coordinator.id, coordinator],
-        [remoteWorker.id, remoteWorker]
-      ]),
+      new Map(worktrees.map((w) => [w.id, w])),
       true,
       undefined,
       [],
@@ -207,5 +217,37 @@ describe('buildRows with delegated edges', () => {
     expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
     expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
     expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
+  })
+
+  it("emits the child repo's fallback rows once when that repo has its own section", () => {
+    const rows = rowsFor([edge], {
+      extraWorktrees: [remoteSibling],
+      importedWorktreesByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
+      ]),
+      newExternalWorktreesInboxByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
+      ]),
+      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+    })
+    const coordinatorSection = findItem(rows, coordinator.id)?.sectionKey
+    const siblingSection = findItem(rows, remoteSibling.id)?.sectionKey
+    // The child's repo has a section of its own here, so the coordinator section must not
+    // also claim it — the repo-keyed row ids are identical and would collide.
+    expect(siblingSection).not.toBe(coordinatorSection)
+    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
+    // The repo-keyed notice rows carry the same id in whichever section emits them, so a
+    // second emission is a duplicate React key, not just a redundant card.
+    const noticeKeys = rows
+      .filter(
+        (row) =>
+          row.type === 'imported-worktrees-card' ||
+          row.type === 'new-external-worktrees-inbox' ||
+          row.type === 'pending-creation'
+      )
+      .map((row) => row.key)
+    expect(new Set(noticeKeys).size).toBe(noticeKeys.length)
   })
 })
