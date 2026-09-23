@@ -1,10 +1,11 @@
-import type { AiVaultScanIssue } from '../../shared/ai-vault-types'
+import { AI_VAULT_SCAN_ISSUE_LIMIT, type AiVaultScanIssue } from '../../shared/ai-vault-types'
 
 // Why: a stalled WSL distro or an unreachable remote host fails one probe per
 // discovered path, so an uncapped list ships one row per transcript file in the
 // tree over IPC. Local and remote scans share the bound — the failure shape is
-// the same and both feed the same panel.
-const SCAN_ISSUE_LIMIT = 500
+// the same and both feed the same panel. Shared, because a list AT the bound is
+// how a reader tells that issues were dropped.
+const SCAN_ISSUE_LIMIT = AI_VAULT_SCAN_ISSUE_LIMIT
 
 /** Append a scan issue, collapsing everything past the cap into one notice. */
 export function recordSessionScanIssue(issues: AiVaultScanIssue[], issue: AiVaultScanIssue): void {

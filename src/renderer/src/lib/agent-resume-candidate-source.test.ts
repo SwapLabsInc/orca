@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AiVaultSession } from '../../../shared/ai-vault-types'
+import {
+  AI_VAULT_SCAN_ISSUE_LIMIT,
+  type AiVaultScanIssue,
+  type AiVaultSession
+} from '../../../shared/ai-vault-types'
 import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault-session-depth'
+
+/** A host that honoured the uncapped request: the ordinary healthy answer. */
+const UNCAPPED = { appliedSessionDepth: 'unlimited' } as const
 import {
   fetchAgentResumeCandidates,
   toAgentResumeCandidate,
@@ -123,7 +130,7 @@ describe('fetchAgentResumeCandidates', () => {
       executionHostId: 'ssh:ssh-1',
       listSessions: async (request) => {
         calls.push(request)
-        return { sessions: [session()], issues: [], scannedAt: '' }
+        return { sessions: [session()], issues: [], scannedAt: '', ...UNCAPPED }
       }
     })
     expect(calls).toEqual([
@@ -172,18 +179,42 @@ describe('fetchAgentResumeCandidates', () => {
     expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-issues' })
   })
 
-  // `notice` rows are scanner commentary the shared type documents as never a failure.
-  it('treats a notice-only issue list as a complete scan', async () => {
+  // A lone notice is per-transcript commentary (a transcript with skipped records), and the scan
+  // that produced it still covered its scope.
+  it('treats a short notice-only issue list as a complete scan', async () => {
     const scan = await fetchAgentResumeCandidates({
       worktreePath: '/home/ubuntu/Desktop/qbit',
       executionHostId: 'ssh:ssh-1',
       listSessions: async () => ({
         sessions: [session()],
-        issues: [{ agent: 'claude', kind: 'notice', path: '', message: 'issue list truncated' }],
-        scannedAt: ''
+        issues: [{ agent: 'claude', kind: 'notice', path: '', message: 'records were skipped' }],
+        scannedAt: '',
+        ...UNCAPPED
       })
     })
     expect(scan.kind).toBe('complete')
+  })
+
+  // The opposite reading of the same kind: a list AT the cap is one `recordSessionScanIssue`
+  // stopped appending to, so the rows that did not fit are gone. A stalled WSL distro records one
+  // refusal per discovered path, and only the overflow notice survives filtering — reading that as
+  // a clean scan lets the surviving subset be auto-resumed as a sole candidate.
+  it('refuses a scan whose issue list hit the cap, even when every surviving row is a notice', async () => {
+    const issues: AiVaultScanIssue[] = Array.from(
+      { length: AI_VAULT_SCAN_ISSUE_LIMIT },
+      (_, index) => ({
+        agent: 'claude',
+        kind: 'notice',
+        path: `/w/${index}`,
+        message: 'Additional scan issues were omitted.'
+      })
+    )
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/home/ubuntu/Desktop/qbit',
+      executionHostId: 'ssh:ssh-1',
+      listSessions: async () => ({ sessions: [session()], issues, scannedAt: '', ...UNCAPPED })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-issues' })
   })
 
   it('does not query at all without a workspace path', async () => {
@@ -193,7 +224,7 @@ describe('fetchAgentResumeCandidates', () => {
       executionHostId: null,
       listSessions: async () => {
         queried = true
-        return { sessions: [], issues: [], scannedAt: '' }
+        return { sessions: [], issues: [], scannedAt: '', ...UNCAPPED }
       }
     })
     expect(queried).toBe(false)
@@ -216,25 +247,53 @@ describe('scan completeness', () => {
     })
   })
 
-  it('refuses an answer that reached the default cap', async () => {
-    // A host too old to honour `unlimited` caps silently; the subset would make an older matching
-    // session vanish while a newer one survives, and the resolver would auto-resume the survivor.
+  it('accepts a 1000-session answer the host honoured uncapped', async () => {
+    // This PR's own motivating machine. The old row-count heuristic called it truncated forever,
+    // disabling auto-resume on exactly the hosts that accumulate the most transcripts.
     const sessions = Array.from({ length: DEFAULT_AI_VAULT_SCAN_LIMIT }, (_, index) =>
       session({ id: `row-${index}`, sessionId: `c4c95ae3-fdd1-4ab6-be99-478dd26c3a${index}` })
     )
     const scan = await fetchAgentResumeCandidates({
       worktreePath: '/srv/wt',
       executionHostId: null,
-      listSessions: vi.fn().mockResolvedValue({ sessions, issues: [] })
+      listSessions: vi.fn().mockResolvedValue({ sessions, issues: [], ...UNCAPPED })
     })
-    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-truncated' })
+    expect(scan.kind).toBe('complete')
   })
 
-  it('accepts an answer below the cap', async () => {
+  it('refuses an answer from a host that never says what depth it applied', async () => {
+    // A host older than the signal. Its silence is not proof it honoured `unlimited`, and a host
+    // capping BELOW the default was invisible to the old row-count check entirely.
     const scan = await fetchAgentResumeCandidates({
       worktreePath: '/srv/wt',
       executionHostId: null,
       listSessions: vi.fn().mockResolvedValue({ sessions: [session()], issues: [] })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-truncated' })
+  })
+
+  it('refuses an answer that filled the depth its host applied, however small', async () => {
+    const sessions = [
+      session(),
+      session({ id: 'row-2', sessionId: 'c4c95ae3-fdd1-4ab6-be99-478dd26c3a68' })
+    ]
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/srv/wt',
+      executionHostId: null,
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions, issues: [], appliedSessionDepth: sessions.length })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-truncated' })
+  })
+
+  it('accepts an answer that did not fill the depth its host applied', async () => {
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/srv/wt',
+      executionHostId: null,
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [session()], issues: [], appliedSessionDepth: 50 })
     })
     expect(scan.kind).toBe('complete')
   })

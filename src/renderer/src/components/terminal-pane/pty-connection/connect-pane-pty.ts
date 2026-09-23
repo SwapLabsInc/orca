@@ -169,7 +169,6 @@ export function connectPanePty(
     return created
   })()
   installSleepingRecordAccess(session)
-  installAgentResumeRecovery(session)
   installShellCommandInference(session)
   installInterruptInputIntent(session)
   installTerminalKeydownFit(session)
@@ -178,6 +177,9 @@ export function connectPanePty(
   installAgentTaskCompleteNotify(session)
   installDirectSshRetryStatus(session)
   installPtyInputRecovery(session)
+  // Must follow installPtyInputRecovery: it registers the chooser's pane handler under
+  // `session.transport`, which that installer is what assigns.
+  installAgentResumeRecovery(session)
   // Async reattach/exit callbacks can outlive the PaneManager that created
   // them. Keep their layout writes keyed by the durable leaf identity and
   // admit them only while this transport still owns the pane slot.

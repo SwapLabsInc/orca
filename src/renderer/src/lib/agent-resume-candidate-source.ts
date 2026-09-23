@@ -1,10 +1,10 @@
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
-import type {
-  AiVaultListArgs,
-  AiVaultListResult,
-  AiVaultSession
+import {
+  AI_VAULT_SCAN_ISSUE_LIMIT,
+  type AiVaultListArgs,
+  type AiVaultListResult,
+  type AiVaultSession
 } from '../../../shared/ai-vault-types'
-import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault-session-depth'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
   extractAgentProviderSession,
@@ -114,25 +114,52 @@ export type AgentResumeCandidateScan =
     }
 
 /** True only for an answer that covered the scope. `cancelled` is an empty body by construction,
- *  and any non-notice issue means some path or host the scan needed went unread — `notice` rows
- *  are scanner commentary the shared type documents as never a failure. */
+ *  and any non-notice issue means some path or host the scan needed went unread. */
 function scanIncompleteReason(
-  result: Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>
+  result: Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled' | 'appliedSessionDepth'>
 ): 'cancelled' | 'scan-issues' | 'scan-truncated' | null {
   if (result.cancelled === true) {
     return 'cancelled'
   }
-  const failures = (result.issues ?? []).filter((issue) => issue.kind !== 'notice')
-  if (failures.length > 0) {
+  const issues = result.issues ?? []
+  // A `notice` is not a failure, but a list AT the cap is one the scanner stopped appending to, so
+  // the rows that did not fit were DROPPED (src/main/ai-vault/session-scan-issues.ts). A stalled
+  // WSL distro or unreachable remote root records one refusal per discovered path, and filtering
+  // notices out of that list answers about the handful that survived, not the scan. The list's own
+  // completeness is what fails here, so the answer is unverifiable rather than empty.
+  if (issues.length >= AI_VAULT_SCAN_ISSUE_LIMIT) {
     return 'scan-issues'
   }
-  // The uncapped request above is the fix; this is the check that it was honoured. A host too old
-  // for `unlimited` slices the recency-sorted list at the default cap, and only Claude files get
-  // the in-scope bypass — so for the other 17 agents an older matching session silently vanishes
-  // while a newer one survives, and the resolver reads that subset as the whole. An answer sitting
-  // exactly at the cap is indistinguishable from a truncated one, so it is `unverifiable`: a
-  // subset must never be read as the whole (docs/reference/ssh-execution-boundary.md).
-  return (result.sessions ?? []).length >= DEFAULT_AI_VAULT_SCAN_LIMIT ? 'scan-truncated' : null
+  if (issues.some((issue) => issue.kind !== 'notice')) {
+    return 'scan-issues'
+  }
+  return truncatedScanReason(result)
+}
+
+/**
+ * Whether the answer may be a slice, read from the depth the host says it applied.
+ *
+ * Counting rows cannot answer this. The request asks for `unlimited`, so a host that honours it
+ * and holds 1000+ sessions returns the same shape as one that silently capped at 1000 — the old
+ * check called the first truncated forever, disabling auto-resume on exactly the machines that
+ * accumulate the most transcripts, and never saw a host capping BELOW the default at all.
+ *
+ * A host older than `appliedSessionDepth` sends nothing, and that silence is not proof the request
+ * was honoured. It fails safe: refusing costs a bare shell, which is the pre-feature behaviour,
+ * while reading a slice as the whole lets the resolver auto-resume a candidate that is only sole
+ * because the rest were cut — forking a transcript unrecoverably.
+ */
+function truncatedScanReason(
+  result: Pick<AiVaultListResult, 'sessions' | 'appliedSessionDepth'>
+): 'scan-truncated' | null {
+  const depth = result.appliedSessionDepth
+  if (depth === undefined) {
+    return 'scan-truncated'
+  }
+  if (depth === 'unlimited') {
+    return null
+  }
+  return (result.sessions ?? []).length >= depth ? 'scan-truncated' : null
 }
 
 /**
@@ -150,7 +177,7 @@ export async function fetchAgentResumeCandidates(args: {
     request: Pick<AiVaultListArgs, 'scopePaths' | 'unlimited'> & {
       executionHostScope?: ExecutionHostId
     }
-  ) => Promise<Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>>
+  ) => Promise<Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled' | 'appliedSessionDepth'>>
 }): Promise<AgentResumeCandidateScan> {
   if (args.worktreePath.length === 0) {
     return { kind: 'complete', candidates: [] }

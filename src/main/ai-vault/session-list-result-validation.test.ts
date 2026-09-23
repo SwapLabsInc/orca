@@ -19,6 +19,43 @@ describe('parseAiVaultListResult', () => {
     )
   })
 
+  // EP-COMPAT: hosts and clients update independently, so both wire shapes have to survive this
+  // parser — it rebuilds the result field by field and would otherwise drop what it does not name.
+  it('carries the depth a newer host says it applied', () => {
+    const parsed = parseAiVaultListResult({
+      sessions: [validSession()],
+      issues: [],
+      scannedAt: '2026-07-27T00:00:00.000Z',
+      appliedSessionDepth: 'unlimited'
+    })
+
+    expect(parsed.appliedSessionDepth).toBe('unlimited')
+  })
+
+  it('leaves the applied depth absent for a host that predates the field', () => {
+    const parsed = parseAiVaultListResult({
+      sessions: [validSession()],
+      issues: [],
+      scannedAt: '2026-07-27T00:00:00.000Z'
+    })
+
+    expect(parsed.appliedSessionDepth).toBeUndefined()
+  })
+
+  // A value this build cannot read is no more provable than silence, so it degrades to absent
+  // rather than to a number a reader would trust.
+  it('drops a malformed applied depth instead of failing the whole result', () => {
+    const parsed = parseAiVaultListResult({
+      sessions: [validSession()],
+      issues: [],
+      scannedAt: '2026-07-27T00:00:00.000Z',
+      appliedSessionDepth: 'most-of-them'
+    })
+
+    expect(parsed.sessions).toHaveLength(1)
+    expect(parsed.appliedSessionDepth).toBeUndefined()
+  })
+
   it('keeps known-agent sessions while silently dropping unknown-agent rows', () => {
     const parsed = parseAiVaultListResult({
       sessions: [validSession(), { ...validSession('session-new'), agent: 'future-agent' }],
