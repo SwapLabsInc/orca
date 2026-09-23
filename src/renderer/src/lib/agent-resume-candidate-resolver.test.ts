@@ -284,6 +284,18 @@ describe('resolveAgentResumeCandidate', () => {
     resolve({ candidates })
     expect(candidates.map((c) => c.providerSession.id)).toEqual(['old', 'new'])
   })
+  it("resumes the pane's own transcript started in a subdirectory of the workspace", () => {
+    // Agents are routinely started from a child directory. The status row names the session by
+    // identity, so exact-cwd scoping must not drop it and hand the pane a rival transcript.
+    const mine = candidate('mine', { cwd: `${WORKTREE}/packages/app`, messageCount: 3 })
+    const rival = candidate('rival', { messageCount: 500 })
+    expect(resolve({ candidates: [rival, mine], paneProviderSessionId: 'mine' })).toMatchObject({
+      kind: 'resume',
+      candidate: mine,
+      reason: 'pane-record'
+    })
+  })
+
   it("resumes the pane's own transcript even when a rival is more substantial", () => {
     // A restored status row names this pane's session by identity. Judging it on substance lets
     // a thin-but-correct conversation lose to an unrelated substantial one, which forks it.

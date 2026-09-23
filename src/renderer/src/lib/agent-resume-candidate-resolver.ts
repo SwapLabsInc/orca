@@ -37,23 +37,28 @@ export function resolveAgentResumeCandidate(
     idCounts.set(id, (idCounts.get(id) ?? 0) + 1)
   }
 
+  // The pane's own transcript wins outright, and before scope: the host's pane-keyed status row
+  // names it by identity, so it is this pane's session wherever it was started — an agent run
+  // from a subdirectory of the workspace has a cwd the exact-scope filter below would drop.
+  // Judging it on substance would also let a thin-but-correct conversation lose to a substantial
+  // unrelated one. Either way the outcome is the wrong transcript, resumed automatically.
+  if (args.paneProviderSessionId !== null) {
+    const owned = identified.find(
+      (candidate) =>
+        candidate.providerSession.id === args.paneProviderSessionId &&
+        (paneAgent === null || candidate.agent === paneAgent)
+    )
+    if (owned) {
+      return { kind: 'resume', candidate: owned, reason: 'pane-record' }
+    }
+  }
+
   const scopeKeys = agentResumeScopeKeys(worktreePath)
   const scoped = identified.filter(
     (candidate) =>
       (paneAgent === null || candidate.agent === paneAgent) &&
       scopeKeys.has(normalizeRuntimePathForComparison(candidate.cwd))
   )
-
-  // The pane's own transcript wins outright. Judging it on substance lets a thin-but-correct
-  // conversation lose to a substantial unrelated one, which resumes the wrong transcript.
-  if (args.paneProviderSessionId !== null) {
-    const owned = scoped.find(
-      (candidate) => candidate.providerSession.id === args.paneProviderSessionId
-    )
-    if (owned) {
-      return { kind: 'resume', candidate: owned, reason: 'pane-record' }
-    }
-  }
 
   const survivors: AgentResumeCandidate[] = []
   let tainted = false
