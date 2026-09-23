@@ -4729,6 +4729,7 @@
           "76865d827f": "Mover al grupo",
           "503ec0f8e6": "Nuevo grupo del proyecto",
           "3350101edb": "Copiar ruta",
+          "copyWorktreeName": "Copiar nombre del worktree",
           "f4475537d8": "Eliminar",
           "f5ac91531d": "Quitar proyecto de Orca",
           "b42391d8bf": "Eliminando…",
@@ -12992,8 +12993,6 @@
           "10ed04a685": "Las celdas del notebook ejecutan Python localmente en esta máquina desde la carpeta del notebook. Ejecuta solo celdas de archivos en los que confíes.",
           "9e06ae5d36": "¿Ejecutar código del notebook?",
           "d6f37a640b": "Notebook vacío",
-          "8c3b21369a": "nbformat",
-          "329764e9fc": "BETA",
           "15ec40a735": "Guardar notebook",
           "07e7d96612": "celdas",
           "c1601b23b2": "No se puede renderizar el cuaderno",
@@ -13007,9 +13006,7 @@
           "fd8ac707bc": "Mover celda hacia arriba",
           "3e4cbf15ea": "Raw",
           "1833dbbc43": "Markdown",
-          "7005960d73": "Código",
-          "59b6cd874b": "código",
-          "ba149053d5": "markdown"
+          "7005960d73": "Código"
         },
         "MarkdownPreview": {
           "e4683f70c4": "Cancelar",
