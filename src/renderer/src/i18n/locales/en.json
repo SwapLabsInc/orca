@@ -5287,8 +5287,10 @@
           "removeDescriptionSsh": "This only removes {{name}} from Orca. Its files stay on {{host}} — re-add that SSH host to recover it.",
           "removeDescriptionLocal": "This only removes {{name}} from Orca. It is still on your disk.",
           "removeDescriptionVmRecipe": "This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.",
-          "removeDescriptionOwnerUnverifiable": "Orca could not reach {{host}}, so whether {{name}} was removed there is unknown. Removing it now only clears this computer’s records — if it is still registered on {{host}}, it returns when that host reconnects.",
-          "removeFromOrcaOnly": "Remove from Orca"
+          "removeDescriptionOwnerUnverifiable": "Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. Removing it now clears this computer’s records only and sends nothing to {{host}}; if the project is still registered there, it comes back when that host reconnects.",
+          "removeFromOrcaOnly": "Remove from Orca",
+          "removeDescriptionOwnerUnverifiableWeb": "Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. This client keeps no records of its own to clear, so reconnect {{host}} and try again.",
+          "unnamedOwnerHost": "that host"
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "Reveal active workspace"

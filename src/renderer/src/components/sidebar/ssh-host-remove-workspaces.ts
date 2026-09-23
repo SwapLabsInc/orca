@@ -49,12 +49,16 @@ export async function clearSshHostWorkspaces(
   // Why: removeProject purges renderer state and (in main) is host-scoped. Pass
   // the explicit SSH host id so a repo id shared with the local host resolves to
   // this host's row instead of falling back to the focused host — otherwise the
-  // wrong (local) project could be removed and the SSH ghost left behind. For an
-  // offline/ghost host this hits the local backend path (no live runtime target),
-  // clearing Orca's records without a successful remote call.
+  // wrong (local) project could be removed and the SSH ghost left behind.
+  // Why: forward the mode too. Without it a repo whose owner settings resolve a runtime target
+  // would dispatch repo.rm (and, for a runtime-owned SSH target, destroy its ephemeral VM) during
+  // an operation defined as touching nothing outside this client.
   for (const repoId of resolution.hostRepoIds) {
     try {
-      const outcome = await store.removeProject(repoId, { hostId })
+      const outcome = await store.removeProject(
+        repoId,
+        forgetLocalOnly ? { hostId, mode: 'forget-local' as const } : { hostId }
+      )
       if (outcome.status !== 'removed') {
         failedIds.push(repoId)
       }

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
@@ -144,7 +144,10 @@ describe('RemoveFolderDialog', () => {
     // did not happen.
     expect(screen.getByText(/Orca could not reach alexdevbox2/)).toBeInTheDocument()
     expect(screen.getByText(/was removed there is unknown/)).toBeInTheDocument()
-    expect(screen.getByText(/if it is still registered on alexdevbox2/)).toBeInTheDocument()
+    // A timeout proves only that no reply arrived, so the copy must not present the host's
+    // catalog as provably untouched.
+    expect(screen.getByText(/may have been carried out and the reply lost/)).toBeInTheDocument()
+    expect(screen.getByText(/if the project is still registered there/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove from Orca' }))
 
@@ -154,6 +157,105 @@ describe('RemoveFolderDialog', () => {
       mode: 'forget-local'
     })
     expect(mocks.state.closeModal).toHaveBeenCalledTimes(1)
+  })
+
+  // The owner-unverifiable sentence interpolated a label that only a `runtime:` hostId produced,
+  // so every other opener rendered "Orca could not reach , so whether …".
+  it('names an ssh owner that never answered', async () => {
+    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+    mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
+    render(<RemoveFolderDialog />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
+    expect(screen.queryByText(/could not reach ,/)).not.toBeInTheDocument()
+  })
+
+  it('names the owner when the modal was opened without a hostId', async () => {
+    delete mocks.state.modalData.hostId
+    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+    mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
+    render(<RemoveFolderDialog />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
+  })
+
+  // The unreachable runtime is exactly the case whose environment record may be gone, and the
+  // label resolver answers the raw routing id when it is.
+  it('falls back to a generic host name instead of a raw runtime id', async () => {
+    mocks.state.modalData.hostId = 'runtime:env-a1b2'
+    mocks.state.repos = [repo(null, 'runtime:env-a1b2')]
+    mocks.state.runtimeEnvironments = []
+    mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
+    const view = render(<RemoveFolderDialog />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(screen.getByText(/Orca could not reach that host/)).toBeInTheDocument()
+    expect(view.container.textContent).not.toContain('env-a1b2')
+  })
+
+  // A paired web client's records are the runtime's own catalog, so repos.removeForHost throws
+  // there and the forget could only ever fail. Explain, do not offer.
+  it('withholds the client-only forget in a paired web client', async () => {
+    vi.stubGlobal('__ORCA_WEB_CLIENT__', true)
+    try {
+      mocks.state.modalData.hostId = 'runtime:env-1'
+      mocks.state.repos = [repo(null, 'runtime:env-1')]
+      mocks.state.runtimeEnvironments = [{ id: 'env-1', name: 'alexdevbox2' }]
+      mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
+      render(<RemoveFolderDialog />)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+      expect(screen.queryByRole('button', { name: 'Remove from Orca' })).not.toBeInTheDocument()
+      expect(screen.getByText(/keeps no records of its own to clear/)).toBeInTheDocument()
+      expect(mocks.state.removeProject).toHaveBeenCalledTimes(1)
+      expect(mocks.state.closeModal).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // An unreachable owner can hold the call for the full 15s timeout, but a local removal returns
+  // instantly — bind the disabled state now and the visible one on a timer (docs/STYLEGUIDE.md).
+  it('delays the pending spinner so a fast removal does not flicker', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+      let finishRemoval: ((outcome: { status: string }) => void) | undefined
+      mocks.state.removeProject.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRemoval = resolve
+        })
+      )
+      const view = render(<RemoveFolderDialog />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+      expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+      expect(view.container.querySelector('.animate-spin')).toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(199)
+      })
+      expect(view.container.querySelector('.animate-spin')).toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(view.container.querySelector('.animate-spin')).not.toBeNull()
+
+      await act(async () => {
+        finishRemoval?.({ status: 'removed' })
+      })
+      expect(view.container.querySelector('.animate-spin')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Cancel stays live during the ~15s host call. closeModal is global, so a late answer from a

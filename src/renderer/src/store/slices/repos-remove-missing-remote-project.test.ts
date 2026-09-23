@@ -151,6 +151,21 @@ describe('removeProject when the owning host already dropped the project', () =>
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  // The client refuses to dispatch to an environment the user disconnected, so the host answered
+  // nothing. Classified as a refusal this reported `failed` and the dialog offered no way out.
+  it('reports owner-unverifiable when the client never dispatched to a disconnected host', async () => {
+    answerRepoRmWith('runtime_manually_disconnected')
+    const store = seedRemoteProjects([liveRemoteRepo, staleRemoteRepo])
+
+    const outcome = await store
+      .getState()
+      .removeProject('project-b', { hostId: 'runtime:env-1', errorFeedback: 'toast' })
+
+    expect(outcome).toEqual({ status: 'owner-unverifiable' })
+    expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a', 'project-b'])
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
   it('forget-local clears the row without ever calling the unreachable host', async () => {
     answerRepoRmWith('runtime_unavailable')
     const store = seedRemoteProjects([liveRemoteRepo, staleRemoteRepo])

@@ -99,7 +99,8 @@ export function createRepoRemovalActions(
         const dispatchesToOwningRuntime = target.kind !== 'local' && !forgetLocalOnly
         try {
           // A forget always addresses one host's row, so it takes the host-scoped local call even
-          // when the id is unique — the catalog it belongs to is deliberately left alone.
+          // when the id is unique — this client sends that host nothing. What its catalog holds is
+          // whatever it held before, which after a lost answer is not something we know.
           await (dispatchesToOwningRuntime
             ? callRuntimeRpc(target, 'repo.rm', { repo: projectId }, { timeoutMs: 15_000 })
             : idExistsOnOtherHost || forgetLocalOnly
