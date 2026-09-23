@@ -14,6 +14,7 @@ import type {
 } from '../../../../shared/worktree/create-types'
 import type { WorktreeStartupLaunch } from '../../../../shared/worktree/launch-types'
 import type { WorkspaceLineage, WorktreeLineage } from '../../../../shared/worktree/lineage-types'
+import type { DelegatedWorktreeEdge } from '../../../../shared/worktree/delegated-worktree-edge'
 import type { WorktreeMeta } from '../../../../shared/worktree/meta-types'
 import type {
   DetectedWorktree,
@@ -98,6 +99,9 @@ export type WorktreeSlice = {
   detectedWorktreesByRepo: Record<string, DetectedWorktreeListResult>
   worktreeLineageById: Readonly<Record<string, WorktreeLineage>>
   workspaceLineageByChildKey: Readonly<Record<WorkspaceKey, WorkspaceLineage>>
+  /** Cross-host worker placements published by this runtime's own graph sync. */
+  delegatedWorktreeEdges: readonly DelegatedWorktreeEdge[]
+  setDelegatedWorktreeEdges: (edges: readonly DelegatedWorktreeEdge[]) => void
   activeWorktreeId: string | null
   activeWorkspaceKey: WorkspaceKey | null
   activeWorkspaceExecutionHostId: ExecutionHostId | null
