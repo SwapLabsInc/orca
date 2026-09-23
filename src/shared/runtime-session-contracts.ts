@@ -167,8 +167,10 @@ export type RuntimeNativeChatLaunchDraftResolution = {
 
 export type RuntimeSyncWindowGraphResult = RuntimeStatus & {
   agentOrchestrationByPaneKey?: Record<string, AgentStatusOrchestrationContext>
-  /** Cross-host worker placements this runtime coordinated; absent means none, not unsupported. */
+  /** Cross-host worker placements this runtime coordinated; `[]` means none. */
   delegatedWorktreeEdges?: DelegatedWorktreeEdge[]
+  /** The orchestration db could not be asked; readers keep their last edges instead of clearing. */
+  delegatedWorktreeEdgesUnavailable?: boolean
   nativeChatLaunchDraftResolutions?: RuntimeNativeChatLaunchDraftResolution[]
   mobileSessionResyncWorktrees?: string[]
 }

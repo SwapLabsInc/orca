@@ -19,6 +19,18 @@ type DelegatedWorktreeEdgeDependencies = {
 }
 
 /**
+ * What this runtime knows about its coordinated placements right now.
+ *
+ * `known: true` with no edges is a real answer — this runtime coordinated
+ * nothing. A db that is not up yet, or predates the placement query, cannot
+ * answer at all, and publishing that as emptiness would wipe live edges from
+ * every reader until the db returns.
+ */
+export type DelegatedWorktreeEdgeProjectionResult =
+  | { known: true; edges: DelegatedWorktreeEdge[] }
+  | { known: false }
+
+/**
  * The coordinator side of a cross-host delegation, for the sidebar.
  *
  * Only this runtime can build it: the worker host knows nothing about the
@@ -28,15 +40,18 @@ type DelegatedWorktreeEdgeDependencies = {
 export class RuntimeDelegatedWorktreeEdgeProjection {
   constructor(private readonly deps: DelegatedWorktreeEdgeDependencies) {}
 
-  build(): DelegatedWorktreeEdge[] | undefined {
+  build(): DelegatedWorktreeEdgeProjectionResult {
     const db = this.deps.getDb()
     if (!db?.listDelegatedWorktreePlacements) {
-      return undefined
+      return { known: false }
     }
     const edges: DelegatedWorktreeEdge[] = []
     for (const placement of db.listDelegatedWorktreePlacements(MAX_DELEGATED_EDGES)) {
+      // No bare-id comparison here: ids collide across hosts, and a genuine
+      // self-reference is only decidable once both ends are host-qualified,
+      // which resolveDelegatedWorktreeNesting already does.
       const parentWorktreeId = this.resolveCoordinatorWorktreeId(placement)
-      if (!parentWorktreeId || parentWorktreeId === placement.remote_worktree_id) {
+      if (!parentWorktreeId) {
         continue
       }
       edges.push({
@@ -46,7 +61,7 @@ export class RuntimeDelegatedWorktreeEdgeProjection {
         dispatchId: placement.dispatch_id
       })
     }
-    return edges.length > 0 ? edges : undefined
+    return { known: true, edges }
   }
 
   private resolveCoordinatorWorktreeId(placement: {

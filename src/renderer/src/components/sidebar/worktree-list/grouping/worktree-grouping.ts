@@ -83,6 +83,10 @@ export function buildOrderedGroups(args: {
   } = args
 
   const grouped = new Map<string, WorktreeGroupEntry>()
+  // Where a delegated child's own repo ended up. It renders in its coordinator's
+  // section, so the repo gets no section of its own and its notice rows must
+  // follow it there rather than open an empty second section for the same repo.
+  const anchoredSectionKeyByRepoId = new Map<string, string>()
   for (const w of naturalWorktrees) {
     let key: string
     let label: string
@@ -109,6 +113,17 @@ export function buildOrderedGroups(args: {
     const group = grouped.get(key)!
     group.items.push(w)
     addRepoIdToGroup(group, anchor.repoId)
+    if (anchor !== w) {
+      addRepoIdToGroup(group, w.repoId)
+      anchoredSectionKeyByRepoId.set(w.repoId, key)
+    }
+  }
+  for (const [repoId, sectionKey] of anchoredSectionKeyByRepoId) {
+    const ownKey = getProjectGroupingForRepo(repoId, repoMap, projectIndex).key
+    if (ownKey === sectionKey || grouped.has(ownKey)) {
+      // The repo has a section of its own after all; leave its notice rows there.
+      anchoredSectionKeyByRepoId.delete(repoId)
+    }
   }
   // Why: folder workspaces are not worktrees, so they never appear in the loop
   // above. Bucketing them here — and creating the lane when no worktree opened
@@ -158,7 +173,7 @@ export function buildOrderedGroups(args: {
   if (groupBy === 'repo') {
     for (const [repoId, candidate] of importedWorktreesByRepo) {
       const grouping = getProjectGroupingForRepo(repoId, repoMap, projectIndex)
-      const key = grouping.key
+      const key = anchoredSectionKeyByRepoId.get(repoId) ?? grouping.key
       if (!grouped.has(key)) {
         grouped.set(key, {
           label: grouping.label,
@@ -174,7 +189,7 @@ export function buildOrderedGroups(args: {
   if (groupBy === 'repo') {
     for (const [repoId, candidate] of newExternalWorktreesInboxByRepo) {
       const grouping = getProjectGroupingForRepo(repoId, repoMap, projectIndex)
-      const key = grouping.key
+      const key = anchoredSectionKeyByRepoId.get(repoId) ?? grouping.key
       if (!grouped.has(key)) {
         // Why: the default policy removes pinned worktrees from natural groups,
         // but actionable inbox rows still need a project section to render in.
@@ -192,7 +207,7 @@ export function buildOrderedGroups(args: {
   if (groupBy === 'repo') {
     for (const repoId of pendingByRepo.keys()) {
       const grouping = getProjectGroupingForRepo(repoId, repoMap, projectIndex)
-      const key = grouping.key
+      const key = anchoredSectionKeyByRepoId.get(repoId) ?? grouping.key
       if (!grouped.has(key)) {
         // Why: creating the first worktree in a repo leaves it with no group yet;
         // ensure one so the in-progress row nests under its repo instead of being

@@ -42,14 +42,17 @@ describe('RuntimeDelegatedWorktreeEdgeProjection', () => {
       placements: [placement],
       worktreeByHandle: { term_coordinator: 'repo-1::/home/alex/coordinator' }
     }).build()
-    expect(edges).toEqual([
-      {
-        parentWorktreeId: 'repo-1::/home/alex/coordinator',
-        childHostId: 'runtime:env-1',
-        childWorktreeId: 'repo-remote::/home/ubuntu/worker',
-        dispatchId: 'ctx_1'
-      }
-    ])
+    expect(edges).toEqual({
+      known: true,
+      edges: [
+        {
+          parentWorktreeId: 'repo-1::/home/alex/coordinator',
+          childHostId: 'runtime:env-1',
+          childWorktreeId: 'repo-remote::/home/ubuntu/worker',
+          dispatchId: 'ctx_1'
+        }
+      ]
+    })
   })
 
   it('falls back to the pane key when the handle was reminted by a restart', () => {
@@ -58,24 +61,34 @@ describe('RuntimeDelegatedWorktreeEdgeProjection', () => {
       handleByPaneKey: { 'pane-1': 'term_reminted' },
       worktreeByHandle: { term_reminted: 'repo-1::/home/alex/coordinator' }
     }).build()
-    expect(edges?.[0]?.parentWorktreeId).toBe('repo-1::/home/alex/coordinator')
+    expect(edges.known && edges.edges[0]?.parentWorktreeId).toBe('repo-1::/home/alex/coordinator')
   })
 
   it('drops a placement whose coordinator terminal is gone', () => {
-    expect(projection({ placements: [placement] }).build()).toBeUndefined()
+    expect(projection({ placements: [placement] }).build()).toEqual({ known: true, edges: [] })
   })
 
-  it('drops a self-referential placement', () => {
-    expect(
-      projection({
-        placements: [placement],
-        worktreeByHandle: { term_coordinator: placement.remote_worktree_id }
-      }).build()
-    ).toBeUndefined()
+  it('keeps an edge whose coordinator and worker share a bare id on different hosts', () => {
+    const edges = projection({
+      placements: [placement],
+      worktreeByHandle: { term_coordinator: placement.remote_worktree_id }
+    }).build()
+    expect(edges).toEqual({
+      known: true,
+      edges: [
+        {
+          parentWorktreeId: placement.remote_worktree_id,
+          childHostId: 'runtime:env-1',
+          childWorktreeId: placement.remote_worktree_id,
+          dispatchId: 'ctx_1'
+        }
+      ]
+    })
   })
 
-  it('reports nothing rather than empty when the host cannot answer', () => {
-    expect(projection({ db: 'missing' }).build()).toBeUndefined()
-    expect(projection({ db: 'without-query' }).build()).toBeUndefined()
+  it('separates a db that cannot answer from a db that answers zero', () => {
+    expect(projection({ db: 'missing' }).build()).toEqual({ known: false })
+    expect(projection({ db: 'without-query' }).build()).toEqual({ known: false })
+    expect(projection({ placements: [] }).build()).toEqual({ known: true, edges: [] })
   })
 })

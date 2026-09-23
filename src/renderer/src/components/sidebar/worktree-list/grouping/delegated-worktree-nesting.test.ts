@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import { getSettingsFocusedExecutionHostId } from '../../../../../../shared/execution-host'
+import type { ExecutionHostId } from '../../../../../../shared/execution-host'
 import { buildRows } from './build-rows'
 import { resolveDelegatedWorktreeNesting } from './delegated-worktree-nesting'
 import { repo, remoteRepo, worktree } from '../../worktree-list-groups-test-fixtures'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
 import type { WorktreeLineage } from '../../../../../../shared/worktree/lineage-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
-import type { Row } from './row-types'
+import type {
+  ImportedWorktreesCardCandidate,
+  NewExternalWorktreesInboxCandidate,
+  PendingCreationRef,
+  Row
+} from './row-types'
 
 const REMOTE_HOST = 'runtime:env-1' as const
 
@@ -116,7 +123,15 @@ describe('buildRows with delegated edges', () => {
   ])
   const lineage: Record<string, WorktreeLineage> = {}
 
-  function rowsFor(edges: readonly DelegatedWorktreeEdge[]) {
+  function rowsFor(
+    edges: readonly DelegatedWorktreeEdge[],
+    overrides: {
+      defaultHostId?: ExecutionHostId
+      importedWorktreesByRepo?: ReadonlyMap<string, ImportedWorktreesCardCandidate>
+      newExternalWorktreesInboxByRepo?: ReadonlyMap<string, NewExternalWorktreesInboxCandidate>
+      pendingCreations?: readonly PendingCreationRef[]
+    } = {}
+  ) {
     return buildRows(
       'repo',
       [coordinator, remoteWorker],
@@ -135,13 +150,13 @@ describe('buildRows with delegated edges', () => {
       undefined,
       [],
       new Set(),
-      new Map(),
-      new Map(),
-      [],
+      overrides.importedWorktreesByRepo ?? new Map(),
+      overrides.newExternalWorktreesInboxByRepo ?? new Map(),
+      overrides.pendingCreations ?? [],
       undefined,
       [],
       undefined,
-      'local',
+      overrides.defaultHostId ?? 'local',
       'single-location',
       edges
     )
@@ -158,36 +173,12 @@ describe('buildRows with delegated edges', () => {
     ).toHaveLength(1)
   })
 
-  it('still nests while the sidebar is focused on a remote host', () => {
-    // Focus is a filter; the edges still come from this window's own runtime.
-    const rows = buildRows(
-      'repo',
-      [coordinator, remoteWorker],
-      repoMapWithRemote,
-      null,
-      new Set(),
-      undefined,
-      undefined,
-      'manual',
-      lineage,
-      new Map([
-        [coordinator.id, coordinator],
-        [remoteWorker.id, remoteWorker]
-      ]),
-      true,
-      undefined,
-      [],
-      new Set(),
-      new Map(),
-      new Map(),
-      [],
-      undefined,
-      [],
-      undefined,
-      REMOTE_HOST,
-      'single-location',
-      [edge]
-    )
+  it('still nests while a remote runtime environment is the focused host', () => {
+    // Focus is a filter over every host's rows; the edges still come from this
+    // window's own runtime, so the coordinator is still looked up as a local row.
+    const rows = rowsFor([edge], {
+      defaultHostId: getSettingsFocusedExecutionHostId({ activeRuntimeEnvironmentId: 'env-1' })
+    })
     expect(findItem(rows, remoteWorker.id)).toMatchObject({ depth: 1 })
   })
 
@@ -197,5 +188,24 @@ describe('buildRows with delegated edges', () => {
     const parent = findItem(rows, coordinator.id)
     expect(worker).toMatchObject({ depth: 0 })
     expect(worker?.sectionKey).not.toBe(parent?.sectionKey)
+  })
+
+  it("renders the anchored child repo's fallback rows once, in the section that shows it", () => {
+    const rows = rowsFor([edge], {
+      importedWorktreesByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
+      ]),
+      newExternalWorktreesInboxByRepo: new Map([
+        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
+      ]),
+      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+    })
+    const coordinatorSection = findItem(rows, coordinator.id)?.sectionKey
+    const headers = rows.filter((row) => row.type === 'header')
+    // One section, not two: the child's repo has no section of its own to fall back to.
+    expect(headers.map((header) => header.key)).toEqual([coordinatorSection])
+    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
+    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
   })
 })
