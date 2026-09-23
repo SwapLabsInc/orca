@@ -3,6 +3,7 @@ import { getRemoteHostPlatform } from '../ssh/ssh-remote-platform'
 import { scanRemoteAiVaultSessions } from './remote-session-scanner'
 import { MemoryRemoteProvider, jsonLines } from './remote-session-scanner-test-fixtures'
 import { primeAgentFixture } from './session-scanner-prime-agent-fixtures'
+import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../shared/ai-vault-session-depth'
 
 describe('scanRemoteAiVaultSessions', () => {
   it('indexes Cline manifests on the SSH-owned disk without messages-file phantoms', async () => {
@@ -45,6 +46,9 @@ describe('scanRemoteAiVaultSessions', () => {
     })
 
     expect(result.issues).toEqual([])
+    // Silence here is read downstream as a possible slice, which refuses recovery on every
+    // SSH host; the scan must say the bound it actually ran under.
+    expect(result.appliedSessionDepth).toBe(DEFAULT_AI_VAULT_SCAN_LIMIT)
     expect(result.sessions).toHaveLength(1)
     expect(result.sessions[0]).toMatchObject({
       agent: 'cline',

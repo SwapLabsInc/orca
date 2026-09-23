@@ -16419,7 +16419,17 @@
         "label": "Choisissez une session à reprendre",
         "title": "Quelle session ce terminal doit-il reprendre ?",
         "help": "Appuyez sur un chiffre ou Enter pour reprendre, Esc pour un shell simple.",
-        "dismiss": "Démarrer un shell simple"
+        "dismiss": "Démarrer un shell simple",
+        "age": {
+          "unknown": "inconnu",
+          "newest": "la plus récente",
+          "minutes_one": "{{count}} min plus ancienne",
+          "minutes_other": "{{count}} min plus anciennes",
+          "hours_one": "{{count}} h plus ancienne",
+          "hours_other": "{{count}} h plus anciennes",
+          "days_one": "{{count}} j plus ancienne",
+          "days_other": "{{count}} j plus anciennes"
+        }
       }
     }
   },

@@ -2726,6 +2726,20 @@
         }
       }
     },
+    "terminalPane": {
+      "AgentResumeChooser": {
+        "age": {
+          "days_one": "{{count}}d older",
+          "days_other": "{{count}}d older",
+          "hours_one": "{{count}}h older",
+          "hours_other": "{{count}}h older",
+          "minutes_one": "{{count}}m older",
+          "minutes_other": "{{count}}m older",
+          "newest": "newest",
+          "unknown": "unknown"
+        }
+      }
+    },
     "workspace": {
       "cleanup": {
         "browse": {
@@ -2753,14 +2767,6 @@
           "readyOneMany": "1 workspace found, with {{value0}} cleanup suggestions.",
           "readyOneOne": "1 workspace found, with 1 cleanup suggestion."
         }
-      }
-    },
-    "terminalPane": {
-      "AgentResumeChooser": {
-        "label": "Choose a session to resume",
-        "title": "Which session should this terminal resume?",
-        "help": "Press a number or Enter to resume, Esc for a plain shell.",
-        "dismiss": "Start a plain shell instead"
       }
     }
   },

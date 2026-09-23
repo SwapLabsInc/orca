@@ -1,5 +1,6 @@
 import type { AgentResumeCandidate } from '../../../../shared/agent-resume-candidate'
 import { AI_VAULT_AGENT_LABELS } from '../../../../shared/ai-vault-types'
+import { translate } from '@/i18n/i18n'
 
 /** How many candidates the chooser offers. Past this the list stops being a glance
  *  and the AI Vault sidebar is the better surface. */
@@ -17,21 +18,22 @@ export function agentResumeChooserAgentLabel(agent: string): string {
  *  the user is choosing on exactly that evidence. Candidate-to-candidate distance is skew-free
  *  because both sides come from the same host clock. */
 export function agentResumeChooserRelativeAge(updatedAt: number, newestUpdatedAt: number): string {
+  const K = 'components.terminalPane.AgentResumeChooser.age'
   if (!Number.isFinite(updatedAt) || !Number.isFinite(newestUpdatedAt)) {
-    return 'unknown'
+    return translate(`${K}.unknown`, 'unknown')
   }
   const minutes = Math.floor(Math.max(0, newestUpdatedAt - updatedAt) / 60_000)
   if (minutes < 1) {
-    return 'newest'
+    return translate(`${K}.newest`, 'newest')
   }
   if (minutes < 60) {
-    return `${minutes}m older`
+    return translate(`${K}.minutes`, '{{count}}m older', { count: minutes })
   }
   const hours = Math.floor(minutes / 60)
   if (hours < 24) {
-    return `${hours}h older`
+    return translate(`${K}.hours`, '{{count}}h older', { count: hours })
   }
-  return `${Math.floor(hours / 24)}d older`
+  return translate(`${K}.days`, '{{count}}d older', { count: Math.floor(hours / 24) })
 }
 
 export type AgentResumeChooserRow = {

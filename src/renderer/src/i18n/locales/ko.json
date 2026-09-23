@@ -15010,7 +15010,14 @@
         "label": "재개할 세션 선택",
         "title": "이 terminal에서 어떤 세션을 재개할까요?",
         "help": "숫자 또는 Enter를 누르면 재개하고, Esc를 누르면 일반 셸을 시작합니다.",
-        "dismiss": "대신 일반 셸 시작"
+        "dismiss": "대신 일반 셸 시작",
+        "age": {
+          "unknown": "알 수 없음",
+          "newest": "최신",
+          "minutes_other": "{{count}}분 이전",
+          "hours_other": "{{count}}시간 이전",
+          "days_other": "{{count}}일 이전"
+        }
       }
     }
   },
