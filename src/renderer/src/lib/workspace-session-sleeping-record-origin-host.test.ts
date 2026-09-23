@@ -92,13 +92,51 @@ describe('sleeping-record origin host, by id space', () => {
     expect(slices[toSshExecutionHostId('who-knows')]).toBeUndefined()
   })
 
-  it('treats an unhydrated ssh target list as no evidence and keeps the ssh fallback', () => {
+  it('keeps a runtime-stamped record local when the environment catalog has not landed', () => {
+    // The catalog-gap capture: the stamp IS a runtime environment id, but neither list can say so
+    // yet. `ssh:<environmentId>` is a partition no reader opens, so the guess is unrecoverable.
+    const slices = split(
+      sessionWith({ 'pane-rt': makeRecord('pane-rt', RUNTIME_ENVIRONMENT_ID) }),
+      {
+        runtimeEnvironmentIds: new Set(),
+        sshTargetIds: null
+      }
+    )
+
+    expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty(
+      'pane-rt'
+    )
+    expect(slices[toSshExecutionHostId(RUNTIME_ENVIRONMENT_ID)]).toBeUndefined()
+  })
+
+  it('keeps a record local when its runtime environment was removed from the catalog', () => {
+    const slices = split(
+      sessionWith({ 'pane-rt': makeRecord('pane-rt', RUNTIME_ENVIRONMENT_ID) }),
+      {
+        runtimeEnvironmentIds: new Set(['env-other']),
+        sshTargetIds: null
+      }
+    )
+
+    expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty(
+      'pane-rt'
+    )
+    expect(slices[toSshExecutionHostId(RUNTIME_ENVIRONMENT_ID)]).toBeUndefined()
+  })
+
+  it('keeps an unhydrated ssh target list local rather than guessing a partition', () => {
+    // An unhydrated list cannot tell an ssh target apart from a runtime environment id, so the two
+    // cases above are this same call. Local is the recoverable placement: every reader loads it and
+    // `adoptStrandedHostPartitionSession` returns the row to its partition once a list can prove it.
     const slices = split(sessionWith({ 'pane-ssh': makeRecord('pane-ssh', SSH_TARGET_ID) }), {
       runtimeEnvironmentIds: new Set(),
       sshTargetIds: null
     })
 
-    expect(slices[SSH_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty('pane-ssh')
+    expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty(
+      'pane-ssh'
+    )
+    expect(slices[SSH_HOST_ID]).toBeUndefined()
   })
 })
 

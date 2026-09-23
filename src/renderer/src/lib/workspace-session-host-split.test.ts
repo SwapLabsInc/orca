@@ -70,6 +70,12 @@ function makeBrowserPage(id: string, workspaceId: string, worktreeId: string): B
 }
 
 const SSH_TARGET_ID = 'ssh-1788980107277-d9gffw'
+/** A record's own stamp only names a host when some loaded id space claims it; production always
+ *  passes these, and without them a stamp is unprovable and stays local. */
+const HYDRATED_ORIGINS = {
+  runtimeEnvironmentIds: new Set<string>(),
+  sshTargetIds: new Set([SSH_TARGET_ID])
+}
 const SSH_HOST_ID: ExecutionHostId = toSshExecutionHostId(SSH_TARGET_ID)
 
 function makeSleepingRecord(
@@ -351,10 +357,30 @@ describe('splitWorkspaceSessionByHost', () => {
       }
     }
 
-    const slices = splitWorkspaceSessionByHost(state, ownerByPrefix())
+    const slices = splitWorkspaceSessionByHost(state, ownerByPrefix(), {
+      sleepingRecordOrigins: HYDRATED_ORIGINS
+    })
 
     expect(slices[SSH_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty('pane-ssh')
     expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toEqual({})
+  })
+
+  it('keeps an ssh-stamped record local while no id space can prove the stamp', () => {
+    const state: WorkspaceSessionState = {
+      ...getDefaultWorkspaceSession(),
+      sleepingAgentSessionsByPaneKey: {
+        'pane-ssh': makeSleepingRecord('pane-ssh', 'unknown-wt', SSH_TARGET_ID)
+      }
+    }
+
+    const slices = splitWorkspaceSessionByHost(state, ownerByPrefix(), {
+      sleepingRecordOrigins: { runtimeEnvironmentIds: new Set(), sshTargetIds: null }
+    })
+
+    expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty(
+      'pane-ssh'
+    )
+    expect(slices[SSH_HOST_ID]).toBeUndefined()
   })
 
   it('keeps a sleeping record put when its connectionId names no host', () => {
@@ -406,7 +432,9 @@ describe('splitWorkspaceSessionByHost', () => {
       'pane-ssh'
     ])
 
-    const slices = splitWorkspaceSessionByHost(merged, ownerByPrefix())
+    const slices = splitWorkspaceSessionByHost(merged, ownerByPrefix(), {
+      sleepingRecordOrigins: HYDRATED_ORIGINS
+    })
     expect(slices[SSH_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty('pane-ssh')
     expect(slices[LOCAL_EXECUTION_HOST_ID]?.sleepingAgentSessionsByPaneKey).toHaveProperty(
       'pane-local'

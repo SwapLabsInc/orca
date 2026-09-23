@@ -8,15 +8,17 @@ import { isWorkspaceSessionRecord } from '../../../shared/workspace-session-host
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell
  *  which one a given value came out of instead of assuming.
  *
- *  `sshTargetIds` is null when this client has never loaded the target set: absence from an
- *  unhydrated list is no evidence the id is not a target (store/slices/ssh.ts `sshTargetsHydrated`). */
+ *  Neither set is a complete census: `sshTargetIds` is null until this client loads the target set
+ *  (store/slices/ssh.ts `sshTargetsHydrated`), and `runtimeEnvironmentIds` is a best-effort union of
+ *  the catalogs this boot happens to hold. So membership proves an id's kind; absence proves
+ *  nothing about it. */
 export type SleepingRecordOriginHosts = {
   runtimeEnvironmentIds: ReadonlySet<string>
   sshTargetIds: ReadonlySet<string> | null
 }
 
 /**
- * The host a sleeping record's own capture names, or null when its stamp names none.
+ * The host a sleeping record's own capture names, or null when this client cannot prove one.
  *
  * A NONEMPTY connectionId is not automatically an ssh target — it is the third case beside the two
  * {@link ./sleeping-record-execution-host-scope.ts} names (`undefined` unstamped, `null`
@@ -25,8 +27,12 @@ export type SleepingRecordOriginHosts = {
  * onto the record, so reading every nonempty value as ssh files the pane's only resume handle under
  * `ssh:<environmentId>` — a partition no runtime reader ever opens.
  *
- * So the kind is proven from the id spaces this client already holds, and an id neither of them
- * claims names no host rather than guessing one for it.
+ * Only positive membership answers, because neither id space can disprove an id: an unhydrated ssh
+ * list has not loaded, and the runtime union is whatever catalogs this boot holds, so an id both
+ * lists are silent about is indistinguishable between a catalog gap, a removed environment and an
+ * unknown target. Null is that "cannot prove", and it leaves the row local — the partition every
+ * reader loads, and the one `adoptStrandedHostPartitionSession` returns to its owner once some list
+ * can name it. A guessed `ssh:<id>` has no such way back.
  */
 export function sleepingRecordOriginHostId(
   entry: unknown,
@@ -42,8 +48,8 @@ export function sleepingRecordOriginHostId(
   if (origins?.runtimeEnvironmentIds.has(targetId)) {
     return toRuntimeExecutionHostId(targetId)
   }
-  if (origins?.sshTargetIds && !origins.sshTargetIds.has(targetId)) {
-    return null
+  if (origins?.sshTargetIds?.has(targetId)) {
+    return toSshExecutionHostId(targetId)
   }
-  return toSshExecutionHostId(targetId)
+  return null
 }
