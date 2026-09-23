@@ -8,15 +8,16 @@ import { isWorkspaceSessionRecord } from '../../../shared/workspace-session-host
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell
  *  which one a given value came out of instead of assuming.
  *
- *  `sshTargetIds` is null when this client has never loaded the target set: absence from an
- *  unhydrated list is no evidence the id is not a target (store/slices/ssh.ts `sshTargetsHydrated`). */
+ *  Membership proves an id's kind; absence proves nothing — `sshTargetIds` is null until loaded
+ *  (store/slices/ssh.ts `sshTargetsHydrated`) and `runtimeEnvironmentIds` holds only this boot's
+ *  catalogs. */
 export type SleepingRecordOriginHosts = {
   runtimeEnvironmentIds: ReadonlySet<string>
   sshTargetIds: ReadonlySet<string> | null
 }
 
 /**
- * The host a sleeping record's own capture names, or null when its stamp names none.
+ * The host a sleeping record's own capture names, or null when this client cannot prove one.
  *
  * A NONEMPTY connectionId is not automatically an ssh target — it is the third case beside the two
  * {@link ./sleeping-record-execution-host-scope.ts} names (`undefined` unstamped, `null`
@@ -25,8 +26,9 @@ export type SleepingRecordOriginHosts = {
  * onto the record, so reading every nonempty value as ssh files the pane's only resume handle under
  * `ssh:<environmentId>` — a partition no runtime reader ever opens.
  *
- * So the kind is proven from the id spaces this client already holds, and an id neither of them
- * claims names no host rather than guessing one for it.
+ * An id neither list names stays local, because catalog absence is not authoritative: local is the
+ * partition every reader loads, and `adoptStrandedHostPartitionSession` can still hand it back once
+ * some list names it. A guessed `ssh:<id>` has no way back.
  */
 export function sleepingRecordOriginHostId(
   entry: unknown,
@@ -42,8 +44,8 @@ export function sleepingRecordOriginHostId(
   if (origins?.runtimeEnvironmentIds.has(targetId)) {
     return toRuntimeExecutionHostId(targetId)
   }
-  if (origins?.sshTargetIds && !origins.sshTargetIds.has(targetId)) {
-    return null
+  if (origins?.sshTargetIds?.has(targetId)) {
+    return toSshExecutionHostId(targetId)
   }
-  return toSshExecutionHostId(targetId)
+  return null
 }

@@ -45,6 +45,18 @@ function sshPatches(patch: ReturnType<typeof vi.fn>): unknown[] {
   return patch.mock.calls.filter(([, hostId]) => hostId === SSH_HOST_ID).map(([args]) => args)
 }
 
+function localRecordWrites(patch: ReturnType<typeof vi.fn>): unknown[] {
+  return (
+    patch.mock.calls
+      // The local slice is written with no host argument at all, not with the local id.
+      .filter(([, hostId]) => hostId === undefined || hostId === LOCAL_EXECUTION_HOST_ID)
+      .map(([args]) => {
+        const slice: Partial<WorkspaceSessionState> = args
+        return slice.sleepingAgentSessionsByPaneKey
+      })
+  )
+}
+
 function makeApi(partitions: Record<string, WorkspaceSessionState>) {
   const patch = vi.fn().mockResolvedValue(undefined)
   return {
@@ -62,13 +74,15 @@ function makeApi(partitions: Record<string, WorkspaceSessionState>) {
 }
 
 describe('a sleeping-record field emptied on a non-local partition', () => {
-  it('sends no clear to the ssh partition the last record left', async () => {
+  it('parks an unprovable connectionId locally instead of guessing an ssh partition', async () => {
     const { api, patch } = makeApi({})
     await patchWorkspaceSessionByHost(api, withRecord, catalog)
     await patchWorkspaceSessionByHost(api, cleared, catalog)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    // The row write went out; the emptying patch names no ssh host, so the copy there survives.
-    expect(sshPatches(patch)).toEqual([withRecord])
+    // Local is always fetched; an unproven `ssh:<id>` partition never is, so guessing it loses
+    // the handle for good while parking locally corrects itself on the next write.
+    expect(sshPatches(patch)).toEqual([])
+    expect(localRecordWrites(patch)).toContainEqual({ [record.paneKey]: record })
   })
 
   it('never clears a partition holding rows the boot merge parked', async () => {
