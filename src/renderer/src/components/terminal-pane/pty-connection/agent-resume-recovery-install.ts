@@ -89,6 +89,19 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     ) {
       return false
     }
+    // The plain shell this connection just spawned still owns the pane's stable key, so a bare
+    // connect would REATTACH it instead of running the resume command: recovery would report
+    // success, close the chooser, and leave the same shell. reattach-result-handler only retires
+    // an adopted shell for a passive sleeping-record restore, and this startup has no record by
+    // design — so retire the binding here, the way that path does.
+    session.transport.disconnect()
+    const retiredPtyId = session.spawnedFreshPtyId
+    if (retiredPtyId) {
+      session.clearExitedPanePtyLayoutBinding(retiredPtyId)
+      session.deps.clearTabPtyId(session.deps.tabId, retiredPtyId)
+    } else {
+      session.syncPanePtyLayoutBinding(null)
+    }
     // Held so disposal can tell "reserved, spawn still settling" from "reserved and claimed".
     // Releasing in that window frees a transcript a sibling pane can then respawn.
     const spawned = Promise.resolve(session.startFreshColdRestoreAgentResume(startup)).catch(

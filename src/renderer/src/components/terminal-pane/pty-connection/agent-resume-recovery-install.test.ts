@@ -86,7 +86,7 @@ function buildSession(
   overrides: Record<string, unknown> = {},
   sharedPaneTransports?: Map<number, unknown>
 ): ConnectPanePtySession {
-  const transport = { getPtyId: () => null, getConnectionId: () => null }
+  const transport = { getPtyId: () => null, getConnectionId: () => null, disconnect: vi.fn() }
   const paneTransports = sharedPaneTransports ?? new Map<number, unknown>()
   // The successor of a replaced binding: registering it retires whichever binding held the slot.
   paneTransports.set(1, transport)
@@ -98,7 +98,8 @@ function buildSession(
       tabId: 'tab-1',
       worktreeId: 'wt-1',
       isVisibleRef: { current: true },
-      paneTransportsRef: { current: paneTransports }
+      paneTransportsRef: { current: paneTransports },
+      clearTabPtyId: vi.fn()
     },
     transport,
     cacheKey: paneKey,
@@ -113,6 +114,8 @@ function buildSession(
     resolvePaneScopedTuiAgent: () => 'claude',
     getSleepingRecordForPane: () => null,
     startFreshColdRestoreAgentResume: vi.fn(),
+    clearExitedPanePtyLayoutBinding: vi.fn(),
+    syncPanePtyLayoutBinding: vi.fn(),
     ...overrides
   } as unknown as ConnectPanePtySession
   installAgentResumeRecovery(session)
@@ -238,6 +241,20 @@ describe('recovery triggers', () => {
     session.paneStartup = undefined
     await session.attemptAgentResumeRecovery()
     expect(fetchCandidates).not.toHaveBeenCalled()
+  })
+
+  it('retires the bound plain shell before spawning the resume', async () => {
+    // The fresh shell still owns the pane's stable key, so a bare connect would reattach it and
+    // the resume command would never run — success reported over an untouched shell.
+    const session = buildSession('tab-1:leaf-retire')
+    fetchCandidates.mockResolvedValueOnce({ kind: 'complete', candidates: [makeCandidate()] })
+    await session.attemptAgentResumeRecovery()
+    expect(session.transport.disconnect).toHaveBeenCalled()
+    expect(session.clearExitedPanePtyLayoutBinding).toHaveBeenCalledWith('pty-1')
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalled()
+    const disconnectOrder = session.transport.disconnect.mock.invocationCallOrder[0]
+    const spawnOrder = session.startFreshColdRestoreAgentResume.mock.invocationCallOrder[0]
+    expect(disconnectOrder).toBeLessThan(spawnOrder)
   })
 
   it('leaves a reattached PTY alone', async () => {
