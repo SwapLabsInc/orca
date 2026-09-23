@@ -50,6 +50,7 @@ export type SectionAppendContext = {
   worktreeMap: Map<string, Worktree>
   nestLineage: boolean
   cyclicLineageIds: ReadonlySet<string>
+  delegatedParentIdentityByChildIdentity?: ReadonlyMap<string, string>
 }
 
 export function appendOrderedGroups(
@@ -208,7 +209,8 @@ export function appendOrderedGroups(
         sectionKey: key,
         hostContextLabelByRepoId,
         hostContextLabelByWorktreeIdentity,
-        cyclicLineageIds
+        cyclicLineageIds,
+        delegatedParentIdentityByChildIdentity: ctx.delegatedParentIdentityByChildIdentity
       })
       for (const pair of folderPairs) {
         result.push(buildFolderWorkspaceRow(pair, projectGroupDepth))
