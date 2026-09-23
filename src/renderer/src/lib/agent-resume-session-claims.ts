@@ -1,9 +1,13 @@
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
+import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 
 /** Only the terminal maps the rule reads; a plain shape so the rule is testable without a store. */
 export type AgentResumeClaimState = {
   agentStatusByPaneKey: Readonly<Record<string, AgentStatusEntry | undefined>>
+  /** A pane's queued resume. It names a session before any status row does, so a status-only
+   *  claim set is blind for the whole window between queueing and spawn. */
+  sleepingAgentSessionsByPaneKey: Readonly<Record<string, SleepingAgentSessionRecord | undefined>>
   terminalLayoutsByTabId: Readonly<
     Record<string, { ptyIdsByLeafId?: Record<string, string | undefined> } | undefined>
   >
@@ -60,6 +64,18 @@ export function agentResumeSessionsClaimedByOtherPanes(
     }
     if (resolveAgentResumePaneLiveness(state, rowPaneKey) !== 'exited') {
       claimed.add(entry.providerSession.id)
+    }
+  }
+  // A status row appears only after a spawn, so another pane that has QUEUED this session — its
+  // own sleeping record, awaiting a cold restore — is invisible above for the whole window in
+  // which resuming it here would fork the transcript. Same identity and liveness rule.
+  // Absent before the store hydrates; no queued records is not the same as an error.
+  for (const [rowPaneKey, record] of Object.entries(state.sleepingAgentSessionsByPaneKey ?? {})) {
+    if (!record?.providerSession || rowPaneKey === paneKey) {
+      continue
+    }
+    if (resolveAgentResumePaneLiveness(state, rowPaneKey) !== 'exited') {
+      claimed.add(record.providerSession.id)
     }
   }
   return claimed

@@ -31,10 +31,12 @@ function row(id: string, state: AgentStatusEntry['state'], extra: Partial<AgentS
 
 function stateWith(
   agentStatusByPaneKey: Record<string, AgentStatusEntry>,
-  ptyIdsByLeafId: Record<string, Record<string, string | undefined>>
+  ptyIdsByLeafId: Record<string, Record<string, string | undefined>>,
+  sleepingAgentSessionsByPaneKey: AgentResumeClaimState['sleepingAgentSessionsByPaneKey'] = {}
 ): AgentResumeClaimState {
   return {
     agentStatusByPaneKey,
+    sleepingAgentSessionsByPaneKey,
     terminalLayoutsByTabId: Object.fromEntries(
       Object.entries(ptyIdsByLeafId).map(([tabId, bindings]) => [
         tabId,
@@ -122,5 +124,31 @@ describe('the pane-identity claim rule', () => {
     )
 
     expect(agentResumeSessionsClaimedByOtherPanes(state, PANE)).toEqual(new Set())
+  })
+  it('claims a session another pane has queued but not yet spawned', () => {
+    // A status row appears only after a spawn. Between queueing a cold restore and that spawn the
+    // session is invisible to a status-only claim set, and resuming it here forks the transcript.
+    const claimed = agentResumeSessionsClaimedByOtherPanes(
+      stateWith(
+        {},
+        { 'tab-1': { 'leaf-other': 'pty-1' } },
+        {
+          'tab-1:leaf-other': {
+            paneKey: 'tab-1:leaf-other',
+            tabId: 'tab-1',
+            worktreeId: 'repo::/w',
+            connectionId: null,
+            agent: 'claude',
+            providerSession: { key: 'session_id', id: 'queued-1' },
+            prompt: '',
+            state: 'done',
+            capturedAt: 1,
+            updatedAt: 2
+          }
+        }
+      ),
+      'tab-1:leaf-mine'
+    )
+    expect(claimed.has('queued-1')).toBe(true)
   })
 })
