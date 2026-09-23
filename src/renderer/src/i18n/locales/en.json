@@ -5287,7 +5287,7 @@
           "removeDescriptionSsh": "This only removes {{name}} from Orca. Its files stay on {{host}} — re-add that SSH host to recover it.",
           "removeDescriptionLocal": "This only removes {{name}} from Orca. It is still on your disk.",
           "removeDescriptionVmRecipe": "This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.",
-          "removeDescriptionOwnerUnverifiable": "{{host}} did not answer, so {{name}} is still registered there. Removing it now only clears this computer’s records — nothing on {{host}} is touched, and the project returns if that host reconnects.",
+          "removeDescriptionOwnerUnverifiable": "Orca could not reach {{host}}, so whether {{name}} was removed there is unknown. Removing it now only clears this computer’s records — if it is still registered on {{host}}, it returns when that host reconnects.",
           "removeFromOrcaOnly": "Remove from Orca"
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
@@ -12046,7 +12046,7 @@
         },
         "settingsProjectList": {
           "removeOwnerUnverifiable": "Could not reach the host that owns this project",
-          "removeOwnerUnverifiableDescription": "It is still registered on {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only."
+          "removeOwnerUnverifiableDescription": "Orca could not confirm the removal with {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only."
         }
       },
       "right": {

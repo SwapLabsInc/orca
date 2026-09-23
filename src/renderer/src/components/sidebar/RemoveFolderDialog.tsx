@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import {
   parseExecutionHostId,
   type ExecutionHostId
 } from '../../../../shared/execution-host'
+import { selectExecutionHostDisplayLabel } from '@/lib/execution-host-display-label'
 
 // Why: interpolated into the sentence so locales control where the name sits;
 // U+0000 cannot appear in a real project name, so the split is unambiguous.
@@ -32,13 +33,19 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const displayName = typeof modalData.displayName === 'string' ? modalData.displayName : ''
   const hostId = typeof modalData.hostId === 'string' ? (modalData.hostId as ExecutionHostId) : null
 
-  // Why: the owning host never answered the first attempt, so it still holds the project. The
-  // dialog stays open on that answer and re-offers the removal as a client-only forget.
+  // Why: no answer arrived from the owning host on the first attempt, so what it did is unknown.
+  // The dialog stays open on that answer and re-offers the removal as a client-only forget.
   const [ownerUnverifiable, setOwnerUnverifiable] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
+  // Why: Cancel stays live while the host is being asked, and this dialog unmounts when the modal
+  // closes. Bumping on teardown fences a late answer out of the invocation that replaced it.
+  const removalTokenRef = useRef(0)
   useEffect(() => {
     setOwnerUnverifiable(false)
     setIsRemoving(false)
+    return () => {
+      removalTokenRef.current += 1
+    }
   }, [isOpen, repoId, hostId])
 
   // Why: for an SSH project the files live on the remote host's disk, not the
@@ -61,18 +68,13 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
       sshConnectionId
     )
   })
-  // Only a `runtime:` owner can answer `owner-unverifiable`, so its name is the one the
-  // forget copy needs; fall back to the environment id when the catalog has no row for it.
-  const runtimeOwnerLabel = useAppStore((s) => {
-    const parsed = parseExecutionHostId(hostId)
-    if (parsed?.kind !== 'runtime') {
-      return null
-    }
-    return (
-      s.runtimeEnvironments.find((environment) => environment.id === parsed.environmentId)?.name ||
-      parsed.environmentId
-    )
-  })
+  // Only a `runtime:` owner can answer `owner-unverifiable`, so its name is the one the forget
+  // copy needs.
+  const runtimeOwnerLabel = useAppStore((s) =>
+    hostId && parseExecutionHostId(hostId)?.kind === 'runtime'
+      ? selectExecutionHostDisplayLabel(s, hostId)
+      : null
+  )
 
   // Why: fragment concatenation around the styled name cannot be reordered by
   // SOV locales (#9294). Translate one full sentence with the name as a
@@ -80,7 +82,7 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const description = ownerUnverifiable
     ? translate(
         'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiable',
-        '{{host}} did not answer, so {{name}} is still registered there. Removing it now only clears this computer’s records — nothing on {{host}} is touched, and the project returns if that host reconnects.',
+        'Orca could not reach {{host}}, so whether {{name}} was removed there is unknown. Removing it now only clears this computer’s records — if it is still registered on {{host}}, it returns when that host reconnects.',
         { name: NAME_TOKEN, host: runtimeOwnerLabel ?? '' }
       )
     : isRuntimeOwnedSshTargetId(sshConnectionId)
@@ -107,12 +109,18 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
       closeModal()
       return
     }
+    const token = removalTokenRef.current
     setIsRemoving(true)
     const outcome = await removeProject(repoId, {
       ...(hostId ? { hostId } : {}),
       errorFeedback: 'toast',
       ...(ownerUnverifiable ? { mode: 'forget-local' as const } : {})
     })
+    // Why: this invocation was cancelled or replaced while the host was being asked. closeModal is
+    // global, so acting now would dismiss whichever dialog the user opened next.
+    if (token !== removalTokenRef.current) {
+      return
+    }
     setIsRemoving(false)
     // Why: an unanswered host is not a failure to report and not a removal to celebrate — keep
     // the dialog open so the only honest remaining action is the one the user now sees.

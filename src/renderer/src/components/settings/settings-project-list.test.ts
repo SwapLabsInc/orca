@@ -269,6 +269,9 @@ describe('removeSettingsProjectFromAllHosts', () => {
     vi.mocked(toast.error).mockReset()
   })
 
+  const resolveHostLabel = (hostId: string): string =>
+    hostId === 'runtime:home-mac' ? 'Home Mac' : hostId
+
   it('removes every host setup with its own hostId and skips setups without a repo row', async () => {
     const removeProject = vi.fn().mockResolvedValue({ status: 'removed' })
     const setups = [
@@ -277,7 +280,7 @@ describe('removeSettingsProjectFromAllHosts', () => {
       makeSetup({ hostId: 'runtime:home-mac', repoId: 'remote-9' })
     ]
 
-    await removeSettingsProjectFromAllHosts(setups, removeProject)
+    await removeSettingsProjectFromAllHosts(setups, removeProject, resolveHostLabel)
 
     // errorFeedback: this is a user-initiated removal, so a failure must surface (#11994).
     expect(removeProject.mock.calls).toEqual([
@@ -302,7 +305,7 @@ describe('removeSettingsProjectFromAllHosts', () => {
       makeSetup({ hostId: 'runtime:home-mac', repoId: 'remote-9' })
     ]
 
-    const pending = removeSettingsProjectFromAllHosts(setups, removeProject)
+    const pending = removeSettingsProjectFromAllHosts(setups, removeProject, resolveHostLabel)
     await Promise.resolve()
     expect(removeProject).toHaveBeenCalledTimes(1)
 
@@ -323,9 +326,12 @@ describe('removeSettingsProjectFromAllHosts', () => {
       makeSetup({ hostId: 'runtime:home-mac', repoId: 'remote-9' })
     ]
 
-    await removeSettingsProjectFromAllHosts(setups, removeProject)
+    await removeSettingsProjectFromAllHosts(setups, removeProject, resolveHostLabel)
 
     expect(toast.error).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast.error).mock.calls[0]?.[1]?.description).toContain('runtime:home-mac')
+    // The host's own name, never the raw `runtime:` routing id.
+    const description = vi.mocked(toast.error).mock.calls[0]?.[1]?.description
+    expect(description).toContain('Home Mac')
+    expect(description).not.toContain('runtime:home-mac')
   })
 })

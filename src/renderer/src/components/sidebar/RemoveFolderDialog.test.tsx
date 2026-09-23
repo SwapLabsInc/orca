@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => {
         hostId: 'ssh:target-1'
       } as Record<string, unknown>,
       repos: [] as Repo[],
+      // Read by selectExecutionHostDisplayLabel: a per-host rename override wins over the name.
+      settings: null,
       runtimeEnvironments,
       sshTargetLabels: new Map<string, string>(),
       removedSshTargetLabels: new Map<string, string>(),
@@ -138,8 +140,11 @@ describe('RemoveFolderDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
     expect(mocks.state.closeModal).not.toHaveBeenCalled()
-    expect(screen.getByText(/alexdevbox2 did not answer/)).toBeInTheDocument()
-    expect(screen.getByText(/returns if that host reconnects/)).toBeInTheDocument()
+    // Names the host, and claims nothing about what it did — a lost answer is not a removal that
+    // did not happen.
+    expect(screen.getByText(/Orca could not reach alexdevbox2/)).toBeInTheDocument()
+    expect(screen.getByText(/was removed there is unknown/)).toBeInTheDocument()
+    expect(screen.getByText(/if it is still registered on alexdevbox2/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove from Orca' }))
 
@@ -149,5 +154,25 @@ describe('RemoveFolderDialog', () => {
       mode: 'forget-local'
     })
     expect(mocks.state.closeModal).toHaveBeenCalledTimes(1)
+  })
+
+  // Cancel stays live during the ~15s host call. closeModal is global, so a late answer from a
+  // dismissed invocation must not dismiss whichever dialog the user opened next.
+  it('ignores a removal that finishes after its dialog was dismissed', async () => {
+    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+    let finishRemoval: ((outcome: { status: string }) => void) | undefined
+    mocks.state.removeProject.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRemoval = resolve
+      })
+    )
+    const view = render(<RemoveFolderDialog />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    view.unmount()
+    finishRemoval?.({ status: 'removed' })
+    await Promise.resolve()
+
+    expect(mocks.state.closeModal).not.toHaveBeenCalled()
   })
 })

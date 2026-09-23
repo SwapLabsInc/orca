@@ -54,7 +54,7 @@ export function createRepoRemovalActions(
   return {
     removeProject: async (projectId, options) => {
       // Why: forget-local never dispatches to the owning host — it clears this client's records
-      // only, so a host that cannot acknowledge keeps its own catalog.
+      // only, and states nothing about what that host holds.
       const forgetLocalOnly = options?.mode === 'forget-local'
       try {
         // Why: pass an explicit hostId so a duplicate id across hosts resolves to the intended row, not the focused-host fallback.
@@ -69,6 +69,15 @@ export function createRepoRemovalActions(
         const runtimeSshTargetId = ownerRepo.connectionId
         // Why: an SSH per-workspace-env's workspace is the repo's main worktree, so removal routes here; tear down its ephemeral runtime first so it doesn't leak.
         if (runtimeSshTargetId && isRuntimeOwnedSshTargetId(runtimeSshTargetId)) {
+          // Why: this project's removal exists to destroy that VM, and forget-local is defined as
+          // touching nothing outside this client — both cannot hold, so refuse rather than leak a
+          // live VM or quietly break the promise. Unreachable today: an ephemeral-VM project is
+          // SSH-owned, so its removal dispatches locally and never answers `owner-unverifiable`.
+          if (forgetLocalOnly) {
+            throw new Error(
+              'This project runs on a cloud VM, so it can only be removed by destroying that VM.'
+            )
+          }
           const cleanup = await cleanupEphemeralVmRuntimesForDeleted({
             workspaceIds: getKnownRepoWorktreeIds(get(), projectId, ownerHostId),
             runtimeOwnedSshTargetIds: [runtimeSshTargetId]
@@ -99,8 +108,8 @@ export function createRepoRemovalActions(
         } catch (err) {
           // Why: the owner already dropped this project, so purge the local ghost row instead of aborting (#11994).
           if (!hasRuntimeRpcErrorCode(err, 'repo_not_found')) {
-            // Why: the host never answered, so its catalog still holds the project. Purging here
-            // would claim a removal that never happened; report it so the caller can offer the
+            // Why: no answer arrived, so whether the host removed it is unknown. Purging here
+            // would assert an outcome nobody observed; report it so the caller can offer the
             // client-only forget instead (docs/reference/ssh-execution-boundary.md).
             if (dispatchesToOwningRuntime && isOwnerContactFailure(err)) {
               return { status: 'owner-unverifiable' }
@@ -143,8 +152,8 @@ export function createRepoRemovalActions(
               ]
             : []
         const killedTabIds = new Set<string>()
-        // Why: a forget touches nothing on the owning host, terminals included — those PTYs stay
-        // live and unverifiable, and asking a host that never answered would only stall the purge.
+        // Why: a forget touches nothing on the owning host, terminals included — those PTYs are
+        // left unverifiable, and asking a host that never answered would only stall the purge.
         if (target.kind === 'environment' && !forgetLocalOnly) {
           await Promise.allSettled(
             worktreeIds.map((worktreeId) =>

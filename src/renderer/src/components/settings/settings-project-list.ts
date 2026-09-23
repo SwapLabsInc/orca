@@ -180,7 +180,10 @@ export async function removeSettingsProjectFromAllHosts(
   removeProject: (
     repoId: string,
     options: { hostId: ExecutionHostId; errorFeedback?: 'toast' | 'silent' }
-  ) => Promise<RemoveProjectOutcome>
+  ) => Promise<RemoveProjectOutcome>,
+  // Why: required, not defaulted — the fallback label is a raw host id, which means nothing to a
+  // reader, and a caller that forgets to pass this would ship it into the toast below.
+  resolveHostLabel: (hostId: ExecutionHostId) => string
 ): Promise<void> {
   for (const setup of setups) {
     if (setup.repoId.trim().length > 0) {
@@ -191,6 +194,8 @@ export async function removeSettingsProjectFromAllHosts(
       })
       // Why: an unanswered host is not a store failure, so it carries no toast of its own. This
       // pane has no per-host forget affordance, so say what happened rather than look successful.
+      // Retrying is safe once the host answers: a removal that did land reports `repo_not_found`,
+      // which the store reconciles instead of failing on.
       if (outcome.status === 'owner-unverifiable') {
         toast.error(
           translate(
@@ -200,8 +205,8 @@ export async function removeSettingsProjectFromAllHosts(
           {
             description: translate(
               'auto.components.settings.settingsProjectList.removeOwnerUnverifiableDescription',
-              'It is still registered on {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only.',
-              { host: setup.hostId }
+              'Orca could not confirm the removal with {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only.',
+              { host: resolveHostLabel(setup.hostId) }
             )
           }
         )
