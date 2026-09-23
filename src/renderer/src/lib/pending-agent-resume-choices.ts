@@ -6,8 +6,19 @@ import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidat
  * Deliberately not a store slice: this is transient per-pane UI state that never persists
  * and never crosses a host boundary, and keeping it out of the persisted session state means
  * a pending choice can never be written to disk and revived against a stale session list.
+ *
+ * Every choice carries the identity of the pty binding that scanned it. The pane key is stable
+ * across a reconnect, so without that identity a chooser published for a retired connection
+ * stayed on screen and reached the SUCCESSOR's handler — replacing a live shell with a session
+ * scanned for a connection that no longer owns the pane.
  */
-const candidatesByPaneKey = new Map<string, readonly AgentResumeCandidate[]>()
+export type PendingAgentResumeChoice = {
+  /** The pty binding these candidates were scanned for; nothing else may act on them. */
+  owner: object
+  candidates: readonly AgentResumeCandidate[]
+}
+
+const choiceByPaneKey = new Map<string, PendingAgentResumeChoice>()
 const listenersByPaneKey = new Map<string, Set<() => void>>()
 
 function notify(paneKey: string): void {
@@ -18,31 +29,43 @@ function notify(paneKey: string): void {
 
 export function setPendingAgentResumeChoices(
   paneKey: string,
+  owner: object,
   candidates: readonly AgentResumeCandidate[]
 ): void {
   if (candidates.length === 0) {
     clearPendingAgentResumeChoices(paneKey)
     return
   }
-  candidatesByPaneKey.set(paneKey, candidates)
+  choiceByPaneKey.set(paneKey, { owner, candidates })
   notify(paneKey)
 }
 
 export function clearPendingAgentResumeChoices(paneKey: string): void {
-  if (!candidatesByPaneKey.delete(paneKey)) {
+  if (!choiceByPaneKey.delete(paneKey)) {
     return
   }
   notify(paneKey)
 }
 
+/** Dispose path: retire this binding's own choice and leave a successor's alone. */
+export function clearPendingAgentResumeChoicesForOwner(paneKey: string, owner: object): void {
+  if (choiceByPaneKey.get(paneKey)?.owner !== owner) {
+    return
+  }
+  clearPendingAgentResumeChoices(paneKey)
+}
+
 /** Stable identity while unchanged, so `useSyncExternalStore` does not loop. */
 export function getPendingAgentResumeChoices(
   paneKey: string
-): readonly AgentResumeCandidate[] | undefined {
-  return candidatesByPaneKey.get(paneKey)
+): PendingAgentResumeChoice | undefined {
+  return choiceByPaneKey.get(paneKey)
 }
 
-export function subscribePendingAgentResumeChoices(paneKey: string, listener: () => void): () => void {
+export function subscribePendingAgentResumeChoices(
+  paneKey: string,
+  listener: () => void
+): () => void {
   const listeners = listenersByPaneKey.get(paneKey) ?? new Set<() => void>()
   listeners.add(listener)
   listenersByPaneKey.set(paneKey, listeners)
@@ -60,6 +83,6 @@ export function subscribePendingAgentResumeChoices(paneKey: string, listener: ()
 
 /** Test seam; production code clears per pane as choices are consumed or panes unmount. */
 export function resetPendingAgentResumeChoices(): void {
-  candidatesByPaneKey.clear()
+  choiceByPaneKey.clear()
   listenersByPaneKey.clear()
 }

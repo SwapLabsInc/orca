@@ -107,9 +107,10 @@ const filters: Row[] = [
     expected: 'resume:b:sole-candidate'
   },
   {
-    name: 'filter: trailing separator is not an exact match',
+    // A trailing separator spells the same directory; only a DIFFERENT directory may miss.
+    name: 'filter: a trailing separator still names the worktree',
     args: { candidates: [candidate('a', { cwd: `${WORKTREE}/` })] },
-    expected: 'none:no-candidates'
+    expected: 'resume:a:sole-candidate'
   },
   {
     name: 'filter: below the substance floor',
@@ -280,5 +281,42 @@ describe('resolveAgentResumeCandidate', () => {
     const candidates = [candidate('old'), candidate('new', { updatedAt: T0 + HOUR })]
     resolve({ candidates })
     expect(candidates.map((c) => c.providerSession.id)).toEqual(['old', 'new'])
+  })
+})
+
+describe('equivalent path spellings', () => {
+  it('matches a candidate whose cwd differs only in spelling', () => {
+    // Windows hands back `C:\repo` where the workspace records `C:/repo/`, and macOS hands back
+    // NFD where the agent recorded NFC. Both name one directory.
+    expect(
+      summarize(
+        resolve({
+          worktreePath: 'C:/repo/app/',
+          candidates: [candidate('s1', { cwd: 'c:\\repo\\app' })]
+        })
+      )
+    ).toBe('resume:s1:sole-candidate')
+  })
+
+  it('still refuses a sibling worktree', () => {
+    expect(
+      summarize(
+        resolve({
+          worktreePath: '/srv/repo/worktrees/feature-a',
+          candidates: [candidate('s1', { cwd: '/srv/repo/worktrees/feature-b' })]
+        })
+      )
+    ).toBe('none:no-candidates')
+  })
+
+  it('still refuses a parent of the worktree', () => {
+    expect(
+      summarize(
+        resolve({
+          worktreePath: '/srv/repo/worktrees/feature-a',
+          candidates: [candidate('s1', { cwd: '/srv/repo/worktrees' })]
+        })
+      )
+    ).toBe('none:no-candidates')
   })
 })

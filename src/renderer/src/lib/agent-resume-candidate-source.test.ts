@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AiVaultSession } from '../../../shared/ai-vault-types'
+import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault-session-depth'
 import {
   fetchAgentResumeCandidates,
   toAgentResumeCandidate,
@@ -126,7 +127,11 @@ describe('fetchAgentResumeCandidates', () => {
       }
     })
     expect(calls).toEqual([
-      { scopePaths: ['/home/ubuntu/Desktop/qbit'], executionHostScope: 'ssh:ssh-1' }
+      {
+        scopePaths: ['/home/ubuntu/Desktop/qbit'],
+        executionHostScope: 'ssh:ssh-1',
+        unlimited: true
+      }
     ])
   })
 
@@ -193,5 +198,44 @@ describe('fetchAgentResumeCandidates', () => {
     })
     expect(queried).toBe(false)
     expect(scan).toEqual({ kind: 'complete', candidates: [] })
+  })
+})
+
+describe('scan completeness', () => {
+  it('asks the host for an uncapped scan', async () => {
+    const listSessions = vi.fn().mockResolvedValue({ sessions: [], issues: [] })
+    await fetchAgentResumeCandidates({
+      worktreePath: '/srv/wt',
+      executionHostId: 'ssh:ssh-1',
+      listSessions
+    })
+    expect(listSessions).toHaveBeenCalledWith({
+      scopePaths: ['/srv/wt'],
+      executionHostScope: 'ssh:ssh-1',
+      unlimited: true
+    })
+  })
+
+  it('refuses an answer that reached the default cap', async () => {
+    // A host too old to honour `unlimited` caps silently; the subset would make an older matching
+    // session vanish while a newer one survives, and the resolver would auto-resume the survivor.
+    const sessions = Array.from({ length: DEFAULT_AI_VAULT_SCAN_LIMIT }, (_, index) =>
+      session({ id: `row-${index}`, sessionId: `c4c95ae3-fdd1-4ab6-be99-478dd26c3a${index}` })
+    )
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/srv/wt',
+      executionHostId: null,
+      listSessions: vi.fn().mockResolvedValue({ sessions, issues: [] })
+    })
+    expect(scan).toEqual({ kind: 'unverifiable', reason: 'scan-truncated' })
+  })
+
+  it('accepts an answer below the cap', async () => {
+    const scan = await fetchAgentResumeCandidates({
+      worktreePath: '/srv/wt',
+      executionHostId: null,
+      listSessions: vi.fn().mockResolvedValue({ sessions: [session()], issues: [] })
+    })
+    expect(scan.kind).toBe('complete')
   })
 })

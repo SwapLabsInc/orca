@@ -229,6 +229,95 @@ describe('a choice that settles after the pane is gone', () => {
 
     await session.attemptAgentResumeRecovery()
     expect(getPendingAgentResumeChoices('tab-1:leaf-successor')).toBeUndefined()
-    expect(getAgentResumePaneHandler('tab-1:leaf-successor')).toBeDefined()
+    expect(getAgentResumePaneHandler('tab-1:leaf-successor', session.transport)).toBeDefined()
+  })
+})
+
+describe('revalidating a claim at chooser selection', () => {
+  // The chooser's rows were scanned seconds ago, and the renderer-local reservation map is not the
+  // only way a candidate goes live: another pane's cold restore and an Agent Session History
+  // launch both reserve nothing here, so the host-owned status store is the evidence.
+  it('refuses a candidate that went live after the chooser was populated', async () => {
+    const session = buildSession('tab-1:leaf-revalidate')
+    const candidate = makeCandidate()
+    storeState.agentStatusByPaneKey = {
+      'tab-9:leaf-other': { providerSession: candidate.providerSession, state: 'working' }
+    }
+
+    const handler = getAgentResumePaneHandler('tab-1:leaf-revalidate', session.transport)
+    expect(handler?.(candidate)).toBe(false)
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  it('still resumes a candidate whose only live row is a finished pane', async () => {
+    const session = buildSession('tab-1:leaf-revalidate-done')
+    const candidate = makeCandidate()
+    storeState.agentStatusByPaneKey = {
+      'tab-9:leaf-other': { providerSession: candidate.providerSession, state: 'done' }
+    }
+
+    const handler = getAgentResumePaneHandler('tab-1:leaf-revalidate-done', session.transport)
+    expect(handler?.(candidate)).toBe(true)
+  })
+})
+
+describe('a choice published by a retired binding', () => {
+  // Pending choices carried no binding identity, so a stale chooser reached the SUCCESSOR's
+  // handler and could replace its shell with a candidate scanned for the retired connection.
+  it('cannot reach the successor handler that replaced its owner', async () => {
+    const paneTransports = new Map<number, unknown>()
+    const retired = buildSession('tab-1:leaf-stale-choice', {}, paneTransports)
+    fetchCandidates.mockResolvedValueOnce({ kind: 'complete', candidates: twoCandidates() })
+    await retired.attemptAgentResumeRecovery()
+
+    const choice = getPendingAgentResumeChoices('tab-1:leaf-stale-choice')
+    expect(choice?.owner).toBe(retired.transport)
+
+    const successor = buildSession('tab-1:leaf-stale-choice', {}, paneTransports)
+    expect(getAgentResumePaneHandler('tab-1:leaf-stale-choice', choice!.owner)).toBeUndefined()
+    expect(getAgentResumePaneHandler('tab-1:leaf-stale-choice', successor.transport)).toBeDefined()
+  })
+})
+
+describe('visibility lost mid-scan', () => {
+  // The contract is that a hidden pane does not spend its attempt and retries when revealed. The
+  // post-scan gate answers `pane-hidden` too, and it was spending the latch.
+  it('does not spend the attempt when the pane is hidden during the scan', async () => {
+    const session = buildSession('tab-1:leaf-hidden-midscan')
+    fetchCandidates.mockImplementationOnce(async () => {
+      session.deps.isVisibleRef.current = false
+      return { kind: 'complete', candidates: [makeCandidate()] }
+    })
+
+    await session.attemptAgentResumeRecovery()
+    expect(session.agentResumeRecoveryAttempted).toBe(false)
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+
+    session.deps.isVisibleRef.current = true
+    await session.attemptAgentResumeRecovery()
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+  })
+})
+
+describe('folder workspaces', () => {
+  // AGENTS.md: a folder workspace is as valid as a git worktree and keeps its root on
+  // `folderWorkspace.folderPath`, so gating on `worktree.path` made those panes unrecoverable.
+  it('recovers a pane whose workspace is a folder, not a worktree', async () => {
+    const session = buildSession('tab-1:leaf-folder', {
+      worktree: undefined,
+      // Same path the fixture candidate names, so only the scope derivation is under test.
+      folderWorkspace: { projectGroupId: 'pg-1', folderPath: '/w' }
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+  })
+
+  it('still refuses a pane with neither representation', async () => {
+    const session = buildSession('tab-1:leaf-no-scope', {
+      worktree: undefined,
+      folderWorkspace: undefined
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
   })
 })

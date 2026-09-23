@@ -1,5 +1,10 @@
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
-import type { AiVaultListResult, AiVaultSession } from '../../../shared/ai-vault-types'
+import type {
+  AiVaultListArgs,
+  AiVaultListResult,
+  AiVaultSession
+} from '../../../shared/ai-vault-types'
+import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault-session-depth'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
   extractAgentProviderSession,
@@ -103,19 +108,31 @@ export function toAgentResumeCandidates(
  *  (docs/reference/ssh-execution-boundary.md). */
 export type AgentResumeCandidateScan =
   | { kind: 'complete'; candidates: AgentResumeCandidate[] }
-  | { kind: 'unverifiable'; reason: 'cancelled' | 'scan-issues' | 'no-contact' }
+  | {
+      kind: 'unverifiable'
+      reason: 'cancelled' | 'scan-issues' | 'no-contact' | 'scan-truncated'
+    }
 
 /** True only for an answer that covered the scope. `cancelled` is an empty body by construction,
  *  and any non-notice issue means some path or host the scan needed went unread — `notice` rows
  *  are scanner commentary the shared type documents as never a failure. */
 function scanIncompleteReason(
-  result: Pick<AiVaultListResult, 'issues' | 'cancelled'>
-): 'cancelled' | 'scan-issues' | null {
+  result: Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>
+): 'cancelled' | 'scan-issues' | 'scan-truncated' | null {
   if (result.cancelled === true) {
     return 'cancelled'
   }
   const failures = (result.issues ?? []).filter((issue) => issue.kind !== 'notice')
-  return failures.length > 0 ? 'scan-issues' : null
+  if (failures.length > 0) {
+    return 'scan-issues'
+  }
+  // The uncapped request above is the fix; this is the check that it was honoured. A host too old
+  // for `unlimited` slices the recency-sorted list at the default cap, and only Claude files get
+  // the in-scope bypass — so for the other 17 agents an older matching session silently vanishes
+  // while a newer one survives, and the resolver reads that subset as the whole. An answer sitting
+  // exactly at the cap is indistinguishable from a truncated one, so it is `unverifiable`: a
+  // subset must never be read as the whole (docs/reference/ssh-execution-boundary.md).
+  return (result.sessions ?? []).length >= DEFAULT_AI_VAULT_SCAN_LIMIT ? 'scan-truncated' : null
 }
 
 /**
@@ -129,10 +146,11 @@ function scanIncompleteReason(
 export async function fetchAgentResumeCandidates(args: {
   worktreePath: string
   executionHostId: ExecutionHostId | null
-  listSessions: (request: {
-    scopePaths: readonly string[]
-    executionHostScope?: ExecutionHostId
-  }) => Promise<Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>>
+  listSessions: (
+    request: Pick<AiVaultListArgs, 'scopePaths' | 'unlimited'> & {
+      executionHostScope?: ExecutionHostId
+    }
+  ) => Promise<Pick<AiVaultListResult, 'sessions' | 'issues' | 'cancelled'>>
 }): Promise<AgentResumeCandidateScan> {
   if (args.worktreePath.length === 0) {
     return { kind: 'complete', candidates: [] }
@@ -140,7 +158,10 @@ export async function fetchAgentResumeCandidates(args: {
   try {
     const result = await args.listSessions({
       scopePaths: [args.worktreePath],
-      ...(args.executionHostId ? { executionHostScope: args.executionHostId } : {})
+      ...(args.executionHostId ? { executionHostScope: args.executionHostId } : {}),
+      // Uncapped: the default depth slices a recency-sorted list, and the in-scope bypass that
+      // survives it covers Claude files only. One worktree's transcripts are a small set.
+      unlimited: true
     })
     const incomplete = scanIncompleteReason(result)
     if (incomplete) {
