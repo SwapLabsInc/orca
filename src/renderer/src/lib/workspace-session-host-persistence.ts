@@ -258,8 +258,8 @@ export function buildHostSessionRouting(state: HostPersistenceState): HostSessio
     claims,
     sleepingRecordOrigins: {
       runtimeEnvironmentIds: collectRuntimeEnvironmentIds(state, runtimeHostIdByWorktreeId),
-      // Why the hydration gate: an unloaded target list says nothing about an id, and reading its
-      // silence as "not an ssh target" would strand every ssh record on a client that has no ssh RPC.
+      // Why the hydration gate: an unloaded target list says nothing about an id, so `null` keeps it
+      // distinguishable from a loaded list that genuinely does not hold the id.
       sshTargetIds: state.sshTargetsHydrated ? new Set(state.sshTargetLabels?.keys() ?? []) : null
     }
   }
