@@ -8,10 +8,9 @@ import { isWorkspaceSessionRecord } from '../../../shared/workspace-session-host
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell
  *  which one a given value came out of instead of assuming.
  *
- *  Neither set is a complete census: `sshTargetIds` is null until this client loads the target set
- *  (store/slices/ssh.ts `sshTargetsHydrated`), and `runtimeEnvironmentIds` is a best-effort union of
- *  the catalogs this boot happens to hold. So membership proves an id's kind; absence proves
- *  nothing about it. */
+ *  Membership proves an id's kind; absence proves nothing — `sshTargetIds` is null until loaded
+ *  (store/slices/ssh.ts `sshTargetsHydrated`) and `runtimeEnvironmentIds` holds only this boot's
+ *  catalogs. */
 export type SleepingRecordOriginHosts = {
   runtimeEnvironmentIds: ReadonlySet<string>
   sshTargetIds: ReadonlySet<string> | null
@@ -27,12 +26,9 @@ export type SleepingRecordOriginHosts = {
  * onto the record, so reading every nonempty value as ssh files the pane's only resume handle under
  * `ssh:<environmentId>` — a partition no runtime reader ever opens.
  *
- * Only positive membership answers, because neither id space can disprove an id: an unhydrated ssh
- * list has not loaded, and the runtime union is whatever catalogs this boot holds, so an id both
- * lists are silent about is indistinguishable between a catalog gap, a removed environment and an
- * unknown target. Null is that "cannot prove", and it leaves the row local — the partition every
- * reader loads, and the one `adoptStrandedHostPartitionSession` returns to its owner once some list
- * can name it. A guessed `ssh:<id>` has no such way back.
+ * An id neither list names stays local, because catalog absence is not authoritative: local is the
+ * partition every reader loads, and `adoptStrandedHostPartitionSession` can still hand it back once
+ * some list names it. A guessed `ssh:<id>` has no way back.
  */
 export function sleepingRecordOriginHostId(
   entry: unknown,
