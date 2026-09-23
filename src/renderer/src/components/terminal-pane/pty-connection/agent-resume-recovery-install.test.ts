@@ -64,6 +64,7 @@ function makeCandidate(overrides: Partial<AgentResumeCandidate> = {}): AgentResu
     messageCount: 758,
     branch: null,
     executionHostId: null,
+    executionHostPlatform: null,
     ...overrides
   }
 }
@@ -104,6 +105,7 @@ function buildSession(
     disposed: false,
     worktree: { path: '/w' },
     executionHostId: null,
+    executionHostPlatform: null,
     spawnedFreshPtyId: 'pty-1',
     lastTerminalInputAt: Number.NaN,
     // The tab-wide value the guard must NOT read; the pane-scoped one is what authorizes a resume.
@@ -220,6 +222,22 @@ describe('recovery triggers', () => {
     await Promise.resolve()
 
     expect(fetchCandidates).toHaveBeenCalled()
+  })
+
+  it('never recovers into a pane opened to run a specific command', async () => {
+    // launchAgent here names what the user just asked to start, not a conversation that went
+    // missing. Recovery begins before the startup is delivered, so a scan finishing later would
+    // replace the requested agent with an older transcript.
+    const session = buildSession('tab-1:leaf-deliberate', {
+      paneStartup: { command: 'claude', launchAgent: 'claude' }
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+    // Latched: the request still stands once the command has been delivered and cleared.
+    session.paneStartup = undefined
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
   })
 
   it('leaves a reattached PTY alone', async () => {

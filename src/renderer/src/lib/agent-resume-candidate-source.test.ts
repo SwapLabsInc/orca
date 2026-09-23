@@ -56,7 +56,8 @@ describe('toAgentResumeCandidate', () => {
       updatedAt: Date.parse('2026-09-15T09:40:00.000Z'),
       messageCount: 758,
       branch: 'issue271',
-      executionHostId: 'ssh:ssh-1'
+      executionHostId: 'ssh:ssh-1',
+      executionHostPlatform: null
     })
   })
 

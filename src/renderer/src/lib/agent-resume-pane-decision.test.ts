@@ -13,7 +13,8 @@ const candidate: AgentResumeCandidate = {
   updatedAt: 1_789_000_000_000,
   messageCount: 758,
   branch: null,
-  executionHostId: 'ssh:ssh-1'
+  executionHostId: 'ssh:ssh-1',
+  executionHostPlatform: null
 }
 
 const resumeResolution: AgentResumeResolution = {

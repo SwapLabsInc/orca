@@ -60,7 +60,8 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
         folderWorkspacePath: session.folderWorkspace?.folderPath
       }),
       terminalWindowsShell: state.settings?.terminalWindowsShell,
-      tabShellOverride: session.shellOverride
+      tabShellOverride: session.shellOverride,
+      hostPlatform: candidate.executionHostPlatform
     })
     const startup = buildCandidateResumeStartup({
       candidate,
@@ -136,6 +137,15 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     // Only the plain shell this connection just spawned may be replaced; a reattached PTY may
     // still be running the agent itself. Not latched: the spawn triggers its own attempt.
     if (!session.spawnedFreshPtyId) {
+      return
+    }
+    // This pane was opened to run something specific, so its launchAgent names what the user just
+    // asked for — not a conversation that went missing. Recovery starts before the startup is
+    // delivered and automatic delivery records no input, so a scan finishing later would replace
+    // the requested agent with an older transcript. Latched: the request stands for this
+    // connection even after the command has been delivered and cleared.
+    if (session.paneStartup?.command) {
+      session.agentResumeRecoveryAttempted = true
       return
     }
     // A hidden pane must not spend the latch: it retries when the user reveals it.

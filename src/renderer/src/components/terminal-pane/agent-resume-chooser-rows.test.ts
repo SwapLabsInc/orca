@@ -14,6 +14,7 @@ function makeCandidate(overrides: Partial<AgentResumeCandidate> = {}): AgentResu
     messageCount: 758,
     branch: null,
     executionHostId: null,
+    executionHostPlatform: null,
     ...overrides
   }
 }

@@ -21,7 +21,8 @@ function makeCandidate(id: string, updatedAt: number): AgentResumeCandidate {
     updatedAt,
     messageCount: 758,
     branch: null,
-    executionHostId: null
+    executionHostId: null,
+    executionHostPlatform: null
   }
 }
 

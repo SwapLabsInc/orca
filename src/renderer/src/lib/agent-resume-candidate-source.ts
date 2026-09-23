@@ -84,7 +84,8 @@ export function toAgentResumeCandidate(
     updatedAt,
     messageCount: session.messageCount,
     branch: typeof session.branch === 'string' ? session.branch : null,
-    executionHostId
+    executionHostId,
+    executionHostPlatform: session.executionHostPlatform ?? null
   }
 }
 

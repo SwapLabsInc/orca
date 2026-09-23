@@ -15,6 +15,9 @@ export type AgentResumeCandidate = {
   branch: string | null
   /** Stamped by the desktop from the host it addressed, never trusted from the answer. */
   executionHostId: ExecutionHostId | null
+  /** The host's own platform, as its scan row reported it. Null when it did not say — an SSH
+   *  connection is not evidence of Linux, and resume commands are quoted per platform. */
+  executionHostPlatform: NodeJS.Platform | null
 }
 
 /** Which rung answered. Diagnostics and tests read this; it is never shown to the user. */

@@ -22,6 +22,9 @@ export type AgentResumeLaunchTargetArgs = {
   terminalWindowsShell: string | null | undefined
   /** Per-tab Windows shell override, which beats the global setting at spawn time. */
   tabShellOverride?: string | null
+  /** The remote host's own platform when its scan row reported one. Beats the SSH fallback
+   *  below: a Windows SSH host quoted for POSIX produces a resume argv its shell rejects. */
+  hostPlatform?: NodeJS.Platform | null
 }
 
 function resolveResumeLaunchPlatform(args: AgentResumeLaunchTargetArgs): NodeJS.Platform {
@@ -30,6 +33,10 @@ function resolveResumeLaunchPlatform(args: AgentResumeLaunchTargetArgs): NodeJS.
   }
   if (args.projectRuntime?.status === 'resolved' && args.projectRuntime.runtime.kind === 'wsl') {
     return 'linux'
+  }
+  // The host said what it is; SSH is a transport, not a platform.
+  if (args.hostPlatform) {
+    return args.hostPlatform
   }
   if (args.connectionId || (args.worktreePath && isWslUncPath(args.worktreePath))) {
     return 'linux'

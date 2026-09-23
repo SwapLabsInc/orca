@@ -17,7 +17,8 @@ const candidate: AgentResumeCandidate = {
   updatedAt: 1_789_000_000_000,
   messageCount: 758,
   branch: null,
-  executionHostId: null
+  executionHostId: null,
+  executionHostPlatform: null
 }
 
 /** Stands in for a pty binding's transport: the choice's owner is an opaque identity. */

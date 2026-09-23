@@ -27,6 +27,7 @@ function candidate(
     messageCount: 200,
     branch: 'feature-a',
     executionHostId: 'ssh:host-1',
+    executionHostPlatform: null,
     ...overrides
   }
 }
