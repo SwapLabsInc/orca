@@ -94,7 +94,9 @@ export function buildRows(
       ? resolveDelegatedWorktreeNesting({
           worktrees,
           edges: delegatedWorktreeEdges,
-          homeHostId: defaultHostId,
+          // Not defaultHostId: the edges arrive on this window's own graph sync, so their
+          // coordinator is always a local row, while the focused host follows the host filter.
+          homeHostId: LOCAL_EXECUTION_HOST_ID,
           getLineageParentIdentity: (worktree) => {
             const info = getLineageRenderInfo(worktree, lineageById, worktreeMap, cyclicLineageIds)
             return info.state === 'valid' ? getWorktreeHostIdentity(info.parent) : undefined

@@ -158,6 +158,39 @@ describe('buildRows with delegated edges', () => {
     ).toHaveLength(1)
   })
 
+  it('still nests while the sidebar is focused on a remote host', () => {
+    // Focus is a filter; the edges still come from this window's own runtime.
+    const rows = buildRows(
+      'repo',
+      [coordinator, remoteWorker],
+      repoMapWithRemote,
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      'manual',
+      lineage,
+      new Map([
+        [coordinator.id, coordinator],
+        [remoteWorker.id, remoteWorker]
+      ]),
+      true,
+      undefined,
+      [],
+      new Set(),
+      new Map(),
+      new Map(),
+      [],
+      undefined,
+      [],
+      undefined,
+      REMOTE_HOST,
+      'single-location',
+      [edge]
+    )
+    expect(findItem(rows, remoteWorker.id)).toMatchObject({ depth: 1 })
+  })
+
   it('leaves the remote worker top-level in its own section without an edge', () => {
     const rows = rowsFor([])
     const worker = findItem(rows, remoteWorker.id)

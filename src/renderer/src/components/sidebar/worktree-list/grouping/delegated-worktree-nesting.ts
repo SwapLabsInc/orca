@@ -27,7 +27,8 @@ const EMPTY_NESTING: DelegatedWorktreeNesting = {
 export function resolveDelegatedWorktreeNesting(args: {
   worktrees: readonly Worktree[]
   edges: readonly DelegatedWorktreeEdge[]
-  /** Host the publishing runtime's own worktrees are stamped with. */
+  /** Host the runtime that published the edges stamps its own worktrees with. Not the
+   *  focused host: focus is a filter over every host's rows, not a claim about the publisher. */
   homeHostId: ExecutionHostId
   /** Parent identity already proven by git lineage, when the row has one. */
   getLineageParentIdentity: (worktree: Worktree) => string | undefined
