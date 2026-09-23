@@ -77,7 +77,14 @@ export type AgentLaunchSurfaceFactory = {
     cwd?: string
     /** The one member of the `agent_started` triple the host cannot derive for itself. */
     launchSource?: string
-  }): Promise<{ handle: string; warning?: string }>
+    /** The caller-minted pane to create; refused with `AgentLaunchPaneAlreadyLiveError` if live. */
+    paneKey?: string
+  }): Promise<{
+    handle: string
+    /** The pane this create minted; a factory whose runtime reports none omits it, never invents. */
+    paneKey?: string
+    warning?: string
+  }>
   /**
    * Commits the launch text as the session's first turn, answering with the transcript row's id.
    *
@@ -137,9 +144,12 @@ export type AgentLaunchWorkspaceFactory = {
     agentArgs?: string | null
     cwd?: string
     launchSource?: string
+    paneKey?: string
   }): Promise<{
     worktreeId: string
     startupTerminalHandle: string | undefined
+    /** The pane minted with the startup terminal, when the runtime reported one. */
+    startupTerminalPaneKey?: string
     /** Created, but incomplete — surfaced on the launch result rather than dropped. */
     warning?: string
   }>
@@ -190,7 +200,11 @@ export async function executeAgentLaunch(
   // Agent-first creation already produced the agent, so the pre-flight verdict is final.
   if (placed.startupTerminalHandle) {
     return {
-      outcome: { kind: 'terminal', handle: placed.startupTerminalHandle },
+      outcome: {
+        kind: 'terminal',
+        handle: placed.startupTerminalHandle,
+        ...(placed.startupTerminalPaneKey ? { paneKey: placed.startupTerminalPaneKey } : {})
+      },
       worktreeId: placed.worktreeId,
       receipt: preflight,
       ...(placed.warning ? { warning: placed.warning } : {}),
@@ -268,6 +282,7 @@ async function resolveWorkspace(
 ): Promise<{
   worktreeId: string
   startupTerminalHandle: string | undefined
+  startupTerminalPaneKey?: string
   warning?: string
   /** True when this create folded the prompt into the agent's startup command. */
   promptRodeLaunchCommand?: boolean
@@ -295,7 +310,8 @@ async function resolveWorkspace(
       : {
           ...(intent.agentArgs !== undefined ? { agentArgs: intent.agentArgs } : {}),
           ...(intent.cwd ? { cwd: intent.cwd } : {}),
-          ...(intent.launchSource ? { launchSource: intent.launchSource } : {})
+          ...(intent.launchSource ? { launchSource: intent.launchSource } : {}),
+          ...(intent.paneKey ? { paneKey: intent.paneKey } : {})
         })
   })
   // Only when a startup terminal actually came back: a create that produced none ran no command,
@@ -377,10 +393,15 @@ async function createTerminalSurface(
     // `null` is a value the caller meant, so this tests for absence rather than falsiness.
     ...(intent.agentArgs !== undefined ? { agentArgs: intent.agentArgs } : {}),
     ...(intent.cwd ? { cwd: intent.cwd } : {}),
-    ...(intent.launchSource ? { launchSource: intent.launchSource } : {})
+    ...(intent.launchSource ? { launchSource: intent.launchSource } : {}),
+    ...(intent.paneKey ? { paneKey: intent.paneKey } : {})
   })
   return {
-    outcome: { kind: 'terminal', handle: terminal.handle },
+    outcome: {
+      kind: 'terminal',
+      handle: terminal.handle,
+      ...(terminal.paneKey ? { paneKey: terminal.paneKey } : {})
+    },
     ...(terminal.warning ? { warning: terminal.warning } : {}),
     ...(startupPrompt ? { promptRodeLaunchCommand: true } : {})
   }

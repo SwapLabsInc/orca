@@ -13,6 +13,7 @@ import {
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { setAppEnvironment } from '../../shared/app-environment'
 
 const { getPathMock } = vi.hoisted(() => ({
@@ -91,7 +92,7 @@ describe('OpenCode hook plugin source', () => {
     const digest = (source: string): string => createHash('sha256').update(source).digest('hex')
 
     expect(digest(getOpenCodePluginSource())).toBe(
-      '51ae4f9fbf7a85e3e33db961d0d83b89395ed026335502569e4f3179927aa629'
+      '61ea63eef727ba55903859fc4a6317f38ee1e10a4a4532e79c237f8f0e98ab52'
     )
     expect(
       digest(getOpenCodeFamilyPluginSource('/hook/mimo-code', { emitSessionStart: false }))
@@ -286,6 +287,29 @@ describe('OpenCodeHookService buildPtyEnv / clearPty round-trip', () => {
     const pluginSource = readFileSync(pluginPath, 'utf8')
     expect(pluginSource).toContain('OrcaOpenCodeStatusPlugin')
     expect(pluginSource).toContain('messageID: part.messageID')
+  })
+
+  // Why: #22234 — OpenCode 2 installs under the plain `opencode` name, and its loader
+  // rejects a default export that only has server(). Asserting the emitted *source* is
+  // not enough; the installed file is what the v2 server validates, so load it.
+  it('installs a plugin whose default export satisfies both the v1 and v2 loaders', async () => {
+    const service = new OpenCodeHookService()
+    service.buildPtyEnv(daemonSessionId)
+
+    const pluginPath = join(resolveOpenCodeConfigDirectory(), 'plugins', 'orca-opencode-status.js')
+    // Why: a .mjs copy so Node parses the installed file as ESM without a package.json.
+    const modulePath = join(userDataDir, `installed-opencode-plugin-${Date.now()}.mjs`)
+    writeFileSync(modulePath, readFileSync(pluginPath, 'utf8'))
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the assertions below validate the shape this names.
+    const module = (await import(pathToFileURL(modulePath).href)) as {
+      default?: { id?: unknown; server?: unknown; setup?: unknown }
+    }
+
+    expect(module.default?.id).toBe('orca-opencode-status')
+    // v1 loader: "must default export an object with server()".
+    expect(module.default?.server).toBeTypeOf('function')
+    // v2 loader: "Plugin must export a default definition with an id and an effect or setup function."
+    expect(module.default?.setup).toBeTypeOf('function')
   })
 
   it('clearPty leaves the shared OpenCode config dir off the teardown hot path', () => {
