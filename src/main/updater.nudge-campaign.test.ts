@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const {
   appMock,
@@ -30,6 +34,54 @@ warmUpdaterModule()
 describe('updater', () => {
   beforeEach(() => {
     resetUpdaterMocks()
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+  })
+
+  // Why: nudge campaigns describe upstream releases, but the check they trigger is
+  // still sticky — a fork build must resolve it against its own feed, never upstream's.
+  it('resolves a nudge-triggered check against the running source feed', async () => {
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    appMock.getVersion.mockReturnValue('1.4.197-swaplabs.202609241530')
+    fetchNewerReleaseTagsMock.mockResolvedValue(['swaplabs-v1.4.197+resume.2'])
+    fetchNudgeMock.mockResolvedValue({ id: 'campaign-fork', minVersion: '1.0.0' })
+    shouldApplyNudgeMock.mockReturnValue(true)
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+      autoUpdaterMock.emit('checking-for-update')
+      return Promise.resolve(undefined)
+    })
+    const sendMock = vi.fn()
+    const mainWindow = { webContents: { send: sendMock } }
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow as never, {
+      getLastUpdateCheckAt: () => Date.now()
+    })
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.4.197-swaplabs.202609241530', 2, {
+      includePrerelease: true,
+      source: expect.objectContaining({ id: 'swaplabs', repo: 'SwapLabsInc/orca' })
+    })
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: 'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197+resume.2'
+    })
+
+    autoUpdaterMock.emit('update-available', { version: '1.4.197-swaplabs.202609241600.resume.2' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(sendMock).toHaveBeenCalledWith('updater:status', {
+      state: 'available',
+      version: '1.4.197-swaplabs.202609241600.resume.2',
+      changelog: null,
+      activeNudgeId: 'campaign-fork',
+      releaseSource: 'swaplabs'
+    })
   })
 
   it('does not leak a nudge marker into a later ordinary update cycle', async () => {

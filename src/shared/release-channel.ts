@@ -1,4 +1,11 @@
 import { compareAppVersions, isValidAppVersion } from './app-version'
+import {
+  PRIMARY_RELEASE_SOURCE,
+  getReleaseSourceOrPrimary,
+  getReleaseSourceVersionPattern,
+  getVersionReleaseSource,
+  type ReleaseSourceId
+} from './release-sources'
 
 export type ReleaseChannel = 'stable' | 'rc' | 'hourly' | 'daily' | 'adhoc'
 
@@ -24,7 +31,8 @@ export const RELEASE_CHANNEL_LABELS: Readonly<Record<ReleaseChannel, string>> = 
 export const HOURLY_RELEASE_REPO = 'stablyai/orca-hourly'
 export const DAILY_RELEASE_REPO = 'stablyai/orca-daily'
 export const ADHOC_RELEASE_REPO = 'stablyai/orca-adhoc'
-export const MAIN_RELEASE_REPO = 'stablyai/orca'
+/** The primary release source's repo; a fork build's own source is looked up per version instead. */
+export const MAIN_RELEASE_REPO = PRIMARY_RELEASE_SOURCE.repo
 
 export const HOURLY_PRERELEASE_IDENTIFIER = 'hourly'
 export const DAILY_PRERELEASE_IDENTIFIER = 'daily'
@@ -114,8 +122,44 @@ export function requiresManualDevChannelInstall(options: {
   return runningChannel === null || !hasDedicatedReleaseRepo(runningChannel)
 }
 
-export function getReleaseRepoForChannel(channel: ReleaseChannel): string {
-  return CHANNEL_RELEASE_REPOS[channel]
+/**
+ * The repo that publishes `channel` for `source`. Dev channels hang off the
+ * primary source only; every other source is one series in one repo.
+ */
+export function getReleaseRepoForChannel(
+  channel: ReleaseChannel,
+  sourceId: ReleaseSourceId | null = null
+): string {
+  const source = getReleaseSourceOrPrimary(sourceId)
+  if (source.id === PRIMARY_RELEASE_SOURCE.id) {
+    return CHANNEL_RELEASE_REPOS[channel]
+  }
+  return source.repo
+}
+
+/**
+ * Whether a jump has to go through a downloaded installer rather than the
+ * in-app updater. Windows keeps the dev-channel signing rule above. macOS
+ * refuses every cross-source jump: Squirrel.Mac only installs a bundle carrying
+ * the running app's code signature, and each source signs (or ad-hoc signs)
+ * with its own identity. Linux never needs one; deb/rpm are refused later as
+ * externally managed. A null running source (unparseable version) counts as a
+ * different one, which sends the user to a download that works.
+ */
+export function requiresManualInstall(options: {
+  platform: NodeJS.Platform
+  running: { source: ReleaseSourceId | null; channel: ReleaseChannel | null }
+  target: { source: ReleaseSourceId; channel: ReleaseChannel }
+}): boolean {
+  const { platform, running, target } = options
+  if (platform === 'darwin') {
+    return running.source !== target.source
+  }
+  return requiresManualDevChannelInstall({
+    platform,
+    runningChannel: running.channel,
+    targetChannel: target.channel
+  })
 }
 
 export function normalizeTagToVersion(tag: string): string {
@@ -217,10 +261,29 @@ export function parseDevBuildStamp(version: string): Date | null {
   )
 }
 
+/** The minute stamp of a non-primary source build (`1.4.197-swaplabs.202609241530`), else null. */
+export function parseSourceBuildStamp(version: string): Date | null {
+  const sourceId = getVersionReleaseSource(version)
+  const pattern = sourceId
+    ? getReleaseSourceVersionPattern(getReleaseSourceOrPrimary(sourceId))
+    : null
+  return pattern ? parseStampedVersion(version, pattern) : null
+}
+
+/** Cut time of any stamped build — dev channel or source series — for ordering. */
+export function parseReleaseBuildStamp(version: string): Date | null {
+  return parseDevBuildStamp(version) ?? parseSourceBuildStamp(version)
+}
+
 export function getVersionChannel(version: string): ReleaseChannel | null {
   const normalized = normalizeTagToVersion(version)
   if (!isValidAppVersion(normalized)) {
     return null
+  }
+  // Why: a non-primary source is one series with no rc/stable split, and its
+  // versions are prereleases that the catch-all below would otherwise file under rc.
+  if (getVersionReleaseSource(normalized) !== PRIMARY_RELEASE_SOURCE.id) {
+    return 'stable'
   }
   if (isHourlyVersion(normalized)) {
     return 'hourly'
@@ -243,9 +306,11 @@ export function getVersionChannel(version: string): ReleaseChannel | null {
  * — /latest also breaks when GitHub's API is degraded).
  */
 export function getReleaseNotesUrlForVersion(version: string | null): string {
+  const sourceId = version ? getVersionReleaseSource(version) : null
   const channel = version ? getVersionChannel(version) : null
-  const repo = channel ? getReleaseRepoForChannel(channel) : MAIN_RELEASE_REPO
-  return version
+  const repo = channel ? getReleaseRepoForChannel(channel, sourceId) : MAIN_RELEASE_REPO
+  // Why the listing for other sources: their tags are not `v<version>`, so a tag URL cannot be derived.
+  return version && (sourceId === null || sourceId === PRIMARY_RELEASE_SOURCE.id)
     ? `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}`
     : `https://github.com/${repo}/releases`
 }
@@ -323,8 +388,8 @@ export function sortReleaseBuildsNewestFirst(builds: ReleaseBuild[]): ReleaseBui
     // Dev build base versions can move backwards when a branch was cut before
     // the latest main build. Their stamped build time, not semver, is the
     // meaningful "newest" signal for the picker.
-    const leftStamp = parseDevBuildStamp(left.version)?.getTime() ?? null
-    const rightStamp = parseDevBuildStamp(right.version)?.getTime() ?? null
+    const leftStamp = parseReleaseBuildStamp(left.version)?.getTime() ?? null
+    const rightStamp = parseReleaseBuildStamp(right.version)?.getTime() ?? null
     if (leftStamp !== null && rightStamp !== null && leftStamp !== rightStamp) {
       return rightStamp - leftStamp
     }

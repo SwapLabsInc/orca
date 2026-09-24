@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const {
   appMock,
@@ -8,9 +13,20 @@ const {
   powerMonitorOnMock,
   fetchNudgeMock,
   shouldApplyNudgeMock,
+  fetchNewerReleaseTagsMock,
   moduleFactories,
   resetUpdaterMocks
 } = await vi.hoisted(async () => (await import('./updater-test-harness')).createUpdaterMocks())
+
+const FORK_VERSION = '1.4.197-swaplabs.202609241530'
+const FORK_TAG = 'swaplabs-v1.4.197+resume.2'
+const FORK_FEED_URL = `https://github.com/SwapLabsInc/orca/releases/download/${FORK_TAG}`
+
+/** Runs a test as a fork build: two configured sources and a source-stamped running version. */
+function asForkBuild(): void {
+  setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+  appMock.getVersion.mockReturnValue(FORK_VERSION)
+}
 
 vi.mock('electron', () => moduleFactories.electron())
 vi.mock('electron-updater', () => moduleFactories.electronUpdater())
@@ -32,6 +48,110 @@ describe('updater', () => {
   beforeEach(() => {
     resetUpdaterMocks()
     vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+  })
+
+  // Why: the routine check used to read upstream's feed for every build, and a fork
+  // version is semver-below upstream's next stable, so the next release replaced it.
+  it('pins the running source feed for a startup check on a source build', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([FORK_TAG])
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow as never, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000
+    })
+
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenNthCalledWith(1, {
+      provider: 'generic',
+      url: 'https://github.com/SwapLabsInc/orca/releases/latest/download'
+    })
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith(FORK_VERSION, 2, {
+      includePrerelease: true,
+      source: expect.objectContaining({ id: 'swaplabs', repo: 'SwapLabsInc/orca' })
+    })
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: FORK_FEED_URL
+    })
+  })
+
+  it('keeps a wake or focus re-check on the running source', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([FORK_TAG])
+    const mainWindow = { webContents: { send: vi.fn() } }
+    let lastCheckAt = Date.now()
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow as never, {
+      getLastUpdateCheckAt: () => lastCheckAt
+    })
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+    lastCheckAt = Date.now() - 25 * 60 * 60 * 1000
+    appMock.emit('browser-window-focus')
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenLastCalledWith(
+      FORK_VERSION,
+      2,
+      expect.objectContaining({ source: expect.objectContaining({ id: 'swaplabs' }) })
+    )
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: FORK_FEED_URL
+    })
+  })
+
+  // Why: a source that only publishes prereleases has no /releases/latest to fall
+  // back to, so "nothing newer" is settled from the feed answer alone.
+  it('settles a source build with nothing newer as not-available without launching a check', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([])
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const setLastUpdateCheckAt = vi.fn()
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000,
+      setLastUpdateCheckAt
+    })
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith('updater:status', { state: 'not-available' })
+    })
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    expect(setLastUpdateCheckAt).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a single-source build on the upstream feed with no source parameter', async () => {
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.0.52'])
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow as never, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000
+    })
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.0.51', 1, {
+      includePrerelease: false
+    })
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: 'https://github.com/stablyai/orca/releases/download/v1.0.52'
+    })
   })
 
   it('does not load or configure electron-updater during dev setup', async () => {

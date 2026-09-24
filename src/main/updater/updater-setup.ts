@@ -18,6 +18,8 @@ import { createUpdaterDiagnosticLogger } from '../linux-package-install-diagnost
 import { registerAutoUpdaterHandlers } from '../updater-events'
 import { getServeUpdateHandoffFailure } from '../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
+import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
+import { getReleaseSourceOrPrimary } from '../../shared/release-sources'
 import { AUTO_UPDATE_CHECK_INTERVAL_MS } from './updater-state'
 import { UpdaterDownloadInstall } from './updater-download-install'
 import type { UpdateInstallMode } from './updater-state'
@@ -157,9 +159,10 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
 
     // Security: never re-add a verifyUpdateCodeSignature override — a no-op disables electron-updater's built-in Authenticode check and accepts any installer.
     if (this.activeUpdateSource === 'release') {
+      // Why a placeholder: every check pins a concrete tag first; this only names the running source's repo.
       autoUpdater.setFeedURL({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/latest/download'
+        url: getLatestReleaseDownloadUrl(getReleaseSourceOrPrimary(this.getRunningReleaseSource()))
       })
     }
     if (this.autoUpdaterInitialized) {

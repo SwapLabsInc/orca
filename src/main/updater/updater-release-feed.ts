@@ -4,6 +4,8 @@ import {
   getReleaseDownloadUrl
 } from '../updater-prerelease-feed'
 import { isMissingUpdateManifestFailure, isPrereleaseVersion } from '../updater-fallback'
+import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
+import { getReleaseSourceOrPrimary } from '../../shared/release-sources'
 import type { CheckFailureSource } from './updater-state'
 import type { UpdateCheckVariant } from './updater-types'
 import { ReleaseFeedPreflightError } from './updater-state'
@@ -117,15 +119,23 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     const autoUpdater = this.getAutoUpdater()
     // Why: the latest/download redirect can move between check and download, so pin the concrete tag (prerelease users resolve any channel, stable only stable).
     const currentVersion = app.getVersion()
-    const isPerfCheck = variant === 'perf'
+    // Why sticky: routine checks only ever read the running build's own source, so a fork build is never offered upstream's newer semver.
+    const source = getReleaseSourceOrPrimary(this.getRunningReleaseSource())
+    const isPrimarySource = source.prereleaseIdentifier === null
+    // Why: perf builds and the rc series exist only in the primary source; elsewhere every build is a prerelease.
+    const isPerfCheck = variant === 'perf' && isPrimarySource
     const includePrerelease =
-      isPerfCheck || this.includePrereleaseActive || isPrereleaseVersion(currentVersion)
+      isPerfCheck ||
+      !isPrimarySource ||
+      this.includePrereleaseActive ||
+      isPrereleaseVersion(currentVersion)
     const releaseTagsResult = await fetchNewerReleaseTagsWithReadiness(
       currentVersion,
       includePrerelease ? 2 : 1,
       {
         includePrerelease,
-        ...(isPerfCheck ? { releaseFilter: 'perf' as const } : {})
+        ...(isPerfCheck ? { releaseFilter: 'perf' as const } : {}),
+        ...(isPrimarySource ? {} : { source })
       }
     )
     const newerTag = releaseTagsResult.tags[0] ?? null
@@ -148,9 +158,9 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     // Why: console.info is captured by Console.app/--enable-logging — our only field visibility into the updater.
     if (newerTag) {
       this.clearPublishingWindowLastGoodCheck()
-      const url = getReleaseDownloadUrl(newerTag)
+      const url = getReleaseDownloadUrl(newerTag, source)
       console.info(
-        `[updater] release feed pinned: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
+        `[updater] release feed pinned: current=${currentVersion} source=${source.id} includePrerelease=${includePrerelease} → ${url}`
       )
       autoUpdater.setFeedURL({ provider: 'generic', url })
       return 'ready'
@@ -159,9 +169,9 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
       this.clearPrereleaseFallbackContext()
       if (releaseTagsResult.lastGoodTag) {
         // Why: during a publish window the newest tag is unsafe; a verified last-good concrete feed lets electron-updater emit a real result.
-        const url = getReleaseDownloadUrl(releaseTagsResult.lastGoodTag)
+        const url = getReleaseDownloadUrl(releaseTagsResult.lastGoodTag, source)
         console.info(
-          `[updater] release feed pinned to last-good: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
+          `[updater] release feed pinned to last-good: current=${currentVersion} source=${source.id} includePrerelease=${includePrerelease} → ${url}`
         )
         this.publishingWindowLastGoodCheck = { lastGoodTag: releaseTagsResult.lastGoodTag }
         autoUpdater.setFeedURL({ provider: 'generic', url })
@@ -179,8 +189,8 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     }
     if (
       releaseTagsResult.state === 'unavailable' &&
-      releaseTagsResult.unavailableReason === 'manifest' &&
-      !includePrerelease
+      ((releaseTagsResult.unavailableReason === 'manifest' && !includePrerelease) ||
+        !isPrimarySource)
     ) {
       this.clearPrereleaseFallbackContext()
       this.clearPublishingWindowLastGoodCheck()
@@ -189,6 +199,14 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
         'default',
         'Unable to find latest version on GitHub'
       )
+    }
+    if (!isPrimarySource) {
+      // Why: GitHub's /releases/latest names the newest non-prerelease, which a source that only
+      // publishes prereleases never has — so a no-newer answer is final rather than a fallback.
+      this.clearPrereleaseFallbackContext()
+      this.clearPublishingWindowLastGoodCheck()
+      console.info(`[updater] no newer ${source.id} release: current=${currentVersion}`)
+      return 'not-available'
     }
     if (isPerfCheck) {
       this.clearPrereleaseFallbackContext()
@@ -203,7 +221,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     }
     this.clearPrereleaseFallbackContext()
     this.clearPublishingWindowLastGoodCheck()
-    const url = 'https://github.com/stablyai/orca/releases/latest/download'
+    const url = getLatestReleaseDownloadUrl(source)
     console.info(
       `[updater] release feed fallback: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
     )
@@ -238,7 +256,10 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
       source === 'promise' ? { failureKey, error: sourceError } : null
     this.pendingPrereleaseFallback.fallbackCheckingForUpdateSeen = false
     const { primaryTag, fallbackTag } = this.pendingPrereleaseFallback
-    const url = getReleaseDownloadUrl(fallbackTag)
+    const url = getReleaseDownloadUrl(
+      fallbackTag,
+      getReleaseSourceOrPrimary(this.getRunningReleaseSource())
+    )
     console.info(
       `[updater] prerelease manifest missing for ${primaryTag}; retrying once against ${url}`
     )

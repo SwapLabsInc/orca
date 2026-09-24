@@ -6,6 +6,7 @@ import type {
   RemoteServerUpdaterSnapshot,
   RemoteServerUpdateSupport
 } from '../../shared/remote-server-update'
+import { isMultiSourceBuild } from '../../shared/release-sources'
 import { hasServeUpdateSupervisor } from '../serve-update-handoff'
 import { getLinuxPackageType } from '../linux-update-package-type'
 import { UpdaterNudge } from './updater-nudge'
@@ -53,7 +54,9 @@ export abstract class UpdaterRemoteStatus extends UpdaterNudge {
       appVersion: app.getVersion(),
       runtimeId,
       support: this.getRemoteServerUpdateSupport(),
-      status: this.getUpdateStatus()
+      status: this.getUpdateStatus(),
+      // Why only multi-source builds: a single-source host's wire stays byte-identical to today's.
+      ...(isMultiSourceBuild() ? { releaseSource: this.getRunningReleaseSource() } : {})
     }
   }
 

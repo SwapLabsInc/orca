@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { createBootstrapFatalExitBanner } from './config/build-plugins/bootstrap-fatal-exit-banner'
 import { createPdfjsViewerAssetsPlugin } from './config/build-plugins/pdfjs-viewer-assets'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
+import { parseReleaseSources } from './src/shared/release-sources'
 import packageJson from './package.json' with { type: 'json' }
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
@@ -58,6 +59,16 @@ const orcaDiagnosticsTokenUrl = process.env.ORCA_DIAGNOSTICS_TOKEN_URL
 const ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL =
   typeof orcaDiagnosticsTokenUrl === 'string' && orcaDiagnosticsTokenUrl.length > 0
     ? JSON.stringify(orcaDiagnosticsTokenUrl)
+    : 'null'
+// Why a compile-time define, like the identity above: the registry says which
+// repos a packaged app will ever update from, so a shell export must not be able
+// to re-point it, and the renderer reads the same table. Parsed with the runtime's
+// own parser so a malformed literal fails the build here rather than shipping an
+// app that silently falls back to updating from upstream.
+const orcaReleaseSources = process.env.ORCA_RELEASE_SOURCES
+const ORCA_RELEASE_SOURCES_LITERAL =
+  typeof orcaReleaseSources === 'string' && orcaReleaseSources.trim().length > 0
+    ? JSON.stringify(JSON.stringify(parseReleaseSources(orcaReleaseSources)))
     : 'null'
 
 function createStartupDiagnosticsBanner(chunkName: string): string {
@@ -280,7 +291,8 @@ export const electronViteConfig: UserConfig = {
     define: {
       ORCA_BUILD_IDENTITY: ORCA_BUILD_IDENTITY_LITERAL,
       ORCA_POSTHOG_WRITE_KEY: ORCA_POSTHOG_WRITE_KEY_LITERAL,
-      ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL
+      ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL,
+      ORCA_RELEASE_SOURCES: ORCA_RELEASE_SOURCES_LITERAL
     },
     // Why: @xterm/headless declares "exports": null in package.json, which
     // prevents Vite's default resolver from finding the CJS entry. Point
@@ -302,6 +314,10 @@ export const electronViteConfig: UserConfig = {
     }
   },
   renderer: {
+    // Why here too: `release-channel.ts` derives repos from the registry and the renderer imports it.
+    define: {
+      ORCA_RELEASE_SOURCES: ORCA_RELEASE_SOURCES_LITERAL
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),

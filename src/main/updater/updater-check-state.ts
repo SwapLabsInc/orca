@@ -3,6 +3,7 @@ import { isWindowsSignatureCheckUnavailableFailure } from '../../shared/updater-
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getRetainedLinuxPackageManualInstallStatus } from '../linux-package-downloaded-status'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
+import type { ReleaseSourceId } from '../../shared/release-sources'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterStatus } from './updater-status'
 import {
@@ -267,11 +268,16 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     )
   }
 
-  protected sendErrorStatus(message: string, userInitiated?: boolean): void {
+  protected sendErrorStatus(
+    message: string,
+    userInitiated?: boolean,
+    releaseSource?: ReleaseSourceId
+  ): void {
     if (
       this.currentStatus.state === 'error' &&
       this.currentStatus.message === message &&
-      this.currentStatus.userInitiated === userInitiated
+      this.currentStatus.userInitiated === userInitiated &&
+      this.currentStatus.releaseSource === releaseSource
     ) {
       return
     }
@@ -282,7 +288,20 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
         message: 'Windows update signature check could not run'
       })
     }
-    this.sendStatus({ state: 'error', message, userInitiated })
+    this.sendStatus({
+      state: 'error',
+      message,
+      userInitiated,
+      ...(releaseSource ? { releaseSource } : {})
+    })
+  }
+
+  /** The source a failed pinned jump targeted, when it is not the running one — read before the feed is handed back. */
+  protected getPinnedReleaseSourceForStatus(): ReleaseSourceId | undefined {
+    return this.activeReleaseSource !== null &&
+      this.activeReleaseSource !== this.getRunningReleaseSource()
+      ? this.activeReleaseSource
+      : undefined
   }
 
   /**
@@ -294,7 +313,7 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     if (retainedStatus) {
       this.sendStatus(retainedStatus)
     } else if (status.state === 'error') {
-      this.sendErrorStatus(status.message, status.userInitiated)
+      this.sendErrorStatus(status.message, status.userInitiated, status.releaseSource)
     } else {
       this.sendStatus(status)
     }

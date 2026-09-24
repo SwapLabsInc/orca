@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   findInstallerAssetName,
   formatAdhocVersion,
@@ -24,6 +24,11 @@ import {
   type ReleaseChannel
 } from './release-channel'
 import { compareAppVersions } from './app-version'
+import type * as ReleaseChannelModule from './release-channel.js'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from './release-sources.fixture'
 
 describe('release channel', () => {
   it('classifies versions by channel', () => {
@@ -343,5 +348,107 @@ describe('release channel', () => {
       '1.4.206-adhoc.20260919173504',
       '1.4.207-adhoc.20260919025813'
     ])
+  })
+})
+
+/** Re-evaluates the channel table against a two-source registry, as a fork build would see it. */
+async function loadForkChannels(): Promise<typeof ReleaseChannelModule> {
+  vi.resetModules()
+  setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+  return import('./release-channel.js')
+}
+
+describe('release channel with a second source', () => {
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+    vi.resetModules()
+  })
+
+  // Why: the catch-all used to file every unknown prerelease under rc, which made
+  // a fork build eligible for upstream's RC feed.
+  it('classifies a source-stamped version as its source and channel stable, not rc', async () => {
+    const fork = await loadForkChannels()
+
+    expect(fork.getVersionChannel('1.4.197-swaplabs.202609241530')).toBe('stable')
+    expect(fork.getVersionChannel('1.4.198-rc.1.swaplabs.202609241530.resume.1')).toBe('stable')
+    expect(fork.getVersionChannel('1.4.197-rc.3')).toBe('rc')
+    expect(fork.getVersionChannel('1.4.197-hourly.202607281400')).toBe('hourly')
+    expect(fork.parseSourceBuildStamp('1.4.197-swaplabs.202609241530')?.toISOString()).toBe(
+      '2026-09-24T15:30:00.000Z'
+    )
+    expect(fork.parseSourceBuildStamp('1.4.197-swaplabs.202613241530')).toBeNull()
+    expect(fork.parseSourceBuildStamp('1.4.197-hourly.202607281400')).toBeNull()
+    expect(fork.parseSourceBuildStamp('1.4.197')).toBeNull()
+  })
+
+  it('keeps the dev channels on the primary repo and sends other sources to their own', async () => {
+    const fork = await loadForkChannels()
+
+    expect(fork.getReleaseRepoForChannel('stable')).toBe('stablyai/orca')
+    expect(fork.getReleaseRepoForChannel('hourly', 'upstream')).toBe('stablyai/orca-hourly')
+    expect(fork.getReleaseRepoForChannel('stable', 'swaplabs')).toBe('SwapLabsInc/orca')
+    expect(fork.getReleaseRepoForChannel('stable', 'unknown')).toBe('stablyai/orca')
+  })
+
+  it('sorts consecutive source builds newest first by stamp, across base versions', async () => {
+    const fork = await loadForkChannels()
+    const build = (version: string): ReleaseBuild => ({
+      tag: `swaplabs-v${version.split('-')[0]}+x`,
+      version,
+      channel: 'stable',
+      name: null,
+      publishedAt: null,
+      releaseUrl: 'https://github.com/SwapLabsInc/orca/releases',
+      installerUrl: null
+    })
+    const sorted = fork.sortReleaseBuildsNewestFirst([
+      build('1.4.197-swaplabs.202609241530.resume.2'),
+      build('1.4.198-rc.1.swaplabs.202609240900'),
+      build('1.4.197-swaplabs.202609241600')
+    ])
+    expect(sorted.map((entry) => entry.version)).toEqual([
+      '1.4.197-swaplabs.202609241600',
+      '1.4.197-swaplabs.202609241530.resume.2',
+      '1.4.198-rc.1.swaplabs.202609240900'
+    ])
+  })
+
+  // Why the listing rather than a tag page: fork tags are not `v<version>`, so a
+  // derived tag URL would 404.
+  it('links release notes to the source repo listing for a source build', async () => {
+    const fork = await loadForkChannels()
+
+    expect(fork.getReleaseNotesUrlForVersion('1.4.197-swaplabs.202609241530')).toBe(
+      'https://github.com/SwapLabsInc/orca/releases'
+    )
+    expect(fork.getReleaseNotesUrlForVersion('1.4.197')).toBe(
+      'https://github.com/stablyai/orca/releases/tag/v1.4.197'
+    )
+  })
+
+  it('requires a manual install for every macOS cross-source jump and never on Linux', async () => {
+    const fork = await loadForkChannels()
+    const manual = (platform: NodeJS.Platform, running: string | null, target: string) =>
+      fork.requiresManualInstall({
+        platform,
+        running: { source: running, channel: 'stable' },
+        target: { source: target, channel: 'stable' }
+      })
+
+    expect(manual('darwin', 'upstream', 'swaplabs')).toBe(true)
+    expect(manual('darwin', 'swaplabs', 'upstream')).toBe(true)
+    expect(manual('darwin', null, 'swaplabs')).toBe(true)
+    expect(manual('darwin', 'swaplabs', 'swaplabs')).toBe(false)
+    expect(manual('linux', 'upstream', 'swaplabs')).toBe(false)
+    expect(manual('linux', 'swaplabs', 'upstream')).toBe(false)
+    // Windows keeps the dev-channel rule and nothing more: a stable-to-stable jump stays in-app.
+    expect(manual('win32', 'upstream', 'swaplabs')).toBe(false)
+    expect(
+      fork.requiresManualInstall({
+        platform: 'win32',
+        running: { source: 'upstream', channel: 'stable' },
+        target: { source: 'upstream', channel: 'adhoc' }
+      })
+    ).toBe(true)
   })
 })

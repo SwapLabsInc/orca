@@ -43,6 +43,41 @@ describe('electron-builder dev-channel identity', () => {
     expect(config.publish.releaseType).toBe('draft')
   })
 
+  // A fork publishes from the same config into its own repository; the identity
+  // stays stablyai's whenever the overrides are unset.
+  it('takes the publish owner and repo from the environment, defaulting to stablyai/orca', () => {
+    const config = loadConfigWithEnv({
+      ORCA_PUBLISH_OWNER: 'SwapLabsInc',
+      ORCA_PUBLISH_REPO: 'orca',
+      ORCA_LOCAL_BUILD_VERSION: '1.4.197-swaplabs.202609241530'
+    })
+
+    expect(config.publish.owner).toBe('SwapLabsInc')
+    expect(config.publish.repo).toBe('orca')
+    expect(config.extraMetadata.version).toBe('1.4.197-swaplabs.202609241530')
+    expect(loadConfigWithEnv({}).publish.owner).toBe('stablyai')
+    expect(
+      loadConfigWithEnv({ ORCA_PUBLISH_OWNER: '', ORCA_PUBLISH_REPO: '' }).publish
+    ).toMatchObject({
+      owner: 'stablyai',
+      repo: 'orca'
+    })
+  })
+
+  it('reports a dev-channel build whose publish repo was overridden', () => {
+    const config = loadConfigWithEnv({ ...WIN_ADHOC_ENV, ORCA_PUBLISH_REPO: 'orca' })
+
+    expect(config.publish.repo).toBe('orca')
+    expect(
+      collectDevChannelPackagingProblems({
+        channel: 'adhoc',
+        platform: 'win32',
+        config,
+        env: WIN_ADHOC_ENV
+      })
+    ).toEqual([expect.stringContaining('publish.repo is "orca"')])
+  })
+
   // The whole point of the change: an unsigned build that advertised a
   // publisherName would Authenticode-verify — and reject — every installer it
   // ever downloaded, including its own way back to stable.

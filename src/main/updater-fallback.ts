@@ -10,7 +10,7 @@ export const isPrereleaseVersion = isPrereleaseAppVersion
 export const isValidVersion = isValidAppVersion
 
 export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean {
-  if (left.source !== right.source) {
+  if (left.source !== right.source || left.releaseSource !== right.releaseSource) {
     return false
   }
   switch (left.state) {
@@ -53,6 +53,7 @@ export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean 
         left.retryable === right.retryable &&
         left.userInitiated === right.userInitiated &&
         left.activeNudgeId === right.activeNudgeId &&
+        left.manualInstallUrl === right.manualInstallUrl &&
         // Recovery identity fences async actions, so same-valued recaptures must reach the renderer.
         left.recovery === right.recovery
       )

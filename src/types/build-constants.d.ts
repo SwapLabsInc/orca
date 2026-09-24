@@ -20,3 +20,7 @@ declare const ORCA_POSTHOG_WRITE_KEY: string | null
 // point a packaged build at a staging server without re-running the
 // release pipeline.
 declare const ORCA_DIAGNOSTICS_TOKEN_URL: string | null
+
+// ORCA_RELEASE_SOURCES (the update-source registry) is declared beside its
+// reader in `src/shared/release-sources.ts`, because the renderer typecheck
+// includes `src/shared` but not this directory.

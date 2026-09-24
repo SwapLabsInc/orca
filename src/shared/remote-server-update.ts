@@ -1,3 +1,4 @@
+import type { ReleaseSourceId } from './release-sources'
 import type { UpdateStatus } from './update-status-types'
 
 export const REMOTE_SERVER_UPDATE_CAPABILITY = 'updater.remote-control.v1' as const
@@ -22,6 +23,8 @@ export type RemoteServerUpdaterSnapshot = {
   runtimeId: string
   support: RemoteServerUpdateSupport
   status: UpdateStatus
+  /** The host's running release source. Only multi-source hosts publish it; absent is "unknown", never "upstream". */
+  releaseSource?: ReleaseSourceId
 }
 
 export type RemoteServerUpdateInstallResult = {

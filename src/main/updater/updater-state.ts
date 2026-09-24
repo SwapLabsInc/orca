@@ -3,6 +3,7 @@ import type { ElectronAutoUpdater } from '../electron-updater-loader'
 import type { LocalBuildFeed } from '../local-builds/local-build-feed-server'
 import type { UpdateSource, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseChannel } from '../../shared/release-channel'
+import type { ReleaseSourceId } from '../../shared/release-sources'
 import type { PrimaryEventSuppression, UpdateCheckVariant } from './updater-types'
 
 export const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -112,6 +113,12 @@ export abstract class UpdaterState {
   // Why: a pinned jump to a stable/rc tag keeps the 'release' source but is still a
   // deliberate downgrade, so newer-only gates must yield to it too.
   protected isPinnedBuildActive = false
+  // Why: the release source a pinned jump targets; null means the running build's own
+  // source, which is the only one routine checks ever read (sticky source).
+  protected activeReleaseSource: ReleaseSourceId | null = null
+  // Why: a cross-source button click asks for download too; consumed by the first
+  // 'available' the pinned check lands, so a second click cannot start a second download.
+  protected pinnedAutoDownloadPending = false
   protected getReleaseChannelOverride: (() => ReleaseChannel | null) | null = null
 
   protected consecutiveAutomaticRetrySchedules = 0

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installNetRequestFetchAdapter } from './updater-net-request.fixture'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const ORIGINAL_PLATFORM = process.platform
 
@@ -394,5 +398,208 @@ describe('fetchNewerReleaseTag', () => {
 
     await expect(result).resolves.toEqual([])
     expect(netFetchMock).toHaveBeenCalledTimes(7)
+  })
+})
+
+type ForkRelease = {
+  tag: string
+  title: string
+  manifestVersion?: string
+  missingManifest?: boolean
+}
+
+/**
+ * A fork repo's feed: tags are git labels (`swaplabs-v<base>+<delta>`), so the
+ * version must come from the title or the manifest, never the tag.
+ */
+function respondWithForkFeed(releases: ForkRelease[], upstreamTags: string[] = []): void {
+  const byTag = new Map(releases.map((release) => [release.tag, release]))
+  netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+    if (url === 'https://github.com/SwapLabsInc/orca/releases.atom') {
+      const entries = releases
+        .map(
+          ({ tag, title }) =>
+            `<entry><link rel="alternate" type="text/html" href="https://github.com/SwapLabsInc/orca/releases/tag/${tag}"/><title>${title}</title></entry>`
+        )
+        .join('')
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(`<feed>${entries}</feed>`) })
+    }
+    if (url === 'https://github.com/stablyai/orca/releases.atom') {
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(buildAtomFeed(upstreamTags)) })
+    }
+    const manifestMatch = url.match(
+      /^https:\/\/github\.com\/(SwapLabsInc|stablyai)\/orca\/releases\/download\/([^/]+)\/latest(?:-[a-z]+)?\.yml$/
+    )
+    if (manifestMatch) {
+      const tag = decodeURIComponent(manifestMatch[2])
+      const release = byTag.get(tag)
+      if (manifestMatch[1] === 'SwapLabsInc' && (!release || release.missingManifest)) {
+        return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('') })
+      }
+      const version = release?.manifestVersion ?? tag.replace(/^v/i, '')
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () =>
+          Promise.resolve(
+            [
+              `version: ${version}`,
+              'files:',
+              `  - url: Orca-${version}.AppImage`,
+              '    sha512: t'
+            ].join('\n')
+          )
+      })
+    }
+    if (init?.method === 'HEAD') {
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
+    }
+    return Promise.resolve({ ok: false, text: () => Promise.resolve('') })
+  })
+}
+
+describe('fetchNewerReleaseTag across release sources', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    netFetchMock.mockReset()
+    netRequestMock.mockReset()
+    installNetRequestFetchAdapter(netRequestMock, netFetchMock)
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+    setPlatformForTest(ORIGINAL_PLATFORM)
+  })
+
+  async function loadFeed() {
+    const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
+    const { getReleaseSource } = await import('../shared/release-sources')
+    return { fetchNewerReleaseTagsWithReadiness, swaplabs: getReleaseSource('swaplabs')! }
+  }
+
+  it('reads the atom feed and download base of the given source', async () => {
+    respondWithForkFeed([
+      {
+        tag: 'swaplabs-v1.4.197+resume.2',
+        title: '1.4.197-swaplabs.202609241600.resume.2 • 02 • Sep 24'
+      },
+      {
+        tag: 'swaplabs-v1.4.197+resume.1',
+        title: '1.4.197-swaplabs.202609241530.resume.1 • 01 • Sep 24'
+      }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    const result = await fetchNewerReleaseTagsWithReadiness(
+      '1.4.197-swaplabs.202609241530.resume.1',
+      2,
+      { source: swaplabs }
+    )
+
+    // Two tags: the newest newer plus the bounded fallback candidate behind it.
+    expect(result).toEqual({
+      tags: ['swaplabs-v1.4.197+resume.2', 'swaplabs-v1.4.197+resume.1'],
+      state: 'ready'
+    })
+    const urls = netFetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls[0]).toBe('https://github.com/SwapLabsInc/orca/releases.atom')
+    expect(urls).toContainEqual(
+      expect.stringMatching(
+        /^https:\/\/github\.com\/SwapLabsInc\/orca\/releases\/download\/swaplabs-v1\.4\.197%2Bresume\.2\/latest(?:-[a-z]+)?\.yml$/
+      )
+    )
+    expect(urls.some((url) => url.includes('stablyai'))).toBe(false)
+  })
+
+  it('reads a version the title omits from the release manifest', async () => {
+    respondWithForkFeed([
+      {
+        tag: 'swaplabs-v1.4.197+resume.3',
+        title: 'SwapLabs build 3',
+        manifestVersion: '1.4.197-swaplabs.202609241700.resume.3'
+      },
+      { tag: 'swaplabs-v1.4.197+resume.2', title: '1.4.197-swaplabs.202609241600.resume.2' }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    const result = await fetchNewerReleaseTagsWithReadiness(
+      '1.4.197-swaplabs.202609241600.resume.2',
+      1,
+      { source: swaplabs }
+    )
+
+    expect(result).toEqual({ tags: ['swaplabs-v1.4.197+resume.3'], state: 'ready' })
+    // The manifest fetched to learn the version is not fetched again for readiness.
+    const manifestFetches = netFetchMock.mock.calls.filter(([url]) =>
+      /swaplabs-v1\.4\.197%2Bresume\.3\/latest(?:-[a-z]+)?\.yml$/.test(String(url))
+    )
+    expect(manifestFetches).toHaveLength(1)
+  })
+
+  it('reports no-newer for a source build whose feed holds only older stamps', async () => {
+    respondWithForkFeed([
+      { tag: 'swaplabs-v1.4.197+resume.1', title: '1.4.197-swaplabs.202609241530.resume.1' }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241600', 2, {
+        source: swaplabs,
+        includePrerelease: false
+      })
+    ).toEqual({ tags: [], state: 'no-newer' })
+  })
+
+  it('orders an rc-based fork build by stamp, not by the rc tail', async () => {
+    respondWithForkFeed([
+      { tag: 'swaplabs-v1.4.198-rc.1+x', title: '1.4.198-rc.1.swaplabs.202609251200' },
+      { tag: 'swaplabs-v1.4.197+y', title: '1.4.197-swaplabs.202609241600' }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241600', 1, {
+        source: swaplabs
+      })
+    ).toEqual({ tags: ['swaplabs-v1.4.198-rc.1+x'], state: 'ready' })
+  })
+
+  // Why: `swaplabs` sorts above `rc`, so a fork tag in the main repo would
+  // otherwise be offered to every RC user as the newest prerelease.
+  it('never yields a source-stamped tag to a primary check even when the feed lists one', async () => {
+    respondWithAtom(['v1.4.197-swaplabs.202609241530', 'v1.4.197-rc.2', 'v1.4.196'])
+    const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
+
+    expect(await fetchNewerReleaseTagsWithReadiness('1.4.197-rc.1', 2)).toEqual({
+      tags: ['v1.4.197-rc.2', 'v1.4.196'],
+      state: 'ready'
+    })
+    expect(await fetchNewerReleaseTagsWithReadiness('1.4.197-rc.2', 2)).toEqual({
+      tags: [],
+      state: 'no-newer'
+    })
+  })
+
+  it('matches only tag links of the requested repo', async () => {
+    netFetchMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () =>
+          Promise.resolve(
+            url.includes('SwapLabsInc')
+              ? '<feed><entry><link href="https://github.com/stablyai/orca/releases/tag/v9.9.9"/><title>9.9.9-swaplabs.202609241530</title></entry></feed>'
+              : ''
+          )
+      })
+    )
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241530', 1, {
+        source: swaplabs
+      })
+    ).toEqual({ tags: [], state: 'no-newer' })
   })
 })

@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const fetchMock = vi.fn()
 vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
@@ -459,6 +463,97 @@ describe('listReleaseBuilds', () => {
   it('reports a missing hourly repo distinctly', async () => {
     fetchMock.mockResolvedValue(jsonResponse(null, { ok: false, status: 404 }))
     await expect(listReleaseBuilds('hourly', 'darwin')).rejects.toThrow(/No releases repository/i)
+  })
+})
+
+describe('listReleaseBuilds for another release source', () => {
+  /** Re-evaluates the module graph under a two-source registry, as a fork build would run it. */
+  async function loadForkModule() {
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    vi.resetModules()
+    const module = await import('./updater-release-builds')
+    const { getReleaseSource } = await import('../shared/release-sources')
+    return { ...module, swaplabs: getReleaseSource('swaplabs')! }
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    tokenMock.mockReset()
+    tokenMock.mockResolvedValue(null)
+    blockedUntilMock.mockReset()
+    blockedUntilMock.mockReturnValue(null)
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+    vi.resetModules()
+  })
+
+  // Why the title: fork tags are git labels (`swaplabs-v1.4.197+resume.1`), so the
+  // version has to come from somewhere else, and the manifest is not in the REST reply.
+  it('lists a source repo, reading versions from titles, newest stamp first', async () => {
+    const { listReleaseBuilds, swaplabs } = await loadForkModule()
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('swaplabs-v1.4.197+resume.1', {
+          name: '1.4.197-swaplabs.202609241530.resume.1 • 01 • Sep 24, 3:30PM • abc1234',
+          html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197+resume.1'
+        }),
+        release('swaplabs-v1.4.198-rc.1+resume.2', {
+          name: '1.4.198-rc.1.swaplabs.202609251200.resume.2 • 02',
+          html_url:
+            'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.198-rc.1+resume.2'
+        }),
+        release('swaplabs-untitled', { name: 'SwapLabs build without a version' }),
+        release('v1.4.197', { name: '1.4.197' })
+      ])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'linux', swaplabs)
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.github.com/repos/SwapLabsInc/orca/releases?per_page=100'
+    )
+    expect(builds.map((build) => [build.tag, build.version, build.channel])).toEqual([
+      ['swaplabs-v1.4.198-rc.1+resume.2', '1.4.198-rc.1.swaplabs.202609251200.resume.2', 'stable'],
+      ['swaplabs-v1.4.197+resume.1', '1.4.197-swaplabs.202609241530.resume.1', 'stable']
+    ])
+    expect(builds[1].installerUrl).toBe(
+      'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2Bresume.1/orca-linux.AppImage'
+    )
+  })
+
+  it('keeps a stray fork build out of the primary stable list', async () => {
+    const { listReleaseBuilds } = await loadForkModule()
+    fetchMock.mockResolvedValue(
+      jsonResponse([release('v1.4.197-swaplabs.202609241530'), release('v1.4.196')])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'linux')
+
+    expect(builds.map((build) => build.version)).toEqual(['1.4.196'])
+  })
+
+  it('resolves a fork target from the version the picker listed', async () => {
+    const { resolveTargetBuild, swaplabs } = await loadForkModule()
+
+    expect(
+      resolveTargetBuild(
+        'stable',
+        'swaplabs-v1.4.197+resume.1',
+        swaplabs,
+        '1.4.197-swaplabs.202609241530.resume.1'
+      )
+    ).toEqual({
+      tag: 'swaplabs-v1.4.197+resume.1',
+      version: '1.4.197-swaplabs.202609241530.resume.1',
+      feedUrl: 'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2Bresume.1'
+    })
+    expect(() => resolveTargetBuild('stable', 'swaplabs-v1.4.197+resume.1', swaplabs)).toThrow(
+      /not a valid release tag for SwapLabs/
+    )
+    // A primary version handed to the fork source is not one of its builds.
+    expect(() => resolveTargetBuild('stable', 'v1.4.197', swaplabs)).toThrow(/for SwapLabs/)
   })
 })
 

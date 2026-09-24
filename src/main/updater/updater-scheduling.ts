@@ -75,7 +75,9 @@ export abstract class UpdaterScheduling extends UpdaterCheckFailure {
       this.markUpdateCheckLaunched(attemptId)
       return autoUpdater.checkForUpdates()
     }
-    const run = this.pinDefaultReleaseFeed().then(launch)
+    const run = this.pinDefaultReleaseFeed().then((preflightResult) =>
+      preflightResult === 'not-available' ? this.settlePreflightNotAvailable(attemptId) : launch()
+    )
     void Promise.resolve(run)
       .then(() => this.handleSettledUpdateCheckPromise(attemptId))
       .catch((err) => {
@@ -96,6 +98,24 @@ export abstract class UpdaterScheduling extends UpdaterCheckFailure {
         )
       })
     return true
+  }
+
+  /**
+   * A preflight that already knows there is nothing newer settles the attempt
+   * without launching electron-updater: a non-primary source has no
+   * /releases/latest to fall back to, so the feed answer is final.
+   */
+  protected settlePreflightNotAvailable(attemptId: number): void {
+    if (!this.isActiveUpdateCheckAttempt(attemptId)) {
+      return
+    }
+    const userInitiated = this.getSettledCheckUserInitiated()
+    this.finishActiveUpdateCheckAttempt()
+    this.clearBackgroundCheckLaunchPending()
+    this.backgroundCheckPromotedToUserInitiated = false
+    this.userInitiatedCheck = false
+    this.completeSilentUpdateCheck(userInitiated)
+    this.sendSettledCheckStatus({ state: 'not-available', userInitiated })
   }
 
   protected checkForUpdatesInBackground(): void {
