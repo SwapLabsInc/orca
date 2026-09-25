@@ -63,10 +63,11 @@ export abstract class UpdaterScheduling extends UpdaterCheckFailure {
     }
     // Why: set the nudge marker before any events arrive so later checks can't inherit a stale campaign id; persisted id keeps a nudge card dismissable after relaunch.
     this.activeUpdateNudgeId = nudgeId
+    // Why after beginning the attempt: finishing the previous one clears this flag.
+    const attemptId = this.beginUpdateCheckAttempt()
     // Why: 'checking-for-update' arrives a tick later, so a second focus/resume can slip in before status flips; track launch in memory to dedupe that gap.
     this.backgroundCheckLaunchPending = true
     this.backgroundCheckPromotedToUserInitiated = false
-    const attemptId = this.beginUpdateCheckAttempt()
     const autoUpdater = this.getAutoUpdater()
     const launch = (): Promise<unknown> | undefined => {
       if (!this.isActiveUpdateCheckAttempt(attemptId)) {
@@ -75,9 +76,13 @@ export abstract class UpdaterScheduling extends UpdaterCheckFailure {
       this.markUpdateCheckLaunched(attemptId)
       return autoUpdater.checkForUpdates()
     }
-    const run = this.pinDefaultReleaseFeed().then((preflightResult) =>
-      preflightResult === 'not-available' ? this.settlePreflightNotAvailable(attemptId) : launch()
-    )
+    const run = this.pinDefaultReleaseFeed('default', attemptId).then((preflightResult) => {
+      if (preflightResult === 'not-available') {
+        this.settlePreflightNotAvailable(attemptId)
+        return undefined
+      }
+      return preflightResult === 'superseded' ? undefined : launch()
+    })
     void Promise.resolve(run)
       .then(() => this.handleSettledUpdateCheckPromise(attemptId))
       .catch((err) => {

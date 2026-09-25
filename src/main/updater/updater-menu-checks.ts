@@ -84,7 +84,10 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
       this.markUpdateCheckLaunched(attemptId)
       return autoUpdater.checkForUpdates()
     }
-    const run = this.pinDefaultReleaseFeed(checkVariant).then((preflightResult) => {
+    const run = this.pinDefaultReleaseFeed(checkVariant, attemptId).then((preflightResult) => {
+      if (preflightResult === 'superseded') {
+        return false
+      }
       if (preflightResult === 'not-available') {
         if (!this.isActiveUpdateCheckAttempt(attemptId)) {
           return false

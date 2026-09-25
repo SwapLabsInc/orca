@@ -81,6 +81,10 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     this.activeUpdateCheckAttemptId = null
     this.activeUpdateCheckLaunchAttemptId = null
     this.activeUpdateCheckEventAttemptId = null
+    // Why: the launch-pending flag belongs to the attempt. A result status sent mid-preflight (a
+    // pinned jump refused, a same-version pin, a dismiss) ends the attempt; a flag that outlived it
+    // deferred every later check as "already in flight", with no stall timer left to clear it.
+    this.backgroundCheckLaunchPending = false
     this.clearUpdateCheckTimers()
   }
 

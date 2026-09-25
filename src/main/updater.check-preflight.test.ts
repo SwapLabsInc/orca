@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
 
 const {
   appMock,
@@ -529,5 +530,95 @@ describe('updater', () => {
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
     })
     expect(fetchNewerReleaseTagsMock).toHaveBeenCalledTimes(1)
+  })
+
+  /** A startup background check whose feed preflight is still in flight. */
+  async function startBackgroundCheckInPreflight(): Promise<{
+    resolvePreflight: (tags: string[]) => void
+    send: ReturnType<typeof createUpdaterMainWindowFake>['send']
+    updater: Awaited<ReturnType<typeof loadUpdaterModule>>
+  }> {
+    let resolvePreflight: (tags: string[]) => void = () => {}
+    fetchNewerReleaseTagsMock.mockImplementationOnce(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolvePreflight = resolve
+        })
+    )
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const updater = await loadUpdaterModule()
+    updater.setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledTimes(1)
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    return { resolvePreflight: (tags) => resolvePreflight(tags), send, updater }
+  }
+
+  // Why: a background check spends its preflight outside 'checking', so the pinned-jump guard
+  // cannot see it. The jump takes the attempt over, and the late preflight must not repoint the
+  // feed it pinned.
+  it('lets a pinned jump supersede a background check still in feed preflight', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+        autoUpdaterMock.emit('checking-for-update')
+        return Promise.resolve(undefined)
+      })
+      const { resolvePreflight, updater } = await startBackgroundCheckInPreflight()
+
+      updater.checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.0.50' })
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      const pinnedFeed = {
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50'
+      }
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith(pinnedFeed)
+
+      resolvePreflight(['v1.0.52'])
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith(pinnedFeed)
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+
+      // The pinned check settles, hands the feed back, and routine checks resume.
+      autoUpdaterMock.emit('update-not-available')
+      updater.checkForUpdates()
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(2)
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: a same-version pin (or a refused one) settles with a result status while the background
+  // attempt is still in preflight. That status ends the attempt; the launch-pending flag used to
+  // outlive it, and every later check was deferred as "already in flight".
+  it('does not strand background checks when a pinned jump settles during a preflight', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const { resolvePreflight, send, updater } = await startBackgroundCheckInPreflight()
+
+      updater.checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.0.51' })
+      expect(send).toHaveBeenCalledWith('updater:status', {
+        state: 'not-available',
+        userInitiated: true
+      })
+
+      resolvePreflight(['v1.0.52'])
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+      updater.checkForUpdatesFromMenu()
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      expect(fetchNewerReleaseTagsMock).toHaveBeenCalledTimes(2)
+    } finally {
+      platformSpy.mockRestore()
+    }
   })
 })
