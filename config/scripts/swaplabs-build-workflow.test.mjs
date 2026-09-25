@@ -93,6 +93,8 @@ describe('swaplabs fork build identity', () => {
   it('computes the identity once in preflight and hands it to every leg', () => {
     const identity = stepNamed(jobs.preflight, 'Compute the fork build identity')
     expect(identity.run).toContain('node config/scripts/swaplabs-build-version.mjs')
+    expect(identity.run).toContain('SWAPLABS_PREVIOUS_VERSION')
+    expect(identity.env.GH_TOKEN).toBe('${{ github.token }}')
     for (const key of ['version', 'tag', 'name', 'commit', 'head_sha']) {
       expect(jobs.preflight.outputs[key]).toBeTruthy()
     }

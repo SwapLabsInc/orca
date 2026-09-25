@@ -138,6 +138,57 @@ export function formatSwaplabsReleaseName(version, commit, date) {
   return [version, formatReleaseTitleTimestamp(date), commit.slice(0, 7)].join(' • ')
 }
 
+function compareIdentifiers(left, right) {
+  const leftNumeric = /^\d+$/.test(left)
+  const rightNumeric = /^\d+$/.test(right)
+  if (leftNumeric && rightNumeric) {
+    return Math.sign(Number(left) - Number(right))
+  }
+  if (leftNumeric !== rightNumeric) {
+    return leftNumeric ? -1 : 1
+  }
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+/** SemVer 2.0 precedence, the order electron-updater installs by. */
+export function compareSwaplabsVersions(left, right) {
+  const [a, b] = [left, right].map((version) => {
+    const match = SEMVER.exec(String(version ?? '').trim())
+    if (!match) {
+      throw new Error(`Not a semver version: ${version}`)
+    }
+    return { core: match[1].split('.'), pre: match[2] ? match[2].split('.') : [] }
+  })
+  for (let index = 0; index < 3; index++) {
+    const order = compareIdentifiers(a.core[index], b.core[index])
+    if (order !== 0) {
+      return order
+    }
+  }
+  if (a.pre.length === 0 || b.pre.length === 0) {
+    return Math.sign(b.pre.length - a.pre.length)
+  }
+  for (let index = 0; index < Math.min(a.pre.length, b.pre.length); index++) {
+    const order = compareIdentifiers(a.pre[index], b.pre[index])
+    if (order !== 0) {
+      return order
+    }
+  }
+  return Math.sign(a.pre.length - b.pre.length)
+}
+
+/**
+ * Why: the updater installs by semver while fork builds read as ordered by stamp; refusing a
+ * build that does not also rise in semver keeps the two orders identical for every release.
+ */
+export function assertSwaplabsVersionAdvances(next, previous) {
+  if (previous && compareSwaplabsVersions(next, previous) <= 0) {
+    throw new Error(
+      `Fork build ${next} does not sort above the last published fork build ${previous}; the in-app updater would never offer it.`
+    )
+  }
+}
+
 export function getSwaplabsBuildIdentity(
   now = new Date(),
   { delta = '', packageJsonPath = resolve('package.json') } = {}
@@ -164,6 +215,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
   const identity = getSwaplabsBuildIdentity(new Date(), {
     delta: (process.env.ORCA_SWAPLABS_DELTA ?? '').trim()
   })
+  assertSwaplabsVersionAdvances(
+    identity.version,
+    (process.env.SWAPLABS_PREVIOUS_VERSION ?? '').trim()
+  )
   // Consumed by the workflow via $GITHUB_OUTPUT; `name` last because it is the
   // one value that contains spaces.
   process.stdout.write(

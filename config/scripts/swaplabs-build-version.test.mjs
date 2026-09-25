@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { compareAppVersions } from '../../src/shared/app-version'
 import {
   SWAPLABS_PRERELEASE_IDENTIFIER,
+  assertSwaplabsVersionAdvances,
+  compareSwaplabsVersions,
   createSwaplabsBuildVersion,
   createSwaplabsReleaseTag,
   formatSwaplabsBuildStamp,
@@ -185,5 +187,46 @@ describe('getSwaplabsBuildIdentity', () => {
       expect(identity.version).toBe('1.4.204-swaplabs.202609241530.resume.1')
       expect(identity.tag).toBe('swaplabs-v1.4.204+resume.1')
     })
+  })
+})
+
+// Why: fork builds are read as ordered by stamp but installed by semver; the pipeline refuses a
+// build where the two disagree, so the updater never has to choose between them.
+describe('swaplabs fork build monotonic versions', () => {
+  it('orders versions by semver precedence', () => {
+    expect(
+      compareSwaplabsVersions('1.4.198-swaplabs.202609251500', '1.4.197-swaplabs.202609251600')
+    ).toBe(1)
+    expect(
+      compareSwaplabsVersions('1.4.198-rc.1.swaplabs.202609251500', '1.4.198-swaplabs.202609241500')
+    ).toBe(-1)
+    expect(
+      compareSwaplabsVersions('1.4.198-swaplabs.202609251500', '1.4.198-swaplabs.202609251500')
+    ).toBe(0)
+    expect(
+      compareSwaplabsVersions(
+        '1.4.198-swaplabs.202609251500.resume',
+        '1.4.198-swaplabs.202609251500'
+      )
+    ).toBe(1)
+  })
+
+  it('accepts a build that rises, and the first build with no predecessor', () => {
+    expect(() =>
+      assertSwaplabsVersionAdvances(
+        '1.4.198-swaplabs.202609251500',
+        '1.4.198-swaplabs.202609241500'
+      )
+    ).not.toThrow()
+    expect(() => assertSwaplabsVersionAdvances('1.4.198-swaplabs.202609251500', '')).not.toThrow()
+  })
+
+  it('refuses a newer stamp cut from a lower base', () => {
+    expect(() =>
+      assertSwaplabsVersionAdvances(
+        '1.4.197-swaplabs.202609251500',
+        '1.4.198-swaplabs.202609241500'
+      )
+    ).toThrow(/does not sort above/)
   })
 })

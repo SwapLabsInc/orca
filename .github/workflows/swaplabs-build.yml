@@ -141,12 +141,18 @@ jobs:
         id: identity
         if: steps.freshness.outputs.should_build == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # Why check rather than trust: a workflow_dispatch runs this file from
           # whatever branch was dispatched, while the script comes from the
           # resolved commit. A mismatch yields an empty tag and an untitled
           # release — silent, and only visible on the releases page. Fail here.
+          # The published title leads with the full app version; the script refuses one that does not rise.
+          SWAPLABS_PREVIOUS_VERSION="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,isDraft,name \
+            --jq "map(select((.isDraft | not) and (.tagName | startswith(\"$SWAPLABS_TAG_PREFIX\")))) | .[0].name // \"\" | split(\" \") | .[0] // \"\"")"
+          export SWAPLABS_PREVIOUS_VERSION
           node config/scripts/swaplabs-build-version.mjs >"$RUNNER_TEMP/swaplabs-identity.txt"
           for key in version tag commit name; do
             if ! grep -q "^$key=" "$RUNNER_TEMP/swaplabs-identity.txt"; then
