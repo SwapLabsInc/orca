@@ -44,6 +44,19 @@ function isSourceVersion(version: string, source: ReleaseSource): boolean {
   return isValidVersion(version) && getVersionReleaseSource(version) === source.id
 }
 
+/** The manifest names what electron-updater installs; only the advertised build of this source may be offered under the tag. */
+function manifestNamesAdvertisedVersion(
+  probe: ReleaseManifestProbe,
+  version: string,
+  source: ReleaseSource
+): boolean {
+  return (
+    probe.version !== null &&
+    isSourceVersion(probe.version, source) &&
+    compareVersions(probe.version, version) === 0
+  )
+}
+
 const XML_ENTITIES: Record<string, string> = {
   '&amp;': '&',
   '&lt;': '<',
@@ -111,15 +124,22 @@ async function fetchReleaseFeedEntries(source: ReleaseSource): Promise<ReleaseFe
 
 /**
  * Names the entries the tag and title could not, by reading each release's
- * manifest — bounded, since every probe is a network round trip. Probes are
- * kept so the readiness pass below does not repeat them.
+ * manifest. A source's stamp is its cut time, so its feed lists builds in
+ * version order: an untitled entry is probed only while it sits above the
+ * newest entry already known to be no newer than the running build, and
+ * running the newest build probes nothing. Bounded, since every probe is a
+ * network round trip; probes are kept so the readiness pass does not repeat them.
  */
 async function resolveVersionsFromManifests(
   entries: ReleaseFeedEntry[],
+  currentVersion: string,
   source: ReleaseSource,
   probes: Map<string, ReleaseManifestProbe>
 ): Promise<ReleaseFeedTag[]> {
-  const unresolved = entries
+  const notNewerIndex = entries.findIndex(
+    ({ version }) => version !== null && compareVersions(version, currentVersion) <= 0
+  )
+  const unresolved = (notNewerIndex === -1 ? entries : entries.slice(0, notNewerIndex))
     .filter((entry) => entry.version === null)
     .slice(0, MAX_MANIFEST_PROBE_CANDIDATES)
   const results = await Promise.all(
@@ -197,7 +217,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
     version ? [{ tag, version }] : []
   )
   if (!isPrimarySource) {
-    tags.push(...(await resolveVersionsFromManifests(entries, source, probes)))
+    tags.push(...(await resolveVersionsFromManifests(entries, currentVersion, source, probes)))
   }
   tags.sort((left, right) => compareVersions(right.version, left.version))
 
@@ -222,13 +242,32 @@ export async function fetchNewerReleaseTagsWithReadiness(
     newestNewerIndex,
     newestNewerIndex + MAX_MANIFEST_PROBE_CANDIDATES
   )
-  const manifestResults = await Promise.all(
-    probeCandidates.map(async ({ tag, version }) => ({
-      tag,
-      version,
-      readiness: (probes.get(tag) ?? (await probeReleaseManifest(tag, source))).readiness
-    }))
-  )
+  const manifestResults = (
+    await Promise.all(
+      probeCandidates.map(async ({ tag, version }) => ({
+        tag,
+        version,
+        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source))
+      }))
+    )
+  ).flatMap(({ tag, version, probe }) => {
+    if (probe.version !== null && !manifestNamesAdvertisedVersion(probe, version, source)) {
+      // Why skipped rather than not-ready: the mismatch is a publishing error, not a window that closes.
+      console.warn(
+        `[updater] ${source.id} release ${tag} advertises ${version} but its manifest names ${probe.version}; skipped`
+      )
+      return []
+    }
+    // Why: a manifest that names no version cannot prove which build it installs.
+    const readiness =
+      probe.readiness === 'ready' && probe.version === null ? 'not-ready' : probe.readiness
+    return [{ tag, version, readiness }]
+  })
+  // Why no-newer rather than not-ready: a skipped release never becomes installable, so nothing is
+  // gained by pinning the last-good tag and retrying at the publishing-window cadence.
+  if (!manifestResults.some(({ version }) => compareVersions(version, currentVersion) > 0)) {
+    return { tags: [], state: 'no-newer' }
+  }
 
   const primaryIndex = manifestResults.findIndex(
     ({ readiness, version }) =>

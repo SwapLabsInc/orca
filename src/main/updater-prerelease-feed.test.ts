@@ -26,10 +26,11 @@ function buildAtomFeed(tags: string[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?><feed>${entries}</feed>`
 }
 
-function buildManifest(tag: string): string {
+/** `manifestVersion` overrides the version line; null omits it. */
+function buildManifest(tag: string, manifestVersion?: string | null): string {
   const version = tag.replace(/^v/i, '')
   return [
-    `version: ${version}`,
+    ...(manifestVersion === null ? [] : [`version: ${manifestVersion ?? version}`]),
     'files:',
     `  - url: Orca-${version}-arm64-mac.zip`,
     '    sha512: test',
@@ -41,7 +42,8 @@ function respondWithAtom(
   tags: string[],
   missingManifestTags: string[] = [],
   missingAssetTags: string[] = [],
-  unavailableManifestTags: string[] = []
+  unavailableManifestTags: string[] = [],
+  manifestVersions: Record<string, string | null> = {}
 ): void {
   const missingManifests = new Set(missingManifestTags)
   const missingAssets = new Set(missingAssetTags)
@@ -67,7 +69,7 @@ function respondWithAtom(
       return Promise.resolve({
         ok: !missingManifests.has(tag),
         status: missingManifests.has(tag) ? 404 : 200,
-        text: () => Promise.resolve(buildManifest(tag))
+        text: () => Promise.resolve(buildManifest(tag, manifestVersions[tag]))
       })
     }
 
@@ -354,6 +356,23 @@ describe('fetchNewerReleaseTag', () => {
     expect(await fetchNewerReleaseTags('1.4.1-rc.1', 2)).toEqual([])
   })
 
+  // Why: the manifest is what electron-updater installs. A tag whose manifest names another
+  // version was offered as the tag's version anyway; one naming no version cannot be verified.
+  it('never offers a tag whose manifest names a version other than the advertised one', async () => {
+    respondWithAtom(['v1.4.2', 'v1.4.1'], [], [], [], { 'v1.4.2': '1.4.1' })
+    const { fetchNewerReleaseTag, fetchNewerReleaseTagsWithReadiness } =
+      await import('./updater-prerelease-feed')
+
+    expect(await fetchNewerReleaseTag('1.4.0')).toBe('v1.4.1')
+
+    respondWithAtom(['v1.4.2', 'v1.4.1'], [], [], [], { 'v1.4.2': null })
+    expect(await fetchNewerReleaseTagsWithReadiness('1.4.0', 1)).toEqual({
+      tags: [],
+      state: 'not-ready',
+      lastGoodTag: 'v1.4.1'
+    })
+  })
+
   it('probes a bounded manifest window concurrently', async () => {
     const feedTags = [
       'v1.4.8-rc.0',
@@ -436,7 +455,8 @@ function respondWithForkFeed(releases: ForkRelease[], upstreamTags: string[] = [
       if (manifestMatch[1] === 'SwapLabsInc' && (!release || release.missingManifest)) {
         return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('') })
       }
-      const version = release?.manifestVersion ?? tag.replace(/^v/i, '')
+      // Why the title's version: fork tags are git labels, and the pipeline stamps the manifest with the same version it titles the release with.
+      const version = release?.manifestVersion ?? release?.title.split(/[\s•]+/)[0] ?? tag
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -535,6 +555,91 @@ describe('fetchNewerReleaseTag across release sources', () => {
       /swaplabs-v1\.4\.197%2Bresume\.3\/latest(?:-[a-z]+)?\.yml$/.test(String(url))
     )
     expect(manifestFetches).toHaveLength(1)
+  })
+
+  // Why: a fork title can be edited by hand; the manifest, not the title, decides what installs.
+  it('skips a source release whose manifest names another build or another source', async () => {
+    respondWithForkFeed([
+      {
+        tag: 'swaplabs-v1.4.197+resume.3',
+        title: '1.4.197-swaplabs.202609241700.resume.3',
+        manifestVersion: '1.4.197'
+      },
+      {
+        tag: 'swaplabs-v1.4.197+resume.2',
+        title: '1.4.197-swaplabs.202609241600.resume.2',
+        manifestVersion: '1.4.197-swaplabs.202609241559.resume.2'
+      },
+      { tag: 'swaplabs-v1.4.197+resume.1', title: '1.4.197-swaplabs.202609241530.resume.1' }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241500', 2, {
+        source: swaplabs
+      })
+    ).toEqual({ tags: ['swaplabs-v1.4.197+resume.1'], state: 'ready' })
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241530.resume.1', 2, {
+        source: swaplabs
+      })
+    ).toEqual({ tags: [], state: 'no-newer' })
+  })
+
+  // Why: every untitled entry used to cost a manifest round trip on every check, even one listed
+  // below the running build; a source's feed is in stamp order, so those cannot be newer.
+  it('probes untitled entries only above the running build, once each', async () => {
+    const releases = [
+      {
+        tag: 'swaplabs-v1.4.197+resume.4',
+        title: 'SwapLabs build 4',
+        manifestVersion: '1.4.197-swaplabs.202609241700.resume.4'
+      },
+      {
+        tag: 'swaplabs-v1.4.197+resume.3',
+        title: 'SwapLabs build 3',
+        manifestVersion: '1.4.197-swaplabs.202609241650.resume.3'
+      },
+      { tag: 'swaplabs-v1.4.197+resume.2', title: '1.4.197-swaplabs.202609241600.resume.2' },
+      {
+        tag: 'swaplabs-v1.4.197+resume.1',
+        title: 'SwapLabs build 1',
+        manifestVersion: '1.4.197-swaplabs.202609241530.resume.1'
+      }
+    ]
+    respondWithForkFeed(releases)
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+    const manifestFetches = (): string[] =>
+      netFetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => /\/latest(?:-[a-z]+)?\.yml$/.test(url))
+
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241600.resume.2', 2, {
+        source: swaplabs
+      })
+    ).toEqual({
+      tags: ['swaplabs-v1.4.197+resume.4', 'swaplabs-v1.4.197+resume.3'],
+      state: 'ready'
+    })
+    // Each untitled entry above the running build is fetched once, for its version and its
+    // readiness together; the one below is never fetched.
+    const fetchedTags = manifestFetches().map((url) => decodeURIComponent(url.split('/')[7]))
+    expect(fetchedTags.filter((tag) => tag === 'swaplabs-v1.4.197+resume.4')).toHaveLength(1)
+    expect(fetchedTags.filter((tag) => tag === 'swaplabs-v1.4.197+resume.3')).toHaveLength(1)
+    expect(fetchedTags).not.toContain('swaplabs-v1.4.197+resume.1')
+
+    // Running the newest titled build: nothing above it, so nothing is probed.
+    netFetchMock.mockClear()
+    respondWithForkFeed(releases.slice(2))
+    expect(
+      await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241600.resume.2', 2, {
+        source: swaplabs
+      })
+    ).toEqual({ tags: [], state: 'no-newer' })
+    expect(netFetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      'https://github.com/SwapLabsInc/orca/releases.atom'
+    ])
   })
 
   it('reports no-newer for a source build whose feed holds only older stamps', async () => {
