@@ -68,6 +68,15 @@ describe('collectSwaplabsPackagingProblems', () => {
       expect.stringContaining('not a SwapLabs build version'),
       expect.stringContaining('extraMetadata.version')
     ])
+    // A stamped prefix is not enough: the whole version must be semver the updater installs.
+    expect(
+      problems({
+        env: { ORCA_LOCAL_BUILD_VERSION: '1.4.197-swaplabs.202609241530.resume.1+extra' }
+      })
+    ).toEqual([
+      expect.stringContaining('not a SwapLabs build version'),
+      expect.stringContaining('extraMetadata.version')
+    ])
     const config = { ...goodConfig(), extraMetadata: { version: '1.4.197' } }
     expect(problems({ config })).toEqual([expect.stringContaining('ORCA_MAC_* or ORCA_WIN_*')])
   })
@@ -81,6 +90,33 @@ describe('collectSwaplabsPackagingProblems', () => {
     ])
     expect(problems({ platform: 'darwin', env: { CSC_LINK: 'base64' } })).toEqual([
       expect.stringContaining('CSC_LINK')
+    ])
+  })
+
+  // The signed path: only the fork's own identity, and only from the temporary
+  // keychain the workflow imports it into.
+  it('accepts the SwapLabs identity from a keychain and refuses any other CSC_NAME', () => {
+    const signed = { CSC_NAME: 'SwapLabs Orca', CSC_KEYCHAIN: '/tmp/swaplabs.keychain-db' }
+    expect(problems({ platform: 'darwin', env: signed })).toEqual([])
+    expect(problems({ platform: 'darwin', env: { CSC_NAME: 'SwapLabs Orca' } })).toEqual([
+      expect.stringContaining('CSC_KEYCHAIN is unset')
+    ])
+    expect(
+      problems({ platform: 'darwin', env: { ...signed, CSC_NAME: 'Developer ID Application: X' } })
+    ).toEqual([expect.stringContaining('CSC_NAME is "Developer ID Application: X"')])
+    expect(problems({ platform: 'darwin', env: { ...signed, CSC_NAME: '' } })).toEqual([
+      expect.stringContaining('CSC_NAME is ""')
+    ])
+    // Linux legs never sign; a stray CSC_NAME there is not their problem.
+    expect(problems({ platform: 'linux', env: { CSC_NAME: 'anything' } })).toEqual([])
+  })
+
+  it('checks the compiled-in update public key before the build starts', () => {
+    const publicKey = Buffer.alloc(32, 7).toString('base64')
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: publicKey } })).toEqual([])
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: '' } })).toEqual([])
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: 'not-a-key' } })).toEqual([
+      expect.stringContaining('ORCA_SWAPLABS_UPDATE_PUBLIC_KEY is unusable')
     ])
   })
 
