@@ -193,6 +193,13 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       // Without that, the stale chooser stayed up and reached the successor's handler.
       clearPendingAgentResumeChoicesForOwner(session.cacheKey, session.transport)
       session.startupTiming?.finish('disposed')
+      const unsentReplacedPtyId: string | null = session.claimPendingReplacedPtyId()
+      if (unsentReplacedPtyId) {
+        // Why: no spawn will carry this stop now, and the pane no longer references the PTY.
+        void Promise.resolve()
+          .then(() => window.api.pty.kill(unsentReplacedPtyId))
+          .catch((err: unknown) => console.warn('[terminal] failed to stop a replaced PTY:', err))
+      }
       // A successor can claim the numeric pane slot before this retired
       // binding's disposal callback runs; do not clear its pane-scoped error.
       const currentPaneTransport = session.deps.paneTransportsRef.current.get(session.pane.id)
@@ -273,10 +280,6 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       session.pendingTerminalBellNotification = false
       session.clearTerminalBellNotificationTimer()
       session.clearReattachIdleAgentCursorResetTimer()
-      if (session.alternateScreenBackgroundRepaintTimer !== null) {
-        clearTimeout(session.alternateScreenBackgroundRepaintTimer)
-        session.alternateScreenBackgroundRepaintTimer = null
-      }
       session.cleanupHiddenOutputRestoreDeferredRetry()
       session.cleanupHiddenOutputRestoreForegroundDeadline()
       session.cleanupHiddenOutputRestoreFloodRepaint()
