@@ -213,6 +213,18 @@ describe('remote server update inventory across release sources', () => {
       inspect(environment, '1.4.197-swaplabs.202609241600', forkServer)
     ).resolves.toMatchObject({ phase: 'available', targetVersion: '1.4.197-swaplabs.202609241600' })
   })
+
+  // Why: a fork host that predates releaseSource carries an identifier the single-source client has
+  // no source for; placing it as upstream would offer to replace the fork with upstream.
+  it('keeps a source-less host with an unknown identifier manual on a single-source client', async () => {
+    const oldForkServer = transport({
+      getRuntimeStatus: async () => status('1.4.197-swaplabs.202609241530')
+    })
+
+    await expect(
+      inspectRemoteServerUpdate(environment, '1.4.197', oldForkServer)
+    ).resolves.toMatchObject({ phase: 'manual', targetVersion: null })
+  })
 })
 
 describe('remote server update execution', () => {

@@ -161,16 +161,19 @@ describe('release source registry', () => {
     expect(getVersionReleaseSource('1.4.198-rc.1.swaplabs.202609241530')).toBe('swaplabs')
     // A fork build cut before stamps landed still belongs to its source.
     expect(getVersionReleaseSource('1.4.204-swaplabs.resume.1')).toBe('swaplabs')
-    expect(getVersionReleaseSource('1.4.197-swaplabsx.202609241530')).toBe('upstream')
+    expect(getVersionReleaseSource('1.4.197-swaplabsx.202609241530')).toBeNull()
     // Identifiers are case-insensitive identity everywhere else in the registry.
     expect(getVersionReleaseSource('1.4.197-SwapLabs.202609241530')).toBe('swaplabs')
     expect(getVersionReleaseSource('garbage')).toBeNull()
   })
 
-  it('files every version under the primary when only one source is configured', async () => {
+  it('leaves a version no configured source owns unclassified on a single-source build', async () => {
     const { getVersionReleaseSource } = await loadRegistry(null)
 
-    expect(getVersionReleaseSource('1.4.197-swaplabs.202609241530')).toBe('upstream')
+    expect(getVersionReleaseSource('1.4.197')).toBe('upstream')
+    expect(getVersionReleaseSource('1.4.197-rc.3')).toBe('upstream')
+    expect(getVersionReleaseSource('1.4.197-hourly.202607281400')).toBe('upstream')
+    expect(getVersionReleaseSource('1.4.197-swaplabs.202609241530')).toBeNull()
   })
 
   it('builds a stamp pattern only for stamped sources', async () => {

@@ -212,7 +212,8 @@ function readSourceIdentifier(version: string): string | null {
   return identifiers[0] ?? null
 }
 
-/** Which source published a version, or null when it is not a version at all. */
+/** Which source published a version, or null when it is not a version or no configured source
+ *  owns its identifier. */
 export function getVersionReleaseSource(version: string): ReleaseSourceId | null {
   if (!isValidAppVersion(version)) {
     return null
@@ -223,7 +224,14 @@ export function getVersionReleaseSource(version: string): ReleaseSourceId | null
       candidate.prereleaseIdentifier !== null &&
       candidate.prereleaseIdentifier.toLowerCase() === identifier?.toLowerCase()
   )
-  return source?.id ?? PRIMARY_RELEASE_SOURCE.id
+  if (source) {
+    return source.id
+  }
+  // Why not primary for everything else: an old fork host that omits releaseSource would then read
+  // as an outdated upstream build, and a client would offer to replace it with upstream.
+  return identifier === null || RESERVED_PRERELEASE_IDENTIFIERS.includes(identifier.toLowerCase())
+    ? PRIMARY_RELEASE_SOURCE.id
+    : null
 }
 
 /**

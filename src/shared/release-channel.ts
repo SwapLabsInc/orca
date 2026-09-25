@@ -282,7 +282,8 @@ export function getVersionChannel(version: string): ReleaseChannel | null {
   }
   // Why: a non-primary source is one series with no rc/stable split, and its
   // versions are prereleases that the catch-all below would otherwise file under rc.
-  if (getVersionReleaseSource(normalized) !== PRIMARY_RELEASE_SOURCE.id) {
+  const sourceId = getVersionReleaseSource(normalized)
+  if (sourceId !== null && sourceId !== PRIMARY_RELEASE_SOURCE.id) {
     return 'stable'
   }
   if (isHourlyVersion(normalized)) {

@@ -125,7 +125,9 @@ export async function inspectRemoteServerUpdate(
   const serverSource =
     status.releaseSource ??
     (currentVersion === null ? null : getVersionReleaseSource(currentVersion))
-  const sameReleaseSource = serverSource === getVersionReleaseSource(clientVersion)
+  // Why: an unknown source on either side is not comparable, so the host stays manual.
+  const sameReleaseSource =
+    serverSource !== null && serverSource === getVersionReleaseSource(clientVersion)
   const versionComparable =
     currentVersion !== null &&
     isValidAppVersion(currentVersion) &&
