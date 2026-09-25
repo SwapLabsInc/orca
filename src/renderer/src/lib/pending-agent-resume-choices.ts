@@ -1,4 +1,5 @@
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
+import type { AgentResumeOwner } from './agent-resume-pane-handlers'
 
 /**
  * Panes whose resolver refused to decide and are showing the chooser.
@@ -14,7 +15,7 @@ import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidat
  */
 export type PendingAgentResumeChoice = {
   /** The pty binding these candidates were scanned for; nothing else may act on them. */
-  owner: object
+  owner: AgentResumeOwner
   candidates: readonly AgentResumeCandidate[]
 }
 
@@ -29,7 +30,7 @@ function notify(paneKey: string): void {
 
 export function setPendingAgentResumeChoices(
   paneKey: string,
-  owner: object,
+  owner: AgentResumeOwner,
   candidates: readonly AgentResumeCandidate[]
 ): void {
   if (candidates.length === 0) {
@@ -48,7 +49,10 @@ export function clearPendingAgentResumeChoices(paneKey: string): void {
 }
 
 /** Dispose path: retire this binding's own choice and leave a successor's alone. */
-export function clearPendingAgentResumeChoicesForOwner(paneKey: string, owner: object): void {
+export function clearPendingAgentResumeChoicesForOwner(
+  paneKey: string,
+  owner: AgentResumeOwner
+): void {
   if (choiceByPaneKey.get(paneKey)?.owner !== owner) {
     return
   }

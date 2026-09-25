@@ -1,12 +1,15 @@
 import type { AgentResumeCandidate } from '../../../shared/agent-resume-candidate'
 
+/** The pty binding that owns a pane's resume state: an opaque key matched by identity, never read. */
+export type AgentResumeOwner = WeakKey
+
 /** What a pane can do with a chosen session. Registered by the pane's pty connection while it
  *  is bound, so the chooser can reach the live connection without threading it through React. */
 export type AgentResumePaneHandler = (candidate: AgentResumeCandidate) => boolean
 
 type RegisteredHandler = {
   /** The pty binding that registered this handler; a caller must name the same one. */
-  owner: object
+  owner: AgentResumeOwner
   handler: AgentResumePaneHandler
 }
 
@@ -21,7 +24,7 @@ const handlersByPaneKey = new Map<string, RegisteredHandler>()
  *  makes that refusal reachable instead of silent. */
 export function registerAgentResumePaneHandler(
   paneKey: string,
-  owner: object | undefined,
+  owner: AgentResumeOwner | undefined,
   handler: AgentResumePaneHandler
 ): () => void {
   if (!owner) {
@@ -43,7 +46,7 @@ export function registerAgentResumePaneHandler(
  *  Identity, not equality: an absent owner must not match an absent registration. */
 export function getAgentResumePaneHandler(
   paneKey: string,
-  owner: object | undefined
+  owner: AgentResumeOwner | undefined
 ): AgentResumePaneHandler | undefined {
   const registered = handlersByPaneKey.get(paneKey)
   if (!registered || !owner || registered.owner !== owner) {
