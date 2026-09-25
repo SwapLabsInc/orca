@@ -1,10 +1,12 @@
 import { app, autoUpdater as nativeUpdater } from 'electron'
 import type { UpdateStatus } from '../shared/update-status-types'
 import { recordUpdaterLifecycle } from './updater-lifecycle-diagnostics'
+import type { UpdateEngine } from './updater/update-engine'
 
 const MAC_INSTALL_READY_TIMEOUT_MS = 15000
 
 export function registerMacUpdaterEvents({
+  updateEngine,
   getCurrentStatus,
   hasInstallableDownloadedVersion,
   getPendingInstallVersion,
@@ -13,6 +15,8 @@ export function registerMacUpdaterEvents({
   shouldDeferMacQuitForInstall,
   sendStatus
 }: {
+  /** LOCAL: a staged-bundle engine's own `update-downloaded` is the ready signal; Squirrel.Mac's native one otherwise. */
+  updateEngine: Pick<UpdateEngine, 'on' | 'installerReadinessSource'>
   getCurrentStatus: () => UpdateStatus
   hasInstallableDownloadedVersion: () => boolean
   getPendingInstallVersion: () => string
@@ -22,7 +26,9 @@ export function registerMacUpdaterEvents({
   sendStatus: (status: UpdateStatus) => void
 }): void {
   if (process.platform === 'darwin') {
-    nativeUpdater.on('update-downloaded', () => {
+    const readySource =
+      updateEngine.installerReadinessSource === 'staged-bundle' ? updateEngine : nativeUpdater
+    readySource.on('update-downloaded', () => {
       const hasInstallableVersion = hasInstallableDownloadedVersion()
       handleMacInstallerReady(hasInstallableVersion, performQuitAndInstall, () => {
         sendStatus({

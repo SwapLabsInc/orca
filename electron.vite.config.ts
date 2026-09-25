@@ -7,6 +7,7 @@ import { createBootstrapFatalExitBanner } from './config/build-plugins/bootstrap
 import { createPdfjsViewerAssetsPlugin } from './config/build-plugins/pdfjs-viewer-assets'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
 import { parseReleaseSources } from './src/shared/release-sources'
+import { parseMacSelfUpdatePublicKey } from './src/shared/mac-self-update-public-key'
 import packageJson from './package.json' with { type: 'json' }
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
@@ -69,6 +70,14 @@ const orcaReleaseSources = process.env.ORCA_RELEASE_SOURCES
 const ORCA_RELEASE_SOURCES_LITERAL =
   typeof orcaReleaseSources === 'string' && orcaReleaseSources.trim().length > 0
     ? JSON.stringify(JSON.stringify(parseReleaseSources(orcaReleaseSources)))
+    : 'null'
+// LOCAL: the Ed25519 key SwapLabs macOS builds verify their update manifests with. A define for
+// the same reason as the registry: a shell export must not be able to re-key the installer.
+// Validated by the runtime's own parser so a bad pipeline variable fails the build here.
+const orcaSwapLabsUpdatePublicKey = process.env.ORCA_SWAPLABS_UPDATE_PUBLIC_KEY
+const ORCA_SWAPLABS_UPDATE_PUBLIC_KEY_LITERAL =
+  typeof orcaSwapLabsUpdatePublicKey === 'string' && orcaSwapLabsUpdatePublicKey.trim().length > 0
+    ? JSON.stringify(parseMacSelfUpdatePublicKey(orcaSwapLabsUpdatePublicKey))
     : 'null'
 
 function createStartupDiagnosticsBanner(chunkName: string): string {
@@ -292,7 +301,8 @@ export const electronViteConfig: UserConfig = {
       ORCA_BUILD_IDENTITY: ORCA_BUILD_IDENTITY_LITERAL,
       ORCA_POSTHOG_WRITE_KEY: ORCA_POSTHOG_WRITE_KEY_LITERAL,
       ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL,
-      ORCA_RELEASE_SOURCES: ORCA_RELEASE_SOURCES_LITERAL
+      ORCA_RELEASE_SOURCES: ORCA_RELEASE_SOURCES_LITERAL,
+      ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: ORCA_SWAPLABS_UPDATE_PUBLIC_KEY_LITERAL
     },
     // Why: @xterm/headless declares "exports": null in package.json, which
     // prevents Vite's default resolver from finding the CJS entry. Point

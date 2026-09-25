@@ -22,7 +22,9 @@ import { isExternallyManagedLinuxInstall } from '../linux-update-package-type'
  */
 export function resolveReleaseSourceInstallMode(
   source: ReleaseSource,
-  runningSource: ReleaseSourceId | null
+  runningSource: ReleaseSourceId | null,
+  /** LOCAL: Orca's own macOS installer can replace this build in place. */
+  macSelfUpdate: boolean
 ): ReleaseSourceInstallMode {
   if (process.platform === 'linux' && isExternallyManagedLinuxInstall()) {
     return 'externally-managed'
@@ -30,7 +32,8 @@ export function resolveReleaseSourceInstallMode(
   return requiresManualInstall({
     platform: process.platform,
     running: { source: runningSource, channel: getVersionChannel(app.getVersion()) },
-    target: { source: source.id, channel: 'stable' }
+    target: { source: source.id, channel: 'stable' },
+    macSelfUpdate
   })
     ? 'manual-installer'
     : 'in-app'
@@ -43,7 +46,8 @@ export function resolveReleaseSourceInstallMode(
  */
 export async function listReleaseSourceStatuses(
   listStableBuilds: (source: ReleaseSource, force: boolean) => Promise<ReleaseBuild[]>,
-  force: boolean
+  force: boolean,
+  macSelfUpdate = false
 ): Promise<ReleaseSourceStatus[]> {
   const runningSource = getVersionReleaseSource(app.getVersion())
   return Promise.all(
@@ -52,7 +56,7 @@ export async function listReleaseSourceStatuses(
         id: source.id,
         label: source.label,
         running: source.id === runningSource,
-        install: resolveReleaseSourceInstallMode(source, runningSource)
+        install: resolveReleaseSourceInstallMode(source, runningSource, macSelfUpdate)
       }
       try {
         const builds = await listStableBuilds(source, force)

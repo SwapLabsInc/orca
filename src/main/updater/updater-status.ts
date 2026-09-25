@@ -1,5 +1,7 @@
 import { app } from 'electron'
-import { loadElectronAutoUpdater, type ElectronAutoUpdater } from '../electron-updater-loader'
+import { loadElectronAutoUpdater } from '../electron-updater-loader'
+import { createMacSelfUpdateEngineIfSupported } from './mac-self-update/mac-self-update-activation'
+import type { UpdateEngine } from './update-engine'
 import { statusesEqual } from '../updater-fallback'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
 import {
@@ -11,9 +13,10 @@ import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterState as BaseUpdaterState } from './updater-state'
 
 export abstract class UpdaterStatus extends BaseUpdaterState {
-  protected getAutoUpdater(): ElectronAutoUpdater {
+  protected getAutoUpdater(): UpdateEngine {
     if (!this.autoUpdater) {
-      this.autoUpdater = loadElectronAutoUpdater()
+      // Why decided once: the conditions are fixed for the process, and the handlers bind to one engine.
+      this.autoUpdater = createMacSelfUpdateEngineIfSupported() ?? loadElectronAutoUpdater()
     }
     return this.autoUpdater
   }

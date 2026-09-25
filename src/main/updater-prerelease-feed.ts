@@ -11,6 +11,7 @@ import {
   type ReleaseManifestProbe
 } from './updater-release-asset-readiness'
 import { getReleaseAtomFeedUrl, getReleaseTagHrefPattern } from './updater-release-urls'
+import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
 
 export { getReleaseDownloadUrl } from './updater-release-urls'
 
@@ -95,7 +96,12 @@ export async function verifyReleaseTagManifest(
   source: ReleaseSource
 ): Promise<ReleaseTagManifestVerdict> {
   return judgeManifestProbe(
-    await probeReleaseManifest(target.tag, target.repo),
+    await probeReleaseManifest(
+      target.tag,
+      target.repo,
+      undefined,
+      getMacSelfUpdateSourceFor(source)
+    ),
     target.version,
     source
   )
@@ -183,10 +189,11 @@ async function resolveVersionsFromManifests(
   const unresolved = entries
     .filter((entry) => entry.version === null)
     .slice(0, MAX_MANIFEST_PROBE_CANDIDATES)
+  const macSelfUpdateSource = getMacSelfUpdateSourceFor(source)
   const results = await Promise.all(
     unresolved.map(async ({ tag }) => ({
       tag,
-      probe: await probeReleaseManifest(tag, source.repo, assetProbes)
+      probe: await probeReleaseManifest(tag, source.repo, assetProbes, macSelfUpdateSource)
     }))
   )
   const resolved: ReleaseFeedTag[] = []
@@ -288,12 +295,15 @@ export async function fetchNewerReleaseTagsWithReadiness(
     newestNewerIndex,
     newestNewerIndex + MAX_MANIFEST_PROBE_CANDIDATES
   )
+  const macSelfUpdateSource = getMacSelfUpdateSourceFor(source)
   const manifestResults = (
     await Promise.all(
       probeCandidates.map(async ({ tag, version }) => ({
         tag,
         version,
-        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source.repo, assetProbes))
+        probe:
+          probes.get(tag) ??
+          (await probeReleaseManifest(tag, source.repo, assetProbes, macSelfUpdateSource))
       }))
     )
   ).flatMap(({ tag, version, probe }) => {

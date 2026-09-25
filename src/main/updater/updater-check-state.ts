@@ -4,6 +4,7 @@ import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getRetainedLinuxPackageManualInstallStatus } from '../linux-package-downloaded-status'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseSourceId } from '../../shared/release-sources'
+import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterStatus } from './updater-status'
 import {
@@ -275,13 +276,17 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
   protected sendErrorStatus(
     message: string,
     userInitiated?: boolean,
-    releaseSource?: ReleaseSourceId
+    releaseSource?: ReleaseSourceId,
+    /** The failure itself, when it carries a manual-install page or a retry verdict for the card. */
+    error?: unknown
   ): void {
+    const presentation = readUpdateErrorPresentation(error)
     if (
       this.currentStatus.state === 'error' &&
       this.currentStatus.message === message &&
       this.currentStatus.userInitiated === userInitiated &&
-      this.currentStatus.releaseSource === releaseSource
+      this.currentStatus.releaseSource === releaseSource &&
+      this.currentStatus.manualInstallUrl === presentation.manualInstallUrl
     ) {
       return
     }
@@ -296,6 +301,7 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
       state: 'error',
       message,
       userInitiated,
+      ...presentation,
       ...(releaseSource ? { releaseSource } : {})
     })
   }
@@ -316,7 +322,7 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     const retainedStatus = getRetainedLinuxPackageManualInstallStatus()
     if (retainedStatus) {
       this.sendStatus(retainedStatus)
-    } else if (status.state === 'error') {
+    } else if (status.state === 'error' && status.manualInstallUrl === undefined) {
       this.sendErrorStatus(status.message, status.userInitiated, status.releaseSource)
     } else {
       this.sendStatus(status)

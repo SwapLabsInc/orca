@@ -132,7 +132,8 @@ describe('updater', () => {
       )
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca-hourly/releases/download/v1.4.160-hourly.202607281400'
+        url: 'https://github.com/stablyai/orca-hourly/releases/download/v1.4.160-hourly.202607281400',
+        expectedVersion: '1.4.160-hourly.202607281400'
       })
       expect(send).not.toHaveBeenCalledWith(
         'updater:status',

@@ -222,6 +222,49 @@ describe('listReleaseBuilds', () => {
 
   // Why: on Windows a signed stable cannot reach a dev channel through the
   // updater, so the picker needs a direct download to hand the user instead.
+  // LOCAL: a SwapLabs macOS release carries no latest-mac.yml; Orca's own installer reads the
+  // per-slice signed manifest, so that is what makes the row installable on macOS.
+  it('lists a fork macOS release by its self-update manifest for the running slice', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const forkRelease = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [
+        { name: 'orca-macos-arm64.zip' },
+        { name: 'swaplabs-update-mac-arm64.json' },
+        { name: 'swaplabs-update-mac-arm64.json.sig' },
+        { name: 'latest-linux.yml' }
+      ]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([forkRelease]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      const withSelfUpdate = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+      expect(withSelfUpdate.map((build) => build.version)).toEqual([
+        '1.4.197-swaplabs.202609251200'
+      ])
+      // The other slice has no manifest of its own, and without the installer nothing on macOS does.
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'x64', swaplabs)).resolves.toEqual(
+        []
+      )
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'arm64', null)).resolves.toEqual([])
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
   it('resolves the platform installer download url', async () => {
     fetchMock.mockResolvedValue(jsonResponse([release('v1.4.163-hourly.202607312054')]))
 
