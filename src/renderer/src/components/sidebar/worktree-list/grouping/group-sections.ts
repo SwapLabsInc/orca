@@ -14,6 +14,7 @@ import {
   getLaneHostWorktreeIds,
   getMixedHostContextLabels
 } from './host-labels'
+import { getRenderedRepoIds } from './project-grouping'
 import type { OrderedGroupEntry, ProjectGroupingIndex } from './project-grouping'
 import {
   appendWorktreeRows,
@@ -151,9 +152,10 @@ export function appendOrderedGroups(
     result.push(header)
     if (!isCollapsed) {
       if (groupBy === 'repo') {
+        const renderedRepoIds = getRenderedRepoIds(group)
         const repoIds =
-          group.repoIds.size > 0
-            ? [...group.repoIds]
+          renderedRepoIds.length > 0
+            ? renderedRepoIds
             : repo
               ? [repo.id]
               : key.startsWith('repo:')

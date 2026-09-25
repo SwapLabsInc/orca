@@ -1,4 +1,7 @@
-import type { ExecutionHostId } from '../../../../../../shared/execution-host'
+import {
+  toRuntimeExecutionHostId,
+  type ExecutionHostId
+} from '../../../../../../shared/execution-host'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import {
@@ -32,32 +35,56 @@ export function resolveDelegatedWorktreeNesting(args: {
   homeHostId: ExecutionHostId
   /** Parent identity already proven by git lineage, when the row has one. */
   getLineageParentIdentity: (worktree: Worktree) => string | undefined
+  /** The row's execution host with the repo fallback applied: a local row carries no `hostId`. */
+  resolveHostId: (worktree: Worktree) => ExecutionHostId
 }): DelegatedWorktreeNesting {
-  const { worktrees, edges, homeHostId, getLineageParentIdentity } = args
+  const { worktrees, edges, homeHostId, getLineageParentIdentity, resolveHostId } = args
   if (edges.length === 0) {
     return EMPTY_NESTING
   }
   const byIdentity = new Map(
     worktrees.map((worktree) => [getWorktreeHostIdentity(worktree), worktree])
   )
+  // Edges name hosts the way the dispatching runtime saw them, so they match on resolved hosts;
+  // everything returned stays keyed by the raw identity the row builders look up.
+  const byEdgeIdentity = new Map<string, Worktree>()
+  for (const worktree of worktrees) {
+    byEdgeIdentity.set(composeWorktreeHostIdentity(resolveHostId(worktree), worktree.id), worktree)
+  }
+  for (const worktree of worktrees) {
+    // An SSH worktree reached through a paired runtime keeps its `ssh:` host, but the
+    // dispatch that created it recorded the runtime.
+    if (worktree.runtimeOwnerEnvironmentId) {
+      const alias = composeWorktreeHostIdentity(
+        toRuntimeExecutionHostId(worktree.runtimeOwnerEnvironmentId),
+        worktree.id
+      )
+      if (!byEdgeIdentity.has(alias)) {
+        byEdgeIdentity.set(alias, worktree)
+      }
+    }
+  }
   const parentIdentityByChildIdentity = new Map<string, string>()
   const sectionAnchorByChildIdentity = new Map<string, Worktree>()
   for (const edge of edges) {
-    const childIdentity = composeWorktreeHostIdentity(edge.childHostId, edge.childWorktreeId)
-    if (parentIdentityByChildIdentity.has(childIdentity)) {
+    const child = byEdgeIdentity.get(
+      composeWorktreeHostIdentity(edge.childHostId, edge.childWorktreeId)
+    )
+    if (!child) {
       continue
     }
-    const child = byIdentity.get(childIdentity)
-    if (!child || getLineageParentIdentity(child)) {
+    const childIdentity = getWorktreeHostIdentity(child)
+    if (parentIdentityByChildIdentity.has(childIdentity) || getLineageParentIdentity(child)) {
       continue
     }
     // The coordinator's worktree belongs to the runtime that published the edge.
-    // An unqualified row cannot be proven to be that one, so it is not a parent.
-    const parentIdentity = composeWorktreeHostIdentity(homeHostId, edge.parentWorktreeId)
-    const parent = byIdentity.get(parentIdentity)
-    if (!parent || parentIdentity === childIdentity) {
+    const parent = byEdgeIdentity.get(
+      composeWorktreeHostIdentity(homeHostId, edge.parentWorktreeId)
+    )
+    if (!parent || parent === child) {
       continue
     }
+    const parentIdentity = getWorktreeHostIdentity(parent)
     if (
       reachesDescendant({
         fromIdentity: parentIdentity,

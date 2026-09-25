@@ -15,7 +15,11 @@ import {
 import { PR_GROUP_META, PR_GROUP_ORDER, getPRGroupKey, getPRLaneKey } from './group-keys'
 import type { PRGroupKey } from './group-keys'
 import { getWorktreeHostIdentity } from '../../../../../../shared/worktree/host-qualified-identity'
-import { addRepoIdToGroup, getProjectGroupingForRepo } from './project-grouping'
+import {
+  addAnchoredChildRepoIdToGroup,
+  addRepoIdToGroup,
+  getProjectGroupingForRepo
+} from './project-grouping'
 import type {
   OrderedGroupEntry,
   ProjectGroupingIndex,
@@ -117,7 +121,7 @@ export function buildOrderedGroups(args: {
     group.items.push(w)
     addRepoIdToGroup(group, anchor.repoId)
     if (anchor !== w) {
-      addRepoIdToGroup(group, w.repoId)
+      addAnchoredChildRepoIdToGroup(group, w.repoId)
       anchoredSectionKeyByRepoId.set(w.repoId, key)
       const claims = claimedSectionKeysByRepoId.get(w.repoId) ?? new Set<string>()
       claims.add(key)
@@ -135,7 +139,7 @@ export function buildOrderedGroups(args: {
         : (anchoredSectionKeyByRepoId.get(repoId) ?? ownKey)
     for (const key of claimedKeys) {
       if (key !== keeper) {
-        grouped.get(key)?.repoIds.delete(repoId)
+        grouped.get(key)?.anchoredChildRepoIds?.delete(repoId)
       }
     }
     if (keeper === ownKey) {

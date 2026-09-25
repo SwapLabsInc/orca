@@ -83,7 +83,8 @@ function nest(args: {
     worktrees: args.worktrees,
     edges: args.edges,
     homeHostId: 'local',
-    getLineageParentIdentity: args.lineageParentIdentity ?? (() => undefined)
+    getLineageParentIdentity: args.lineageParentIdentity ?? (() => undefined),
+    resolveHostId: (candidate) => candidate.hostId ?? 'local'
   }).parentIdentityByChildIdentity
 }
 
@@ -117,15 +118,37 @@ describe('resolveDelegatedWorktreeNesting', () => {
       childWorktreeId: remoteWorker.id,
       dispatchId: 'ctx_2'
     }
-    const resolved = resolveDelegatedWorktreeNesting({
-      worktrees: [coordinator, remoteWorker],
-      edges: [backEdge],
-      homeHostId: REMOTE_HOST,
-      // The coordinator is itself a delegated child of the worker in this shape.
-      getLineageParentIdentity: (candidate) =>
-        candidate.id === coordinator.id ? `${REMOTE_HOST}|${remoteWorker.id}` : undefined
-    })
-    expect(resolved.parentIdentityByChildIdentity.size).toBe(0)
+    // The coordinator already sits beneath the worker, so nesting the worker under it would
+    // loop. The parent resolves here, so this reaches the cycle walk rather than an early exit.
+    expect(
+      nest({
+        worktrees: [coordinator, remoteWorker],
+        edges: [backEdge],
+        lineageParentIdentity: (candidate) =>
+          candidate.id === coordinator.id ? `${REMOTE_HOST}|${remoteWorker.id}` : undefined
+      }).size
+    ).toBe(0)
+  })
+
+  // A local worktree carries no hostId; the edge still names it through the resolved host.
+  it('finds a local coordinator whose row has no hostId', () => {
+    const unstamped: Worktree = { ...coordinator, hostId: undefined }
+    expect(nest({ worktrees: [unstamped, remoteWorker], edges: [edge] })).toEqual(
+      new Map([[`${REMOTE_HOST}|${remoteWorker.id}`, `|${coordinator.id}`]])
+    )
+  })
+
+  // An SSH worktree reached through the paired runtime keeps its ssh host on the row, while
+  // the dispatch recorded the runtime it went through.
+  it('finds a worker on an SSH target reached through the paired runtime', () => {
+    const sshWorker: Worktree = {
+      ...remoteWorker,
+      hostId: 'ssh:gpu-vm',
+      runtimeOwnerEnvironmentId: 'env-1'
+    }
+    expect(nest({ worktrees: [coordinator, sshWorker], edges: [edge] })).toEqual(
+      new Map([[`ssh:gpu-vm|${remoteWorker.id}`, `local|${coordinator.id}`]])
+    )
   })
 
   it('keeps the first edge when a worktree was reused by a later dispatch', () => {
@@ -166,16 +189,22 @@ describe('buildRows with delegated edges', () => {
       newExternalWorktreesInboxByRepo?: ReadonlyMap<string, NewExternalWorktreesInboxCandidate>
       pendingCreations?: readonly PendingCreationRef[]
       extraWorktrees?: readonly Worktree[]
+      coordinator?: Worktree
+      repoOrder?: Map<string, number>
     } = {}
   ) {
-    const worktrees = [coordinator, remoteWorker, ...(overrides.extraWorktrees ?? [])]
+    const worktrees = [
+      overrides.coordinator ?? coordinator,
+      remoteWorker,
+      ...(overrides.extraWorktrees ?? [])
+    ]
     return buildRows(
       'repo',
       worktrees,
       repoMapWithRemote,
       null,
       new Set(),
-      undefined,
+      overrides.repoOrder,
       undefined,
       'manual',
       lineage,
@@ -214,6 +243,32 @@ describe('buildRows with delegated edges', () => {
       defaultHostId: getSettingsFocusedExecutionHostId({ activeRuntimeEnvironmentId: 'env-1' })
     })
     expect(findItem(rows, remoteWorker.id)).toMatchObject({ depth: 1 })
+  })
+
+  // Local rows are left unqualified by the listing, so the real resolver must place them.
+  it('nests under a local coordinator whose row has no hostId', () => {
+    const unstamped: Worktree = { ...coordinator, hostId: undefined }
+    const rows = rowsFor([edge], { coordinator: unstamped })
+    expect(findItem(rows, remoteWorker.id)).toMatchObject({
+      depth: 1,
+      sectionKey: findItem(rows, coordinator.id)?.sectionKey
+    })
+  })
+
+  // The worker's repo joins the coordinator's section for its notice rows only; it must not
+  // pull that section to its own place in the manual order.
+  it("keeps the coordinator section at the coordinator repo's position", () => {
+    const repoOrder = new Map([
+      [remoteRepo.id, 0],
+      [otherRepo.id, 1],
+      [repo.id, 2]
+    ])
+    const rows = rowsFor([edge], { extraWorktrees: [otherCoordinator], repoOrder })
+    const headers = rows.filter((row) => row.type === 'header').map((row) => row.key)
+    expect(headers).toEqual([
+      findItem(rows, otherCoordinator.id)?.sectionKey,
+      findItem(rows, coordinator.id)?.sectionKey
+    ])
   })
 
   it('leaves the remote worker top-level in its own section without an edge', () => {

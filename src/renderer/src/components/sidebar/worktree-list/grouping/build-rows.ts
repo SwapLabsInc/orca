@@ -6,7 +6,10 @@ import type { WorktreeLineage } from '../../../../../../shared/worktree/lineage-
 import type { WorkspaceStatusDefinition, Worktree } from '../../../../../../shared/worktree/types'
 import { cloneDefaultWorkspaceStatuses } from '../../../../../../shared/workspace-statuses'
 import type { AppState } from '../../../../store/types'
-import { LOCAL_EXECUTION_HOST_ID } from '../../../../../../shared/execution-host'
+import {
+  getWorktreeExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID
+} from '../../../../../../shared/execution-host'
 import type { ExecutionHostId } from '../../../../../../shared/execution-host'
 import { getWorktreeHostIdentity } from '../../../../../../shared/worktree/host-qualified-identity'
 import {
@@ -100,7 +103,9 @@ export function buildRows(
           getLineageParentIdentity: (worktree) => {
             const info = getLineageRenderInfo(worktree, lineageById, worktreeMap, cyclicLineageIds)
             return info.state === 'valid' ? getWorktreeHostIdentity(info.parent) : undefined
-          }
+          },
+          resolveHostId: (worktree) =>
+            getWorktreeExecutionHostId(worktree, repoMap.get(worktree.repoId))
         })
       : undefined
   const sectionAnchorByChildIdentity =
