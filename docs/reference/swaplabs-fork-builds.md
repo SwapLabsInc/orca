@@ -27,7 +27,7 @@ Legs:
 | --- | --- | --- | --- |
 | Linux x64 (AppImage, deb, rpm) | `ubuntu-latest` | yes | n/a |
 | Linux arm64 (AppImage, deb, rpm) | `ubuntu-24.04-arm` | yes | n/a |
-| macOS x64 + arm64 (DMG, zip) | `macos-15` | best-effort | ad-hoc, not notarized |
+| macOS x64 + arm64 (DMG) | `macos-15` | best-effort | ad-hoc, not notarized |
 
 There is no Windows leg. macOS assets are download-only: the in-app updater cannot
 install an ad-hoc build, and Gatekeeper prompts on first launch. Nothing runs

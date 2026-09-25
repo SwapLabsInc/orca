@@ -489,7 +489,9 @@ jobs:
           timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 30
-          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/latest-mac.yml dist/*.dmg dist/*.zip dist/*.blockmap
+          # Why DMG only: an ad-hoc build cannot replace an installed app in-app, and latest-mac.yml
+          # would advertise it as installable; without a manifest a late upload offers nothing.
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.dmg
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
@@ -505,8 +507,12 @@ jobs:
             --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
           echo "Uploaded assets:"
           echo "$assets"
-          if ! grep -qx 'latest-mac.yml' <<<"$assets" || ! grep -q '\.dmg$' <<<"$assets"; then
-            echo "::error::Fork release $TAG is missing latest-mac.yml or a DMG."
+          if ! grep -q '\.dmg$' <<<"$assets"; then
+            echo "::error::Fork release $TAG is missing a DMG."
+            exit 1
+          fi
+          if grep -qx 'latest-mac.yml' <<<"$assets"; then
+            echo "::error::Fork release $TAG carries latest-mac.yml; macOS fork builds are download-only."
             exit 1
           fi
 

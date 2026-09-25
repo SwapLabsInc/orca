@@ -191,6 +191,18 @@ describe('swaplabs fork build identity', () => {
 })
 
 describe('swaplabs fork build publish policy', () => {
+  // Why: a manifest would advertise the ad-hoc build as installable in-app, and one uploaded after
+  // the flip would offer a payload that is still uploading.
+  it('keeps macOS assets download-only, with no update manifest', () => {
+    const upload = stepNamed(jobs['build-mac'], 'Upload macOS artifacts').with.command
+    expect(upload).toContain('dist/*.dmg')
+    expect(upload).not.toContain('latest-mac.yml')
+    expect(upload).not.toContain('.zip')
+    expect(stepNamed(jobs['build-mac'], 'Verify the macOS assets published').run).toContain(
+      'macOS fork builds are download-only'
+    )
+  })
+
   it('requires both Linux legs and verifies both manifests before flipping live', () => {
     expect(jobs.publish.needs).toEqual(['preflight', 'draft', 'build-linux'])
     expect(jobs.publish.needs).not.toContain('build-mac')
