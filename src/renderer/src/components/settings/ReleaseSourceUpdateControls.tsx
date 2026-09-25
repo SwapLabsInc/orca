@@ -59,8 +59,10 @@ function ReleaseSourceButton({
   const manual = source.install !== 'in-app'
   const busy = updaterBusy || (updateStatus.state === 'downloaded' && !manual)
   // Why the fallback to the running source: an absent releaseSource always means the running
-  // build's own source, so only that source's button follows an unlabelled status.
+  // build's own source, so only that source's button follows an unlabelled status. A local build
+  // (Option-click on macOS) is no source's release, so no button speaks for it.
   const speaksForThisSource =
+    updateStatus.source !== 'local' &&
     (updateStatus.releaseSource ?? (source.running ? source.id : null)) === source.id
   // Why the routine result wins over the list: a sticky check may have found a build the
   // five-minute list cache has not seen yet, and its download is already staged in main.

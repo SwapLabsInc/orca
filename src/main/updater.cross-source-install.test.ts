@@ -9,6 +9,7 @@ import {
 const {
   appMock,
   autoUpdaterMock,
+  chooseLocalBuildMock,
   fetchNewerReleaseTagsMock,
   moduleFactories,
   recordUpdaterLifecycleMock,
@@ -297,6 +298,48 @@ describe('updater cross-source install', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(1)
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: a local build is no source's release; stamping the running source on its statuses would
+  // let that source's button in the Updates row claim the local offer as its own.
+  it('names no release source on local-build statuses', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      asMultiSourceBuild(FORK_VERSION)
+      chooseLocalBuildMock.mockResolvedValue({
+        version: '0.9.0-local.1',
+        manifestContent: 'version: 0.9.0-local.1',
+        artifacts: new Map()
+      })
+      autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+        autoUpdaterMock.emit('checking-for-update')
+        autoUpdaterMock.emit('update-available', { version: '0.9.0-local.1' })
+        return Promise.resolve(undefined)
+      })
+      const { mainWindow, send } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      checkForUpdatesFromMenu({ localBuild: true })
+
+      await vi.waitFor(() => {
+        expect(send).toHaveBeenCalledWith('updater:status', {
+          state: 'available',
+          version: '0.9.0-local.1',
+          changelog: null,
+          source: 'local'
+        })
+      })
+      expect(send).toHaveBeenCalledWith('updater:status', {
+        state: 'checking',
+        userInitiated: true,
+        source: 'local'
+      })
     } finally {
       platformSpy.mockRestore()
     }

@@ -308,3 +308,26 @@ it('re-lists the sources, bypassing the cache, when checking for updates', async
   expect(check).toHaveBeenCalledWith({ includePrerelease: false, includePerfPrerelease: false })
   expect(listSources).toHaveBeenLastCalledWith({ force: true })
 })
+
+// Why: a local build (Option-click on macOS) is no source's release; it must keep the generic
+// action and copy instead of being labelled as the running source's build.
+it('keeps a local-build offer out of the source buttons', async () => {
+  render(<GeneralUpdateSettingsSection />)
+  await waitFor(() => expect(upstreamButton()).toBeTruthy())
+
+  setStatus({ state: 'available', version: '0.9.0-local.1', changelog: null, source: 'local' })
+  const button = await screen.findByRole<HTMLButtonElement>('button', {
+    name: 'Download Update (0.9.0-local.1)'
+  })
+  expect(screen.queryByRole('button', { name: /0\.9\.0-local\.1 \(SwapLabs\)/ })).toBeNull()
+  expect(forkButton().disabled).toBe(true)
+  expect(screen.getByText(/is available\. Click "Download Update" to download it\./)).toBeTruthy()
+  expect(screen.queryByText('Release notes')).toBeNull()
+  fireEvent.click(button)
+  expect(download).toHaveBeenCalledTimes(1)
+  expect(check).not.toHaveBeenCalled()
+
+  setStatus({ state: 'downloading', percent: 42, version: '0.9.0-local.1', source: 'local' })
+  await waitFor(() => expect(screen.getByText('Downloading v0.9.0-local.1... 42%')).toBeTruthy())
+  expect(upstreamButton().disabled).toBe(true)
+})

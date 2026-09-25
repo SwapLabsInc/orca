@@ -8,6 +8,7 @@ import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
 import { getUpdateCheckClickOptions, getUpdateCheckHint } from '@/lib/update-check-click-options'
+import { readIpcErrorDetail } from '@/lib/ipc-error'
 import { GeneralRemoteServerUpdates } from './GeneralRemoteServerUpdates'
 import { ReleaseChannelSection } from './ReleaseChannelSection'
 import {
@@ -67,6 +68,33 @@ function CheckForUpdatesButton({
   )
 }
 
+function DownloadUpdateButton({ version }: { version: string }): React.JSX.Element {
+  return (
+    <Button
+      variant="default"
+      size="sm"
+      onClick={() => {
+        void window.api.updater.download().catch((error) => {
+          toast.error(
+            translate(
+              'auto.components.settings.GeneralUpdateSettingsSection.02dc082e70',
+              'Could not start the update download.'
+            ),
+            { description: readIpcErrorDetail(error) ?? String(error) }
+          )
+        })
+      }}
+    >
+      <Download className="size-3.5" />
+      {translate(
+        'auto.components.settings.GeneralUpdateSettingsSection.42717918f4',
+        'Download Update ('
+      )}
+      {version})
+    </Button>
+  )
+}
+
 function RestartToUpdateButton({
   version,
   onRestart
@@ -114,6 +142,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   const releaseSources = useReleaseSourceStatuses(multiSource)
   const runningSource =
     multiSource && appVersion ? getReleaseSource(getVersionReleaseSource(appVersion) ?? '') : null
+  const localBuildOffered = updateStatus.source === 'local'
 
   useEffect(() => {
     let cancelled = false
@@ -197,6 +226,10 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
                 version={updateStatus.version}
                 onRestart={handleRestartToUpdate}
               />
+            ) : localBuildOffered && updateStatus.state === 'available' ? (
+              // Why: a local build (Option-click on macOS) is no source's release, so it keeps
+              // the generic action instead of wearing a source button's label.
+              <DownloadUpdateButton version={updateStatus.version} />
             ) : null}
             <ReleaseSourceDownloadButtons
               sources={releaseSources.sources}
@@ -212,30 +245,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
             <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
 
             {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => {
-                  void window.api.updater.download().catch((error) => {
-                    toast.error(
-                      translate(
-                        'auto.components.settings.GeneralUpdateSettingsSection.02dc082e70',
-                        'Could not start the update download.'
-                      ),
-                      {
-                        description: String((error as Error)?.message ?? error)
-                      }
-                    )
-                  })
-                }}
-              >
-                <Download className="size-3.5" />
-                {translate(
-                  'auto.components.settings.GeneralUpdateSettingsSection.42717918f4',
-                  'Download Update ('
-                )}
-                {updateStatus.version})
-              </Button>
+              <DownloadUpdateButton version={updateStatus.version} />
             ) : updateStatus.state === 'downloaded' ? (
               <RestartToUpdateButton
                 version={updateStatus.version}
@@ -246,7 +256,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
         )}
 
         <p className="text-xs text-muted-foreground">
-          {multiSource ? (
+          {multiSource && !localBuildOffered ? (
             <ReleaseSourceUpdateHint
               runningSourceId={runningSource?.id ?? null}
               updateStatus={updateStatus}
