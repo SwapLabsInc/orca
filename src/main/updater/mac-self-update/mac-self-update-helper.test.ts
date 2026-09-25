@@ -239,7 +239,9 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
     expect(existsSync(scenario.relaunchLog)).toBe(false)
   }, 20_000)
 
-  it('leaves the installed app alone when the staged bundle is missing', async () => {
+  // Why: the app has quit by the time the helper runs, so a failure that leaves the old bundle
+  // in place must start it again or the user is left with no Orca at all.
+  it('relaunches the untouched app when the staged bundle is missing', async () => {
     const scenario = createScenario({ healthy: true, staged: false })
     scenarios.push(scenario)
     scenario.appProcess.kill('SIGKILL')
@@ -247,6 +249,40 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
     expect(await runHelper(scenario.plan)).toBe(1)
     expect(outcomeOf(scenario.plan)).toBe('staged-missing')
     expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
+    expect(readFileSync(scenario.relaunchLog, 'utf8')).toBe(`${scenario.plan.appPath}\n`)
+  }, 20_000)
+
+  it('leaves the relaunch to the supervisor when the staged bundle is missing', async () => {
+    const scenario = createScenario({ healthy: true, staged: false, relaunch: false })
+    scenarios.push(scenario)
+    scenario.appProcess.kill('SIGKILL')
+
+    expect(await runHelper(scenario.plan)).toBe(1)
+    expect(outcomeOf(scenario.plan)).toBe('staged-missing')
     expect(existsSync(scenario.relaunchLog)).toBe(false)
   }, 20_000)
+
+  // Root ignores directory permissions, so the failure cannot be provoked there.
+  it.skipIf(process.getuid?.() === 0)(
+    'restores and relaunches the previous bundle when the staged one cannot be moved into place',
+    async () => {
+      const scenario = createScenario({ healthy: true })
+      scenarios.push(scenario)
+      scenario.appProcess.kill('SIGKILL')
+      const stagingDir = join(scenario.plan.stagedAppPath, '..')
+      // A read-only staging directory refuses to give up its entry, so the second mv fails.
+      chmodSync(stagingDir, 0o555)
+      try {
+        expect(await runHelper(scenario.plan)).toBe(1)
+      } finally {
+        chmodSync(stagingDir, 0o755)
+      }
+      expect(outcomeOf(scenario.plan)).toBe('rename-staged-failed')
+      expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
+      expect(bundleMarker(scenario.plan.stagedAppPath)).toBe('new build')
+      expect(existsSync(scenario.plan.rollbackAppPath)).toBe(false)
+      expect(readFileSync(scenario.relaunchLog, 'utf8')).toBe(`${scenario.plan.appPath}\n`)
+    },
+    20_000
+  )
 })

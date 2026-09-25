@@ -31,6 +31,10 @@ export type MacSelfUpdateHelperOutcome =
  * 3. move the staged, verified bundle into place;
  * 4. relaunch (unless a serve supervisor owns the relaunch);
  * 5. wait for the new app's health marker; without one, restore the rollback and relaunch it.
+ *
+ * The app has already quit by step 2, so every failure that leaves or restores the previous
+ * bundle relaunches it too (when the helper owns relaunching): a failed update must never
+ * leave Orca closed with a runnable app still on disk.
  */
 export const MAC_SELF_UPDATE_HELPER_SCRIPT = `set -u
 pid=$1
@@ -63,6 +67,13 @@ stop_new_app() {
     esac
   done
 }
+give_up() {
+  report "$1"
+  if [ -n "$relaunch" ]; then
+    launch "$app"
+  fi
+  exit 1
+}
 n=0
 while kill -0 "$pid" 2>/dev/null; do
   n=$((n + 1))
@@ -73,22 +84,18 @@ while kill -0 "$pid" 2>/dev/null; do
   sleep 0.1
 done
 if [ ! -d "$staged" ]; then
-  report staged-missing
-  exit 1
+  give_up staged-missing
 fi
 rm -rf "$rollback"
 if ! mkdir -p "$(dirname "$rollback")"; then
-  report rollback-dir-failed
-  exit 1
+  give_up rollback-dir-failed
 fi
 if ! mv "$app" "$rollback"; then
-  report rename-current-failed
-  exit 1
+  give_up rename-current-failed
 fi
 if ! mv "$staged" "$app"; then
   mv "$rollback" "$app"
-  report rename-staged-failed
-  exit 1
+  give_up rename-staged-failed
 fi
 rm -f "$marker"
 if [ -z "$relaunch" ]; then

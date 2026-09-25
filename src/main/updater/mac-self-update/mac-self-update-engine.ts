@@ -42,7 +42,7 @@ export type MacSelfUpdateEngineDependencies = {
   getCurrentVersion: () => string
   /** Rejects with a `MacSelfUpdateError` when the running bundle is not identity-signed. */
   readRunningBundleSignature: () => Promise<RunningBundleSignature>
-  fetch: ReleaseAssetFetch
+  fetchAsset: ReleaseAssetFetch
   run: BundleToolRunner
   spawnHelper?: HelperSpawner
   relaunchProgram?: string
@@ -187,9 +187,13 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
       const running = await this.deps.readRunningBundleSignature()
       const manifestName = getMacSelfUpdateManifestName(this.deps.source, this.deps.arch)
       const [manifestBytes, signatureBytes] = await Promise.all([
-        fetchSmallReleaseAsset(this.deps.fetch, `${feed.url}/${manifestName}`, MAX_MANIFEST_BYTES),
         fetchSmallReleaseAsset(
-          this.deps.fetch,
+          this.deps.fetchAsset,
+          `${feed.url}/${manifestName}`,
+          MAX_MANIFEST_BYTES
+        ),
+        fetchSmallReleaseAsset(
+          this.deps.fetchAsset,
           `${feed.url}/${getMacSelfUpdateSignatureName(manifestName)}`,
           MAX_SIGNATURE_BYTES
         )
@@ -246,7 +250,7 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
       await mkdir(paths.stagingDir, { recursive: true })
       await this.assertAppLocationWritable(manualInstallUrl)
       await downloadVerifiedReleaseZip({
-        fetch: this.deps.fetch,
+        fetchAsset: this.deps.fetchAsset,
         url: `${feedUrl}/${manifest.file}`,
         destinationPath: zipPath,
         size: manifest.size,

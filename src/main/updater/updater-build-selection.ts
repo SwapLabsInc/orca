@@ -60,6 +60,16 @@ function describeRefusedCrossSourceJump(source: ReleaseSource): string {
   return `Orca on macOS can only install updates carrying the same code signature, and ${source.label} builds are signed differently. Download the ${source.label} build from its release page and install it by hand.`
 }
 
+/**
+ * Why refuse before the file dialog: Orca's own macOS installer installs only bundles carrying
+ * the running build's release identity under a release-key-signed manifest, which a local
+ * build has no way to produce, so the loopback feed could never get past its check.
+ */
+function describeRefusedLocalBuildSwitch(source: ReleaseSource | null): string {
+  const identity = source ? `the ${source.label} release identity` : 'its release identity'
+  return `Local build switching is unavailable on this build. It updates itself through Orca's own installer, which installs only builds signed with ${identity}; install a local build by hand instead.`
+}
+
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   private readonly releaseBuildCache = new ReleaseBuildListCache((channel, sourceId) =>
@@ -70,6 +80,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     if (process.platform !== 'darwin') {
       this.sendLocalBuildErrorAndRestore(
         'Local build switching is currently available only on macOS.',
+        true
+      )
+      return
+    }
+    if (this.getAutoUpdater().installerReadinessSource === 'staged-bundle') {
+      const runningSource = this.getRunningReleaseSource()
+      this.sendLocalBuildErrorAndRestore(
+        describeRefusedLocalBuildSwitch(runningSource ? getReleaseSource(runningSource) : null),
         true
       )
       return

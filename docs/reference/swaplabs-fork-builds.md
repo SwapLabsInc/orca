@@ -107,6 +107,11 @@ page"):
 `requiresManualInstall` says manual for a fork build's own next macOS build unless
 the installer is active; cross-source jumps stay manual on macOS and Windows.
 
+While the installer is active, "Check for local build" is refused before its file
+dialog opens: the loopback feed serves `latest-mac.yml`, which the installer cannot
+verify, and a local build is never signed with the SwapLabs release identity, so it
+could not be installed anyway. The message says to install a local build by hand.
+
 ### Release assets the app consumes
 
 Per macOS slice (`arm64`, `x64`), uploaded in this order, manifest last:
@@ -129,15 +134,18 @@ the installer is supported, and treat the `.sig` as a required asset.
 ### What a check, a download and a restart do
 
 - **Check**: the existing atom-feed preflight pins the newest fork tag, then the
-  engine fetches the manifest and its signature (64 KiB / 1 KiB caps) and refuses
+  engine fetches the manifest and its signature through Electron's `net` (64 KiB /
+  1 KiB caps, enforced while the body streams so an oversized response is cut off
+  rather than buffered) and refuses
   unless, in this order, the signature verifies, the manifest parses, `source`,
   `arch` and `bundleId` match, the version belongs to the source and is newer
   (routine) or exactly the pinned target, and `designatedRequirementSha256`
   equals the running bundle's. Nothing is read from the manifest before the
   signature check.
 - **Download**: the zip streams into `<userData>/mac-self-update/downloads/`
-  under the size and sha512 the signed manifest fixed (a transfer past the size
-  is abandoned), then `ditto -x -k` unpacks it into `.<App>-update-staging/`
+  through a stream pipeline, under the size and sha512 the signed manifest fixed
+  (a transfer past the size is abandoned; a full or unwritable disk is a retryable
+  error, not a crash), then `ditto -x -k` unpacks it into `.<App>-update-staging/`
   beside the bundle, on the same volume so the swap is a rename. The staged
   bundle must pass `codesign --verify --deep --strict`, carry the expected
   `CFBundleIdentifier` and `CFBundleShortVersionString`, and have the same
@@ -156,8 +164,11 @@ the installer is supported, and treat the `.sig` as a required asset.
   to `.<App>-update-rollback/`, moves the staged bundle into place, relaunches
   with `/usr/bin/open`, and waits up to 90 s for the health marker the new app
   writes once its first window is shown (or after 20 s headless). Without it, the
-  helper restores the rollback and relaunches the previous build. Under a
-  supervised `orca serve`, the helper only swaps and the supervisor relaunches.
+  helper restores the rollback and relaunches the previous build. Every earlier
+  failure that leaves the previous bundle in place (staged bundle missing, no
+  rollback folder, either rename refused) relaunches it as well, so a failed
+  update never leaves Orca closed. Under a supervised `orca serve`, the helper
+  only swaps and the supervisor relaunches.
 - **Next launch**: `reportMacSelfUpdateLaunchOutcome` writes the health marker,
   records `updater_mac_self_update_completed` or `…_failed` with the helper's
   one-word outcome, shows a rollback as an error in the update card, discards a
