@@ -1,13 +1,29 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
-import { mapWithConcurrency } from '../shared/map-with-concurrency'
+import { PrioritySemaphore } from '../shared/priority-semaphore'
 import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
 import { isValidVersion } from './updater-fallback'
 import { getReleaseDownloadUrl, getReleaseDownloadUrlPattern } from './updater-release-urls'
 
 const FETCH_TIMEOUT_MS = 5000
-// Why: a check probes up to six manifests at once, each naming several assets; unbounded HEADs multiply.
 const MAX_ASSET_PROBE_CONCURRENCY = 4
+
+/**
+ * The asset HEAD slots one update check may hold at once. Shared by every manifest the check
+ * probes: a per-manifest cap still let six parallel manifests burst two dozen requests.
+ */
+export class AssetProbeBudget {
+  private readonly slots = new PrioritySemaphore(MAX_ASSET_PROBE_CONCURRENCY)
+
+  async run<T>(probe: () => Promise<T>): Promise<T> {
+    const release = await this.slots.acquire(0)
+    try {
+      return await probe()
+    } finally {
+      release()
+    }
+  }
+}
 
 export type ReleaseReadiness = 'ready' | 'not-ready' | 'unavailable'
 
@@ -144,7 +160,8 @@ async function getReleaseAssetReadiness(
  */
 export async function probeReleaseManifest(
   tag: string,
-  source: ReleaseSource = PRIMARY_RELEASE_SOURCE
+  source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
+  assetProbes: AssetProbeBudget = new AssetProbeBudget()
 ): Promise<ReleaseManifestProbe> {
   try {
     const manifestUrl = `${getReleaseDownloadUrl(tag, source)}/${getPlatformManifestName()}`
@@ -167,10 +184,10 @@ export async function probeReleaseManifest(
     if (assetNames.length === 0) {
       return { readiness: 'not-ready', version }
     }
-    const assetResults = await mapWithConcurrency(
-      assetNames,
-      MAX_ASSET_PROBE_CONCURRENCY,
-      (assetName) => getReleaseAssetReadiness(tag, assetName, source)
+    const assetResults = await Promise.all(
+      assetNames.map((assetName) =>
+        assetProbes.run(() => getReleaseAssetReadiness(tag, assetName, source))
+      )
     )
     const readiness = assetResults.includes('not-ready')
       ? 'not-ready'

@@ -236,11 +236,23 @@ describe('release channel', () => {
       'orca-macos-arm64.dmg',
       'orca-linux.AppImage'
     ]
-    expect(findInstallerAssetName('win32', assets)).toBe('orca-windows-setup.exe')
-    expect(findInstallerAssetName('darwin', assets)).toBe('orca-macos-arm64.dmg')
-    expect(findInstallerAssetName('linux', assets)).toBe('orca-linux.AppImage')
-    expect(findInstallerAssetName('win32', ['latest.yml'])).toBeNull()
-    expect(findInstallerAssetName('freebsd', assets)).toBeNull()
+    expect(findInstallerAssetName('win32', assets, 'x64')).toBe('orca-windows-setup.exe')
+    expect(findInstallerAssetName('darwin', assets, 'arm64')).toBe('orca-macos-arm64.dmg')
+    expect(findInstallerAssetName('linux', assets, 'x64')).toBe('orca-linux.AppImage')
+    expect(findInstallerAssetName('win32', ['latest.yml'], 'x64')).toBeNull()
+    expect(findInstallerAssetName('freebsd', assets, 'x64')).toBeNull()
+  })
+
+  // Why: a macOS release ships one DMG per slice, and the picker's download is installed by
+  // hand — the first DMG listed used to win regardless of the running architecture.
+  it('picks the DMG built for the running architecture, and none without a matching slice', () => {
+    const assets = ['latest-mac.yml', 'orca-macos-x64.dmg', 'orca-macos-arm64.dmg']
+    expect(findInstallerAssetName('darwin', assets, 'arm64')).toBe('orca-macos-arm64.dmg')
+    expect(findInstallerAssetName('darwin', assets, 'x64')).toBe('orca-macos-x64.dmg')
+    expect(
+      findInstallerAssetName('darwin', ['latest-mac.yml', 'orca-macos-x64.dmg'], 'arm64')
+    ).toBeNull()
+    expect(findInstallerAssetName('darwin', assets, 'ia32')).toBeNull()
   })
 
   it('offers stable and rc on every platform', () => {
@@ -426,7 +438,10 @@ describe('release channel with a second source', () => {
     )
   })
 
-  it('requires a manual install for every macOS cross-source jump and never on Linux', async () => {
+  // Why Windows too: electron-updater Authenticode-checks a downloaded installer against the
+  // installed app's publisherName, so another publisher's installer fails exactly like a
+  // differently signed macOS bundle.
+  it('requires a manual install for every macOS and Windows cross-source jump and never on Linux', async () => {
     const fork = await loadForkChannels()
     const manual = (platform: NodeJS.Platform, running: string | null, target: string) =>
       fork.requiresManualInstall({
@@ -435,14 +450,17 @@ describe('release channel with a second source', () => {
         target: { source: target, channel: 'stable' }
       })
 
-    expect(manual('darwin', 'upstream', 'swaplabs')).toBe(true)
-    expect(manual('darwin', 'swaplabs', 'upstream')).toBe(true)
-    expect(manual('darwin', null, 'swaplabs')).toBe(true)
-    expect(manual('darwin', 'swaplabs', 'swaplabs')).toBe(false)
+    for (const platform of ['darwin', 'win32'] as const) {
+      expect(manual(platform, 'upstream', 'swaplabs')).toBe(true)
+      expect(manual(platform, 'swaplabs', 'upstream')).toBe(true)
+      expect(manual(platform, null, 'swaplabs')).toBe(true)
+      expect(manual(platform, 'swaplabs', 'swaplabs')).toBe(false)
+      expect(manual(platform, 'upstream', 'upstream')).toBe(false)
+    }
     expect(manual('linux', 'upstream', 'swaplabs')).toBe(false)
     expect(manual('linux', 'swaplabs', 'upstream')).toBe(false)
-    // Windows keeps the dev-channel rule and nothing more: a stable-to-stable jump stays in-app.
-    expect(manual('win32', 'upstream', 'swaplabs')).toBe(false)
+    expect(manual('linux', null, 'swaplabs')).toBe(false)
+    // Windows keeps the dev-channel rule on top: entering a dev channel from a signed build.
     expect(
       fork.requiresManualInstall({
         platform: 'win32',

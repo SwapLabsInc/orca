@@ -79,6 +79,20 @@ it('offers the installer download for a fork build on macOS, where the jump woul
   expect(check).not.toHaveBeenCalled()
 })
 
+// Why: a Windows installer from another publisher fails Authenticode against the installed
+// app's publisherName, so the fork build gets the same download macOS does — with Windows copy.
+it('offers the installer download for a fork build on Windows', async () => {
+  platformRef.current = 'win32'
+  renderSection()
+
+  expect(await screen.findByText(/Orca on Windows only installs updates signed by/)).toBeTruthy()
+  const button = screen.getByRole('button', { name: 'Download installer' })
+  fireEvent.click(button)
+
+  expect(openUrl).toHaveBeenCalledWith(upstreamBuild.installerUrl)
+  expect(check).not.toHaveBeenCalled()
+})
+
 it('keeps the in-app switch for a fork build on Linux', async () => {
   platformRef.current = 'linux'
   renderSection()

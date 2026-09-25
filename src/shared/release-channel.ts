@@ -139,12 +139,14 @@ export function getReleaseRepoForChannel(
 
 /**
  * Whether a jump has to go through a downloaded installer rather than the
- * in-app updater. Windows keeps the dev-channel signing rule above. macOS
- * refuses every cross-source jump: Squirrel.Mac only installs a bundle carrying
- * the running app's code signature, and each source signs (or ad-hoc signs)
- * with its own identity. Linux never needs one; deb/rpm are refused later as
- * externally managed. A null running source (unparseable version) counts as a
- * different one, which sends the user to a download that works.
+ * in-app updater. macOS and Windows refuse every cross-source jump: Squirrel.Mac
+ * only installs a bundle carrying the running app's code signature, and on
+ * Windows electron-updater Authenticode-verifies each installer against the
+ * publisherName baked into the installed app — and each source signs (or ad-hoc
+ * signs) with its own identity. Windows also keeps the dev-channel signing rule
+ * above. Linux never needs one; deb/rpm are refused later as externally managed.
+ * A null running source (unparseable version) counts as a different one, which
+ * sends the user to a download that works.
  */
 export function requiresManualInstall(options: {
   platform: NodeJS.Platform
@@ -152,8 +154,8 @@ export function requiresManualInstall(options: {
   target: { source: ReleaseSourceId; channel: ReleaseChannel }
 }): boolean {
   const { platform, running, target } = options
-  if (platform === 'darwin') {
-    return running.source !== target.source
+  if ((platform === 'darwin' || platform === 'win32') && running.source !== target.source) {
+    return true
   }
   return requiresManualDevChannelInstall({
     platform,
@@ -350,18 +352,25 @@ export function hasInstallableArtifactForPlatform(
 
 /** Matches the electron-builder `artifactName` for each platform's directly
  *  runnable installer — the file someone downloads when the in-app updater
- *  cannot make the jump. */
+ *  cannot make the jump. macOS publishes one DMG per slice
+ *  (`orca-macos-<arch>.dmg`), so its pattern is picked by architecture. */
 const PLATFORM_INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
-  darwin: /\.dmg$/i,
   win32: /windows-setup\.exe$/i,
   linux: /\.AppImage$/i
 }
 
+const MAC_INSTALLER_PATTERNS: Partial<Record<NodeJS.Architecture, RegExp>> = {
+  arm64: /-arm64\.dmg$/i,
+  x64: /-x64\.dmg$/i
+}
+
 export function findInstallerAssetName(
   platform: NodeJS.Platform,
-  assetNames: readonly string[]
+  assetNames: readonly string[],
+  arch: NodeJS.Architecture
 ): string | null {
-  const pattern = PLATFORM_INSTALLER_PATTERNS[platform]
+  const pattern =
+    platform === 'darwin' ? MAC_INSTALLER_PATTERNS[arch] : PLATFORM_INSTALLER_PATTERNS[platform]
   if (!pattern) {
     return null
   }

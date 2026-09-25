@@ -361,6 +361,69 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
     })
   })
 
+  // Why: the readiness pass probes up to six manifests at once; with the HEAD cap held per
+  // manifest, one check burst two dozen requests.
+  it('bounds asset HEADs across every manifest one check probes', async () => {
+    const tags = Array.from({ length: 6 }, (_, index) => `v1.4.${30 - index}`)
+    const assetNames = Array.from({ length: 6 }, (_, index) => `Orca-part${index}.zip`)
+    const pendingHeads: (() => void)[] = []
+    let inFlight = 0
+    let maxInFlight = 0
+    netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (url === 'https://github.com/stablyai/orca/releases.atom') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(buildAtomFeed(tags))
+        })
+      }
+      const manifestMatch = url.match(/\/releases\/download\/([^/]+)\/latest(?:-[a-z]+)?\.yml$/)
+      if (manifestMatch) {
+        const version = decodeURIComponent(manifestMatch[1]).replace(/^v/i, '')
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () =>
+            Promise.resolve(
+              [
+                `version: ${version}`,
+                'files:',
+                ...assetNames.flatMap((name) => [`  - url: ${name}`, '    sha512: test'])
+              ].join('\n')
+            )
+        })
+      }
+      if (init?.method !== 'HEAD') {
+        return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('') })
+      }
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      return new Promise((resolve) => {
+        pendingHeads.push(() => {
+          inFlight -= 1
+          resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
+        })
+      })
+    })
+    const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
+
+    const result = fetchNewerReleaseTagsWithReadiness('1.4.20', 1)
+    const totalHeads = tags.length * assetNames.length
+    for (let released = 0; released < totalHeads; released += 1) {
+      await vi.waitFor(() => {
+        expect(pendingHeads.length).toBeGreaterThan(0)
+      })
+      expect(inFlight).toBeLessThanOrEqual(4)
+      pendingHeads.shift()?.()
+    }
+
+    await expect(result).resolves.toEqual({ tags: ['v1.4.30'], state: 'ready' })
+    expect(maxInFlight).toBe(4)
+    expect(netFetchMock.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(
+      totalHeads
+    )
+  })
+
   it('requires every asset referenced by the manifest files list to be reachable', async () => {
     netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
       if (url === 'https://github.com/stablyai/orca/releases.atom') {

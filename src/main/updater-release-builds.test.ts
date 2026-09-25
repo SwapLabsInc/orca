@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
@@ -229,6 +230,32 @@ describe('listReleaseBuilds', () => {
     expect(build.installerUrl).toBe(
       'https://github.com/stablyai/orca-hourly/releases/download/v1.4.163-hourly.202607312054/orca-windows-setup.exe'
     )
+  })
+
+  // Why: a macOS release carries a DMG per slice; the first one listed used to win whatever
+  // the running architecture, and the wrong slice is installed by hand, not by the updater.
+  it('resolves the macOS installer for the running architecture, or none without that slice', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('v1.4.198', {
+          assets: [
+            { name: 'latest-mac.yml' },
+            { name: 'orca-macos-x64.dmg' },
+            { name: 'orca-macos-arm64.dmg' }
+          ]
+        }),
+        release('v1.4.197', {
+          assets: [{ name: 'latest-mac.yml' }, { name: 'orca-macos-x64.dmg' }]
+        })
+      ])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'darwin', PRIMARY_RELEASE_SOURCE, 'arm64')
+
+    expect(builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-macos-arm64.dmg',
+      null
+    ])
   })
 
   it('leaves the installer url null when the release published no installer', async () => {

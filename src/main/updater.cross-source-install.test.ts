@@ -302,22 +302,54 @@ describe('updater cross-source install', () => {
     }
   })
 
-  // Why: Squirrel.Mac only installs a bundle carrying the running app's signature, and
-  // each source signs with its own identity, so the download must never start.
+  // Why: Squirrel.Mac only installs a bundle carrying the running app's signature, and Windows
+  // Authenticode-checks an installer against the installed app's publisher; each source signs
+  // with its own identity, so the download must never start.
   it.each([
-    ['upstream to SwapLabs', '1.4.197', toSwapLabs, 'swaplabs', FORK_TAG, 'SwapLabsInc/orca'],
     [
-      'SwapLabs to upstream',
+      'upstream to SwapLabs on macOS',
+      'darwin',
+      '1.4.197',
+      toSwapLabs,
+      'swaplabs',
+      FORK_TAG,
+      'SwapLabsInc/orca',
+      'Orca on macOS'
+    ],
+    [
+      'SwapLabs to upstream on macOS',
+      'darwin',
       FORK_VERSION,
       { channel: 'stable', targetTag: 'v1.4.197', source: 'upstream' } as const,
       'upstream',
       'v1.4.197',
-      'stablyai/orca'
+      'stablyai/orca',
+      'Orca on macOS'
+    ],
+    [
+      'upstream to SwapLabs on Windows',
+      'win32',
+      '1.4.197',
+      toSwapLabs,
+      'swaplabs',
+      FORK_TAG,
+      'SwapLabsInc/orca',
+      'Orca on Windows'
+    ],
+    [
+      'SwapLabs to upstream on Windows',
+      'win32',
+      FORK_VERSION,
+      { channel: 'stable', targetTag: 'v1.4.197', source: 'upstream' } as const,
+      'upstream',
+      'v1.4.197',
+      'stablyai/orca',
+      'Orca on Windows'
     ]
-  ])(
-    'refuses every macOS cross-source jump (%s) and points at the release page',
-    async (_label, runningVersion, options, targetSource, tag, repo) => {
-      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  ] as const)(
+    'refuses every cross-source jump (%s) and points at the release page',
+    async (_label, platform, runningVersion, options, targetSource, tag, repo, messagePart) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
       try {
         asMultiSourceBuild(runningVersion)
         const { mainWindow, send } = createUpdaterMainWindowFake()
@@ -330,7 +362,7 @@ describe('updater cross-source install', () => {
 
         expect(send).toHaveBeenCalledWith('updater:status', {
           state: 'error',
-          message: expect.stringContaining('install it by hand'),
+          message: expect.stringMatching(new RegExp(`^${messagePart}.*by hand\\.$`)),
           userInitiated: true,
           releaseSource: targetSource,
           manualInstallUrl: `https://github.com/${repo}/releases/tag/${encodeURIComponent(tag)}`
@@ -342,6 +374,39 @@ describe('updater cross-source install', () => {
       }
     }
   )
+
+  // Why: the picker names no source, which resolves to the primary — and the refusal must name
+  // that publisher, not the running build's, or the status points at a page of one source with
+  // the label of another.
+  it('names the primary source when a refused jump omitted it', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      asMultiSourceBuild(FORK_VERSION)
+      const { mainWindow, send } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.4.197' })
+
+      expect(send).toHaveBeenCalledWith('updater:status', {
+        state: 'error',
+        message: expect.stringContaining('Orca upstream builds are signed differently'),
+        userInitiated: true,
+        releaseSource: 'upstream',
+        manualInstallUrl: 'https://github.com/stablyai/orca/releases/tag/v1.4.197'
+      })
+      expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith('cross_source_install_refused', {
+        from: 'swaplabs',
+        to: 'upstream',
+        tag: 'v1.4.197'
+      })
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
 
   // Why: a version no configured source owns stays unknown — the wire says nothing, and macOS
   // refuses the jump — rather than reading the build as an outdated upstream one.

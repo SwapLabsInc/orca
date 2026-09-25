@@ -151,6 +151,7 @@ function parseReleaseEntry(
   entry: GitHubReleaseEntry,
   repo: string,
   platform: NodeJS.Platform,
+  arch: NodeJS.Architecture,
   source: ReleaseSource
 ): ReleaseBuild | null {
   if (typeof entry.tag_name !== 'string' || entry.draft === true) {
@@ -171,7 +172,8 @@ function parseReleaseEntry(
   if (!hasInstallableArtifactForPlatform(platform, assetNames)) {
     return null
   }
-  const installerAsset = findInstallerAssetName(platform, assetNames)
+  // Why by arch: the picker's download is installed by hand, so it must be the running slice.
+  const installerAsset = findInstallerAssetName(platform, assetNames, arch)
   // Why null when it merely repeats the tag: GitHub titles an untitled release
   // with its tag name, and hourlies predating the naming change were created that
   // way too. Neither says anything the version beside it does not.
@@ -205,7 +207,8 @@ function parseReleaseEntry(
 export async function listReleaseBuilds(
   channel: ReleaseChannel,
   platform: NodeJS.Platform = process.platform,
-  source: ReleaseSource = PRIMARY_RELEASE_SOURCE
+  source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
+  arch: NodeJS.Architecture = process.arch
 ): Promise<ReleaseBuild[]> {
   const repo = getReleaseRepoForChannel(channel, source.id)
   // Why: while the gh breaker has the token's core bucket marked spent, an
@@ -240,7 +243,7 @@ export async function listReleaseBuilds(
     throw new Error(`Could not read the ${channel} release list.`)
   }
   const builds = payload
-    .map((entry: GitHubReleaseEntry) => parseReleaseEntry(entry, repo, platform, source))
+    .map((entry: GitHubReleaseEntry) => parseReleaseEntry(entry, repo, platform, arch, source))
     .filter((build): build is ReleaseBuild => build !== null)
     // Why: the main repo serves both stable and rc, so filter to the asked-for channel.
     .filter((build) => build.channel === channel)

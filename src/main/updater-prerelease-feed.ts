@@ -5,7 +5,11 @@ import {
   type ReleaseSource
 } from '../shared/release-sources'
 import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-fallback'
-import { probeReleaseManifest, type ReleaseManifestProbe } from './updater-release-asset-readiness'
+import {
+  AssetProbeBudget,
+  probeReleaseManifest,
+  type ReleaseManifestProbe
+} from './updater-release-asset-readiness'
 import { getReleaseAtomFeedUrl, getReleaseTagHrefPattern } from './updater-release-urls'
 
 export { getReleaseDownloadUrl } from './updater-release-urls'
@@ -163,13 +167,17 @@ async function fetchReleaseFeedEntries(source: ReleaseSource): Promise<ReleaseFe
 async function resolveVersionsFromManifests(
   entries: ReleaseFeedEntry[],
   source: ReleaseSource,
-  probes: Map<string, ReleaseManifestProbe>
+  probes: Map<string, ReleaseManifestProbe>,
+  assetProbes: AssetProbeBudget
 ): Promise<ReleaseFeedTag[]> {
   const unresolved = entries
     .filter((entry) => entry.version === null)
     .slice(0, MAX_MANIFEST_PROBE_CANDIDATES)
   const results = await Promise.all(
-    unresolved.map(async ({ tag }) => ({ tag, probe: await probeReleaseManifest(tag, source) }))
+    unresolved.map(async ({ tag }) => ({
+      tag,
+      probe: await probeReleaseManifest(tag, source, assetProbes)
+    }))
   )
   const resolved: ReleaseFeedTag[] = []
   for (const { tag, probe } of results) {
@@ -239,11 +247,13 @@ export async function fetchNewerReleaseTagsWithReadiness(
     return { tags: [], state: 'unavailable', unavailableReason: 'feed' }
   }
   const probes = new Map<string, ReleaseManifestProbe>()
+  // Why one budget for the whole check: every manifest probed below shares its asset HEAD slots.
+  const assetProbes = new AssetProbeBudget()
   const tags: ReleaseFeedTag[] = entries.flatMap(({ tag, version }) =>
     version ? [{ tag, version }] : []
   )
   if (!isPrimarySource) {
-    tags.push(...(await resolveVersionsFromManifests(entries, source, probes)))
+    tags.push(...(await resolveVersionsFromManifests(entries, source, probes, assetProbes)))
   }
   tags.sort((left, right) => compareVersions(right.version, left.version))
 
@@ -273,7 +283,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
       probeCandidates.map(async ({ tag, version }) => ({
         tag,
         version,
-        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source))
+        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source, assetProbes))
       }))
     )
   ).flatMap(({ tag, version, probe }) => {

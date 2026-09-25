@@ -46,10 +46,18 @@ function describeRefusedPinnedManifest(
   }
 }
 
+/** Why per platform: each names the signature check the downloaded build would fail. */
+function describeRefusedCrossSourceJump(source: ReleaseSource): string {
+  if (process.platform === 'win32') {
+    return `Orca on Windows only installs updates signed by the running build's publisher, and ${source.label} builds are signed differently. Download the ${source.label} installer from its release page and run it by hand.`
+  }
+  return `Orca on macOS can only install updates carrying the same code signature, and ${source.label} builds are signed differently. Download the ${source.label} build from its release page and install it by hand.`
+}
+
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   private readonly releaseBuildCache = new ReleaseBuildListCache((channel, sourceId) =>
-    listReleaseBuilds(channel, process.platform, getReleaseSourceOrPrimary(sourceId))
+    listReleaseBuilds(channel, process.platform, getReleaseSourceOrPrimary(sourceId), process.arch)
   )
 
   protected async checkForLocalBuildFromMenu(): Promise<void> {
@@ -115,18 +123,20 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
    * the way to a download and fail it with a raw signature error. Each refusal names where to get
    * the build by hand — run once, in-app updates work from there on.
    */
-  private refusePinnedBuild(target: PinnedBuildTarget, sourceId: string, message: string): void {
-    const repo = getReleaseRepoForChannel(target.channel, sourceId)
+  private refusePinnedBuild(target: PinnedBuildTarget, source: ReleaseSource): void {
+    const repo = getReleaseRepoForChannel(target.channel, source.id)
     recordUpdaterLifecycle('cross_source_install_refused', {
       from: this.getRunningReleaseSource(),
-      to: sourceId,
+      to: source.id,
       tag: target.tag
     })
+    // Why the resolved id, even when the request named none: an omitted source is the primary,
+    // and the status must name the publisher whose installer it points at.
     this.sendStatus({
       state: 'error',
-      message,
+      message: describeRefusedCrossSourceJump(source),
       userInitiated: true,
-      ...(target.source ? { releaseSource: sourceId } : {}),
+      releaseSource: source.id,
       manualInstallUrl: getReleaseTagPageUrl(repo, target.tag)
     })
   }
@@ -175,12 +185,8 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
         target: { source: source.id, channel }
       })
     ) {
-      if (source.id !== runningSource && process.platform === 'darwin') {
-        this.refusePinnedBuild(
-          target,
-          source.id,
-          `Orca on macOS can only install updates carrying the same code signature, and ${source.label} builds are signed differently. Download the ${source.label} build from its release page and install it by hand.`
-        )
+      if (source.id !== runningSource) {
+        this.refusePinnedBuild(target, source)
         return
       }
       this.sendStatus({
