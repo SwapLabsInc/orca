@@ -95,6 +95,8 @@ const EXPECTED_PACKAGING_JOBS = [
   'pr.yml package_windows',
   'release-cut.yml build',
   'release-mac-build.yml build-mac',
+  'swaplabs-build.yml build-linux',
+  'swaplabs-build.yml build-mac',
   'win-crash-survival-e2e.yml crash-survival',
   'win-update-survival-e2e.yml survival',
   'windows-signing-rehearsal.yml rehearse'

@@ -1,0 +1,657 @@
+name: SwapLabs Fork Build
+
+# LOCAL: builds `swaplabs/main` — the SwapLabs integration branch — and publishes
+# the result as a public prerelease on SwapLabsInc/orca so installed fork builds
+# can update from their own source instead of being replaced by upstream.
+#
+# Deliberately narrow scope, mirroring the upstream dev channels:
+#   - Linux x64 and arm64 are required: the release goes live once both have
+#     verified update manifests. macOS is best-effort, ad-hoc signed and
+#     download-only — no Developer ID, no notarization, no Apple secrets. There
+#     is no Windows leg.
+#   - No tests, no lint, no e2e. Upstream PR CI already gated every commit the
+#     mirror carries; local changes are reviewed on their fork PR.
+#   - GitHub-hosted runners only. The fork has no third-party runner pool.
+#
+# Structure is the hourly workflow's: preflight → draft release → build legs
+# upload into the draft → verify manifests → flip live → prune. One difference:
+# the legs package with `--publish never` and upload through `gh release upload`,
+# because electron-builder's GitHub publisher can only upload into `v<version>`
+# and fork releases are tagged in the orca-fork-ops form `swaplabs-v<base>+<stamp>`.
+#
+# GITHUB_TOKEN publishes into this same repository, so no App token is minted.
+# Every job that writes declares `contents: write`; the rest stay read-only.
+
+on:
+  push:
+    branches:
+      - swaplabs/main
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if swaplabs/main has not moved since the last published fork build
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Why cancel-in-progress false: a burst of pushes collapses to the newest queued
+# run, but a run that is already uploading is never cut off mid-publish. The
+# group also guarantees two builds cannot share a version stamp minute.
+concurrency:
+  group: swaplabs-build
+  cancel-in-progress: false
+
+env:
+  FORK_BRANCH: swaplabs/main
+  UPSTREAM_REPO: stablyai/orca
+  # Every fork release tag starts with this; freshness and pruning look at nothing else.
+  SWAPLABS_TAG_PREFIX: swaplabs-v
+  # Pushes to swaplabs/main are bursty but the series is linear; 30 covers weeks of
+  # syncs and stays well under the 100-entry REST page the build picker reads.
+  SWAPLABS_RETAIN_COUNT: 30
+  # Why here, at workflow level: the value is a compile-time define read by
+  # `pnpm build:release` and again by electron-builder's config, and both steps
+  # must see exactly the same registry. The updater parses this shape.
+  ORCA_RELEASE_SOURCES: '[{"id":"upstream","label":"Orca upstream","repo":"stablyai/orca","prereleaseIdentifier":null},{"id":"swaplabs","label":"SwapLabs","repo":"SwapLabsInc/orca","prereleaseIdentifier":"swaplabs"}]'
+  ORCA_PUBLISH_OWNER: SwapLabsInc
+  ORCA_PUBLISH_REPO: orca
+
+jobs:
+  # Cheap Linux job that decides whether to build and fixes the identity every
+  # leg will stamp, so two matrix legs can never disagree on the version minute.
+  preflight:
+    # Why the guard: a further fork of this fork must not publish into us, and
+    # this file is inherited by every clone the way upstream's guarded workflows are.
+    if: github.repository == 'SwapLabsInc/orca'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_build: ${{ steps.freshness.outputs.should_build }}
+      head_sha: ${{ steps.freshness.outputs.head_sha }}
+      mirror_sha: ${{ steps.freshness.outputs.mirror_sha }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      name: ${{ steps.identity.outputs.name }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - name: Check whether swaplabs/main moved since the last fork build
+        id: freshness
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCED: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: |
+          set -euo pipefail
+          # Always the integration branch, whatever ref this file was dispatched
+          # from: a dispatch from a topic branch must not ship that branch under
+          # the fork identity.
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$FORK_BRANCH" --jq .object.sha)"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Could not resolve $FORK_BRANCH"; exit 1; }
+          echo "head_sha=$head_sha" >>"$GITHUB_OUTPUT"
+          # The mirror tip is recorded in the release body so an installed build
+          # can say which upstream commit it sits on. Informational: an empty
+          # value only drops that line.
+          mirror_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+          [[ "$mirror_sha" =~ ^[0-9a-f]{40}$ ]] || mirror_sha=""
+          echo "mirror_sha=$mirror_sha" >>"$GITHUB_OUTPUT"
+          if [[ "$FORCED" == "true" ]]; then
+            echo "should_build=true" >>"$GITHUB_OUTPUT"
+            echo "Forced dispatch; building $head_sha."
+            exit 0
+          fi
+          # The previous fork build records its source commit in the release body.
+          # Drafts are excluded: an unpublished leftover never shipped, so treating
+          # it as "the last build" would skip a build that never actually happened.
+          last_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,isDraft \
+            --jq "map(select((.isDraft | not) and (.tagName | startswith(\"$SWAPLABS_TAG_PREFIX\")))) | .[0].tagName // empty" 2>/dev/null || true)"
+          if [[ -z "$last_tag" ]]; then
+            echo "should_build=true" >>"$GITHUB_OUTPUT"
+            echo "No prior fork release found; building $head_sha."
+            exit 0
+          fi
+          last_sha="$(gh release view "$last_tag" --repo "$GITHUB_REPOSITORY" --json body \
+            --jq '.body | capture("commit `(?<sha>[0-9a-f]{7,40})`") | .sha' 2>/dev/null || true)"
+          if [[ -n "$last_sha" && "$head_sha" == "$last_sha"* ]]; then
+            echo "should_build=false" >>"$GITHUB_OUTPUT"
+            echo "$FORK_BRANCH is unchanged since $last_tag ($last_sha); skipping."
+          else
+            echo "should_build=true" >>"$GITHUB_OUTPUT"
+            echo "$FORK_BRANCH moved to $head_sha (last fork build was $last_sha); building."
+          fi
+
+      - name: Checkout the resolved commit
+        if: steps.freshness.outputs.should_build == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.freshness.outputs.head_sha }}
+          # The version script only reads package.json and HEAD.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: steps.freshness.outputs.should_build == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Compute the fork build identity
+        id: identity
+        if: steps.freshness.outputs.should_build == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Why check rather than trust: a workflow_dispatch runs this file from
+          # whatever branch was dispatched, while the script comes from the
+          # resolved commit. A mismatch yields an empty tag and an untitled
+          # release — silent, and only visible on the releases page. Fail here.
+          # The published title leads with the full app version; the script refuses one that does not rise.
+          SWAPLABS_PREVIOUS_VERSION="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,isDraft,name \
+            --jq "map(select((.isDraft | not) and (.tagName | startswith(\"$SWAPLABS_TAG_PREFIX\")))) | .[0].name // \"\" | split(\" \") | .[0] // \"\"")"
+          export SWAPLABS_PREVIOUS_VERSION
+          node config/scripts/swaplabs-build-version.mjs >"$RUNNER_TEMP/swaplabs-identity.txt"
+          for key in version tag commit name; do
+            if ! grep -q "^$key=" "$RUNNER_TEMP/swaplabs-identity.txt"; then
+              echo "::error::swaplabs-build-version.mjs emitted no $key; this workflow and the branch's copy of the script are out of sync."
+              exit 1
+            fi
+          done
+          grep -E '^(version|tag)=' "$RUNNER_TEMP/swaplabs-identity.txt"
+          cat "$RUNNER_TEMP/swaplabs-identity.txt" >>"$GITHUB_OUTPUT"
+
+  draft:
+    needs: preflight
+    if: needs.preflight.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Create the draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          NAME: ${{ needs.preflight.outputs.name }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SHA: ${{ needs.preflight.outputs.head_sha }}
+          MIRROR_SHA: ${{ needs.preflight.outputs.mirror_sha }}
+        run: |
+          set -euo pipefail
+          # Kept at 12 even though the title shows 7: the freshness check above
+          # parses this back out of the body to decide whether the branch moved.
+          short_sha="${SHA:0:12}"
+          upstream_line=""
+          if [[ -n "$MIRROR_SHA" ]]; then
+            upstream_line="Upstream base: [\`$UPSTREAM_REPO@${MIRROR_SHA:0:12}\`](https://github.com/$UPSTREAM_REPO/commit/$MIRROR_SHA) (the mirror branch at build time)."
+          fi
+          # Why --draft: everything between here and the manifest check is a window
+          # where the release exists but has no installable assets. A draft is
+          # absent from the releases list and from the build picker, so a job that
+          # dies in that window — including a hard kill by the job timeout, which
+          # runs no cleanup step at all — leaves something invisible rather than a
+          # tag the picker offers and the download 404s on.
+          #
+          # Why --target: the draft's tag is created at publish time from this
+          # commit. Without it GitHub would tag the default branch, which in the
+          # fork is the upstream mirror rather than what was built.
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "$NAME" \
+            --draft \
+            --notes "SwapLabs fork build \`$VERSION\` of \`$FORK_BRANCH\` at commit \`$short_sha\`.
+
+          Built from [\`$GITHUB_REPOSITORY@$short_sha\`](https://github.com/$GITHUB_REPOSITORY/commit/$SHA).
+          $upstream_line
+
+          **Unvetted.** No tests ran here; this is the integration branch as pushed,
+          carrying the SwapLabs-only changes on top of the upstream mirror.
+
+          **Linux.** The AppImage installs and updates through Orca's in-app updater.
+          The deb and rpm packages are installed by your package manager and update
+          the same way.
+
+          **macOS builds are unsigned (ad-hoc).** The in-app updater cannot install
+          them: download the DMG, drag Orca over the installed app, and right-click →
+          Open the first time to pass Gatekeeper. macOS assets are best-effort and
+          may be missing from this release.
+
+          There is no Windows build in this series."
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+
+  build-linux:
+    needs: [preflight, draft]
+    strategy:
+      # Both legs are required for the release to go live, so let each report
+      # its own result instead of hiding one failure behind the other.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+            manifest: latest-linux.yml
+            appimage: orca-linux.AppImage
+            deb_arch: amd64
+            rpm_arch: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            manifest: latest-linux-arm64.yml
+            appimage: orca-linux-arm64.AppImage
+            deb_arch: arm64
+            rpm_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      # The whole packaging identity, set once for the job so the verification
+      # step, the app build and the packaging step all read the same values.
+      ORCA_LOCAL_BUILD_VERSION: ${{ needs.preflight.outputs.version }}
+      ORCA_BUILD_COMMIT: ${{ needs.preflight.outputs.commit }}
+      ORCA_LINUX_ARM64_RELEASE: ${{ matrix.arch == 'arm64' && '1' || '' }}
+      # Why: fork builds are not an official channel — telemetry's transport gate
+      # accepts only 'stable' or 'rc', so ORCA_BUILD_IDENTITY stays unset and the
+      # artifacts stay silent, which is correct for unvetted builds.
+      ORCA_DIAGNOSTICS_TOKEN_URL: https://www.onorca.dev/diagnostics/token
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.head_sha }}
+          fetch-depth: 1
+          # Why: this job never pushes; every write goes through GH_TOKEN on the
+          # release upload step. Not persisting the checkout credential shrinks
+          # the blast radius if a build step is compromised (zizmor: artipacked).
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/setup@v2
+        with:
+          install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-builder-linux-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-builder-linux-${{ matrix.arch }}-
+
+      # Why: pnpm's bundled gyp_main.py is not executable on fresh Linux runners, so native
+      # installs use node-gyp the same way release-cut's Linux jobs do.
+      - name: Use external node-gyp
+        run: |
+          npm install -g node-gyp@11.5.0
+          echo "npm_config_node_gyp=$(npm root -g)/node-gyp/bin/node-gyp.js" >> "$GITHUB_ENV"
+
+      # Why host-only: this leg packages only for its own runner architecture.
+      - name: Install dependencies
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: pnpm install --frozen-lockfile
+
+      # Why here: electron-builder's beforePack requires out/mobile-web, and the bundle
+      # build resolves React Native and Expo from mobile/node_modules.
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      # Why: `pnpm build:release` verifies the Linux computer-use provider by
+      # importing AT-SPI bindings, which are runtime package deps but are not
+      # present on stock GitHub Ubuntu runners. `rpm` is needed by electron-builder's
+      # fpm backend to produce the .rpm artifact.
+      - name: Install Linux computer-use provider dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-atspi-2.0 at-spi2-core xclip xdotool rpm
+
+      # Why: a checkout whose config predates the release-sources change ignores
+      # every identity variable above and packages an app that re-points itself
+      # at upstream. Fail here, not after a 20-minute build.
+      - name: Verify the fork packaging identity
+        run: node config/scripts/verify-swaplabs-packaging.mjs
+
+      - name: Build app
+        run: pnpm build:release
+
+      - name: Package Linux artifacts
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 30
+          max_attempts: 2
+          retry_wait_seconds: 30
+          # Why --publish never: the upload goes through `gh release upload` below,
+          # into the orca-fork-ops tag the draft was created under. electron-builder
+          # still writes the update manifest next to the artifacts.
+          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
+
+      # Why: `gh release upload` refuses a missing release, but a clear sentence
+      # beats its error. The draft is discarded by the cleanup job when another
+      # leg fails, and this leg may still be packaging when that happens.
+      - name: Confirm the draft release still exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+            echo "::error::Release $TAG no longer exists; another leg failed and its draft was discarded. Re-run the whole workflow."
+            exit 1
+          fi
+
+      - name: Upload Linux artifacts
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          # --clobber so a retried attempt replaces its own partial upload.
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/${{ matrix.manifest }} dist/${{ matrix.appimage }} dist/*.deb dist/*.rpm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+
+      # Why: the updater resolves a tag, then fetches this leg's manifest from it.
+      # A release missing that manifest is a row the picker offers and the
+      # download 404s on, so fail loudly instead of leaving a broken entry.
+      - name: Verify the Linux update manifest published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+          MANIFEST: ${{ matrix.manifest }}
+          APPIMAGE: ${{ matrix.appimage }}
+          DEB_ARCH: ${{ matrix.deb_arch }}
+          RPM_ARCH: ${{ matrix.rpm_arch }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
+          echo "Uploaded assets:"
+          echo "$assets"
+          for required in "$MANIFEST" "$APPIMAGE"; do
+            if ! grep -qx "$required" <<<"$assets"; then
+              echo "::error::Fork draft $TAG is missing $required; the updater could not install it."
+              exit 1
+            fi
+          done
+          for pattern in "^orca-ide_.*_${DEB_ARCH}\.deb$" "^orca-ide-.*\.${RPM_ARCH}\.rpm$"; do
+            if ! grep -qE "$pattern" <<<"$assets"; then
+              echo "::error::Fork draft $TAG has no package matching $pattern."
+              exit 1
+            fi
+          done
+
+  # Best-effort: nothing downstream waits on this job, and the release goes live
+  # without it. A failure here still shows on the run so it is not forgotten.
+  build-mac:
+    needs: [preflight, draft]
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      ORCA_LOCAL_BUILD_VERSION: ${{ needs.preflight.outputs.version }}
+      ORCA_BUILD_COMMIT: ${{ needs.preflight.outputs.commit }}
+      ORCA_DIAGNOSTICS_TOKEN_URL: https://www.onorca.dev/diagnostics/token
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/setup@v2
+        with:
+          install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-builder-mac-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-builder-mac-
+
+      # Why both CPUs: the mac config packages x64 and arm64 from this arm64
+      # runner, so the install must carry both variants of the native optional deps.
+      - name: Install dependencies
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: pnpm install:release
+
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      - name: Verify the fork packaging identity
+        run: node config/scripts/verify-swaplabs-packaging.mjs
+
+      - name: Build app
+        run: pnpm build:release
+
+      # Why electron-builder directly rather than `pnpm build:mac`: that script
+      # computes its own `-local.<ts>.<sha>` version and overwrites
+      # ORCA_LOCAL_BUILD_VERSION. No ORCA_MAC_* switch and no CSC_* secret: the
+      # config then signs ad-hoc exactly as a developer's local build does.
+      - name: Package macOS artifacts (ad-hoc)
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 30
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac --publish never
+
+      - name: Confirm the release still exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+            echo "::error::Release $TAG no longer exists; the Linux legs failed and the draft was discarded."
+            exit 1
+          fi
+
+      - name: Upload macOS artifacts
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          # Why DMG only: an ad-hoc build cannot replace an installed app in-app, and latest-mac.yml
+          # would advertise it as installable; without a manifest a late upload offers nothing.
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+
+      - name: Verify the macOS assets published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
+          echo "Uploaded assets:"
+          echo "$assets"
+          if ! grep -q '\.dmg$' <<<"$assets"; then
+            echo "::error::Fork release $TAG is missing a DMG."
+            exit 1
+          fi
+          if grep -qx 'latest-mac.yml' <<<"$assets"; then
+            echo "::error::Fork release $TAG carries latest-mac.yml; macOS fork builds are download-only."
+            exit 1
+          fi
+
+  # Why a separate job: the flip must wait for both Linux legs and nothing else,
+  # and the prune must run only after a live publish.
+  publish:
+    needs: [preflight, draft, build-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.publish_live.outcome == 'success' && 'true' || 'false' }}
+    steps:
+      # Why again, after each leg checked its own upload: this is the only place
+      # that sees both legs at once, and the version inside the manifests is what
+      # the updater resolves a fork release by — an inherited package.json version
+      # there would strand every installed build on this release.
+      - name: Verify the Linux update manifests before going live
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
+          for required in latest-linux.yml latest-linux-arm64.yml orca-linux.AppImage orca-linux-arm64.AppImage; do
+            if ! grep -qx "$required" <<<"$assets"; then
+              echo "::error::Fork draft $TAG is missing $required; refusing to publish."
+              exit 1
+            fi
+          done
+          manifests="$RUNNER_TEMP/swaplabs-manifests"
+          mkdir -p "$manifests"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'latest-linux*.yml' --dir "$manifests" --clobber
+          escaped_version="$(printf '%s' "$VERSION" | sed 's/[.[\*^$]/\\&/g')"
+          for manifest in latest-linux.yml latest-linux-arm64.yml; do
+            if ! grep -Eq "^version: ['\"]?${escaped_version}['\"]?\$" "$manifests/$manifest"; then
+              echo "::error::$manifest does not carry version $VERSION:"
+              grep -E '^version:' "$manifests/$manifest" || true
+              exit 1
+            fi
+          done
+
+      # Why this is the last mutating step before pruning: publishing the draft
+      # is what makes the build visible to the updater and the build picker.
+      # Doing it only after the manifest check means neither can be offered a
+      # release whose Linux assets are incomplete.
+      - name: Publish the verified release
+        id: publish_live
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+          NAME: ${{ needs.preflight.outputs.name }}
+        run: |
+          set -euo pipefail
+          # --title again so the name the picker reads is the one composed in
+          # preflight, whatever happened to the draft in between.
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --title "$NAME"
+          echo "Published $TAG as \"$NAME\""
+
+      - name: Prune old fork releases
+        # Only after a live publish: $TAG is then a non-draft we must not delete.
+        if: steps.publish_live.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Protect the tag this run just shipped; at the retain cap, a bad sort
+          # can otherwise mark the newest release as stale and delete it.
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Why --cleanup-tag: pruning must not leave orphan `swaplabs-v*` tags in
+          # the fork's tag list next to the mirrored upstream ones. Only this
+          # series is considered; drafts are the failure path's business.
+          #
+          # Sort by publishedAt with tagName as the deterministic tie-break, then
+          # force $TAG to the front before slicing so this run's release always
+          # holds a seat inside the retain window.
+          jq_filter="map(select((.isDraft | not) and (.tagName | startswith(\"$SWAPLABS_TAG_PREFIX\")))) | sort_by(.publishedAt // \"\", .tagName) | reverse"
+          if [[ -n "${TAG:-}" ]]; then
+            jq_filter+=" | (map(select(.tagName == \"${TAG//\"/\\\"}\")) + map(select(.tagName != \"${TAG//\"/\\\"}\")))"
+          fi
+          jq_filter+=" | .[${SWAPLABS_RETAIN_COUNT}:] | .[].tagName"
+          stale="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,publishedAt,isDraft \
+            --jq "$jq_filter")"
+          if [[ -z "$stale" ]]; then
+            echo "Nothing to prune; at or under $SWAPLABS_RETAIN_COUNT retained builds."
+            exit 0
+          fi
+          while read -r tag; do
+            [[ -n "$tag" ]] || continue
+            # Belt-and-suspenders: the partition above should already exclude $TAG.
+            if [[ -n "${TAG:-}" && "$tag" == "$TAG" ]]; then
+              echo "::warning::Prune list still included just-published $tag after protect; skipping delete."
+              continue
+            fi
+            echo "Pruning $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || \
+              echo "::warning::Could not prune $tag"
+          done <<<"$stale"
+
+  # Why: a draft left behind by a failed or cancelled run is invisible to users
+  # but still holds its tag name, so a rerun landing on the same minute would
+  # collide. Runs last, after every leg, and never touches a release that went
+  # live — a macOS failure after the flip must not delete what users are
+  # already installing.
+  cleanup:
+    needs: [draft, build-linux, build-mac, publish]
+    if: >-
+      always() && github.repository == 'SwapLabsInc/orca' &&
+      needs.draft.outputs.tag != '' && needs.publish.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Discard the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -uo pipefail
+          is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [[ "$is_draft" != "true" ]]; then
+            echo "Release $TAG is not a draft (or is already gone); leaving it alone."
+            exit 0
+          fi
+          # No --cleanup-tag: an unpublished draft never created a git tag.
+          echo "Run did not publish; discarding draft $TAG"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes ||
+            echo "::warning::Could not discard draft $TAG; remove it manually."
