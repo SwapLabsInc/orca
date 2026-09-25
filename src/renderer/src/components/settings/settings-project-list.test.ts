@@ -269,7 +269,7 @@ describe('removeSettingsProjectFromAllHosts', () => {
     vi.mocked(toast.error).mockReset()
   })
 
-  const resolveHostLabel = (hostId: string): string =>
+  const resolveHostLabel = (hostId: string): string | null =>
     hostId === 'runtime:home-mac' ? 'Home Mac' : hostId
 
   it('removes every host setup with its own hostId and skips setups without a repo row', async () => {
@@ -333,5 +333,42 @@ describe('removeSettingsProjectFromAllHosts', () => {
     const description = vi.mocked(toast.error).mock.calls[0]?.[1]?.description
     expect(description).toContain('Home Mac')
     expect(description).not.toContain('runtime:home-mac')
+    expect(description).toContain('remove the project from the sidebar')
+  })
+
+  // An unreachable runtime is the case whose environment record may be gone, leaving no name.
+  it('names an unnamed host generically', async () => {
+    const removeProject = vi.fn().mockResolvedValue({ status: 'owner-unverifiable' })
+
+    await removeSettingsProjectFromAllHosts(
+      [makeSetup({ hostId: 'runtime:env-a1b2', repoId: 'remote-9' })],
+      removeProject,
+      () => null
+    )
+
+    const description = vi.mocked(toast.error).mock.calls[0]?.[1]?.description
+    expect(description).toContain('that host')
+    expect(description).not.toContain('env-a1b2')
+  })
+
+  // The sidebar withholds the client-only forget in a paired web client, so the toast must not
+  // send the user there.
+  it('does not point a paired web client at the sidebar forget', async () => {
+    vi.stubGlobal('__ORCA_WEB_CLIENT__', true)
+    try {
+      const removeProject = vi.fn().mockResolvedValue({ status: 'owner-unverifiable' })
+
+      await removeSettingsProjectFromAllHosts(
+        [makeSetup({ hostId: 'runtime:home-mac', repoId: 'remote-9' })],
+        removeProject,
+        resolveHostLabel
+      )
+
+      const description = vi.mocked(toast.error).mock.calls[0]?.[1]?.description
+      expect(description).toContain('Home Mac')
+      expect(description).not.toContain('sidebar')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

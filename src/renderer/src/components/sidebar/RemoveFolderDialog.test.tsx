@@ -133,20 +133,17 @@ describe('RemoveFolderDialog', () => {
   it('re-offers a client-only forget when the owning host never answers', async () => {
     mocks.state.modalData.hostId = 'runtime:env-1'
     mocks.state.repos = [repo(null, 'runtime:env-1')]
-    mocks.state.runtimeEnvironments = [{ id: 'env-1', name: 'alexdevbox2' }]
+    mocks.state.runtimeEnvironments = [{ id: 'env-1', name: 'devbox' }]
     mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
     render(<RemoveFolderDialog />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
     expect(mocks.state.closeModal).not.toHaveBeenCalled()
-    // Names the host, and claims nothing about what it did — a lost answer is not a removal that
-    // did not happen.
-    expect(screen.getByText(/Orca could not reach alexdevbox2/)).toBeInTheDocument()
-    expect(screen.getByText(/was removed there is unknown/)).toBeInTheDocument()
-    // A timeout proves only that no reply arrived, so the copy must not present the host's
-    // catalog as provably untouched.
-    expect(screen.getByText(/may have been carried out and the reply lost/)).toBeInTheDocument()
+    // Names the host, and claims nothing about what it did: a timeout may have lost the reply to a
+    // removal that landed, while a manual disconnect never sent the request at all.
+    expect(screen.getByText(/Orca could not confirm with devbox whether/)).toBeInTheDocument()
+    expect(screen.queryByText(/reply lost|never have arrived/)).not.toBeInTheDocument()
     expect(screen.getByText(/if the project is still registered there/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove from Orca' }))
@@ -168,8 +165,8 @@ describe('RemoveFolderDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
-    expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
-    expect(screen.queryByText(/could not reach ,/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Orca could not confirm with Persistent host/)).toBeInTheDocument()
+    expect(screen.queryByText(/could not confirm with ,/)).not.toBeInTheDocument()
   })
 
   it('names the owner when the modal was opened without a hostId', async () => {
@@ -180,7 +177,7 @@ describe('RemoveFolderDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
-    expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
+    expect(screen.getByText(/Orca could not confirm with Persistent host/)).toBeInTheDocument()
   })
 
   // The unreachable runtime is exactly the case whose environment record may be gone, and the
@@ -194,7 +191,7 @@ describe('RemoveFolderDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
-    expect(screen.getByText(/Orca could not reach that host/)).toBeInTheDocument()
+    expect(screen.getByText(/Orca could not confirm with that host/)).toBeInTheDocument()
     expect(view.container.textContent).not.toContain('env-a1b2')
   })
 
@@ -205,7 +202,7 @@ describe('RemoveFolderDialog', () => {
     try {
       mocks.state.modalData.hostId = 'runtime:env-1'
       mocks.state.repos = [repo(null, 'runtime:env-1')]
-      mocks.state.runtimeEnvironments = [{ id: 'env-1', name: 'alexdevbox2' }]
+      mocks.state.runtimeEnvironments = [{ id: 'env-1', name: 'devbox' }]
       mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
       render(<RemoveFolderDialog />)
 
