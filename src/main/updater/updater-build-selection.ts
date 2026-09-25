@@ -27,6 +27,10 @@ import {
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { getReleaseTagPageUrl } from '../updater-release-urls'
+import {
+  getMacSelfUpdateSupport,
+  isMacSelfUpdateActive
+} from './mac-self-update/mac-self-update-activation'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
 
@@ -56,6 +60,16 @@ function describeRefusedCrossSourceJump(source: ReleaseSource): string {
   return `Orca on macOS can only install updates carrying the same code signature, and ${source.label} builds are signed differently. Download the ${source.label} build from its release page and install it by hand.`
 }
 
+/**
+ * Why refuse before the file dialog: Orca's own macOS installer installs only bundles carrying
+ * the running build's release identity under a release-key-signed manifest, which a local
+ * build has no way to produce, so the loopback feed could never get past its check.
+ */
+function describeRefusedLocalBuildSwitch(source: ReleaseSource | null): string {
+  const identity = source ? `the ${source.label} release identity` : 'its release identity'
+  return `Local build switching is unavailable on this build. It updates itself through Orca's own installer, which installs only builds signed with ${identity}; install a local build by hand instead.`
+}
+
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   private readonly releaseBuildCache = new ReleaseBuildListCache((channel, sourceId) =>
@@ -66,6 +80,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     if (process.platform !== 'darwin') {
       this.sendLocalBuildErrorAndRestore(
         'Local build switching is currently available only on macOS.',
+        true
+      )
+      return
+    }
+    if (this.getAutoUpdater().installerReadinessSource === 'staged-bundle') {
+      const runningSource = this.getRunningReleaseSource()
+      this.sendLocalBuildErrorAndRestore(
+        describeRefusedLocalBuildSwitch(runningSource ? getReleaseSource(runningSource) : null),
         true
       )
       return
@@ -126,7 +148,8 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   ): Promise<ReleaseSourceStatus[]> {
     return listReleaseSourceStatuses(
       (source, force) => this.releaseBuildCache.list('stable', { force, source: source.id }),
-      options?.force === true
+      options?.force === true,
+      await isMacSelfUpdateActive()
     )
   }
 
@@ -190,11 +213,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       return
     }
     const runningSource = this.getRunningReleaseSource()
+    // Why only await a candidate: the gate stays synchronous everywhere the custom installer cannot apply.
+    const macSelfUpdate = getMacSelfUpdateSupport().supported && (await isMacSelfUpdateActive())
     if (
       requiresManualInstall({
         platform: process.platform,
         running: { source: runningSource, channel: getVersionChannel(app.getVersion()) },
-        target: { source: source.id, channel }
+        target: { source: source.id, channel },
+        macSelfUpdate
       })
     ) {
       if (source.id !== runningSource) {
@@ -275,7 +301,12 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       console.info(
         `[updater] pinned to ${source.id} ${channel} build ${resolved.tag} → ${resolved.feedUrl}`
       )
-      updater.setFeedURL({ provider: 'generic', url: resolved.feedUrl })
+      // Why expectedVersion: an engine that reads the manifest itself must install this tag's build and nothing else.
+      updater.setFeedURL({
+        provider: 'generic',
+        url: resolved.feedUrl,
+        expectedVersion: resolved.version
+      })
       this.availableReleaseUrl = resolved.feedUrl
       this.markUpdateCheckLaunched(attemptId)
       await updater.checkForUpdates()

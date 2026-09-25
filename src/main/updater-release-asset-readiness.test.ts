@@ -187,6 +187,59 @@ describe('probeReleaseManifest', () => {
     ).resolves.toBe('https://github.com/stablyai/orca/releases/download/v1.0.0/latest-mac.yml')
   })
 
+  // LOCAL: on a build with Orca's own macOS installer, a fork tag's readiness is its signed
+  // per-slice manifest: the zip it names and the detached signature must both be there.
+  it('reads a fork macOS slice through its self-update manifest and requires the signature', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const arch = Object.getOwnPropertyDescriptor(process, 'arch')
+    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true })
+    const probed: string[] = []
+    const manifest = JSON.stringify({
+      schema: 1,
+      version: '1.4.197-swaplabs.202609251200',
+      file: 'orca-macos-arm64.zip'
+    })
+    let signatureStatus = 200
+    netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'HEAD') {
+        probed.push(url)
+        const status = url.endsWith('.sig') ? signatureStatus : 200
+        return Promise.resolve({ ok: status === 200, status, text: () => Promise.resolve('') })
+      }
+      probed.push(url)
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(manifest) })
+    })
+    try {
+      const { probeReleaseManifest } = await import('./updater-release-asset-readiness')
+      const tag = 'swaplabs-v1.4.197+202609251200'
+      await expect(probeReleaseManifest(tag, swaplabs.repo, undefined, swaplabs)).resolves.toEqual({
+        readiness: 'ready',
+        version: '1.4.197-swaplabs.202609251200'
+      })
+      const base = `https://github.com/SwapLabsInc/orca/releases/download/${encodeURIComponent(tag)}`
+      expect(probed).toEqual([
+        `${base}/swaplabs-update-mac-arm64.json`,
+        `${base}/orca-macos-arm64.zip`,
+        `${base}/swaplabs-update-mac-arm64.json.sig`
+      ])
+
+      signatureStatus = 404
+      await expect(probeReleaseManifest(tag, swaplabs.repo, undefined, swaplabs)).resolves.toEqual({
+        readiness: 'not-ready',
+        version: '1.4.197-swaplabs.202609251200'
+      })
+    } finally {
+      if (arch) {
+        Object.defineProperty(process, 'arch', arch)
+      }
+    }
+  })
+
   // Why: a dev-channel tag lives only in its own repo, so the probe must read the repo the pin
   // reads rather than the source's main one.
   it('reads the manifest from the given repo', async () => {

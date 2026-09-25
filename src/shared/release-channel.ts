@@ -152,9 +152,20 @@ export function requiresManualInstall(options: {
   platform: NodeJS.Platform
   running: { source: ReleaseSourceId | null; channel: ReleaseChannel | null }
   target: { source: ReleaseSourceId; channel: ReleaseChannel }
+  /** LOCAL: Orca's own verified macOS installer is active, so a fork build can replace itself. */
+  macSelfUpdate?: boolean
 }): boolean {
   const { platform, running, target } = options
   if ((platform === 'darwin' || platform === 'win32') && running.source !== target.source) {
+    return true
+  }
+  // LOCAL: a non-primary source's bundles are not Developer ID signed, so Squirrel.Mac refuses
+  // them even from the same source; only the custom installer (D4, plan §13) can apply one.
+  if (
+    platform === 'darwin' &&
+    !options.macSelfUpdate &&
+    getReleaseSourceOrPrimary(target.source).prereleaseIdentifier !== null
+  ) {
     return true
   }
   return requiresManualDevChannelInstall({

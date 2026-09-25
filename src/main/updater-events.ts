@@ -7,7 +7,7 @@ import {
 } from './updater-mac-install'
 import { compareVersions } from './updater-fallback'
 import { fetchChangelog } from './updater-changelog'
-import type { ElectronAutoUpdater } from './electron-updater-loader'
+import type { UpdateEngine } from './updater/update-engine'
 import { recordUpdaterLifecycle } from './updater-lifecycle-diagnostics'
 import {
   getRetainedLinuxPackageManualInstallStatus,
@@ -16,12 +16,13 @@ import {
 } from './linux-package-downloaded-status'
 import { isExternallyManagedLinuxInstall } from './linux-update-package-type'
 import * as linuxPackageRecovery from './linux-package-update-recovery'
-
-const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
-const AUTO_UPDATE_RETRY_INTERVAL_MS = 60 * 60 * 1000
+import {
+  AUTO_UPDATE_CHECK_INTERVAL_MS,
+  AUTO_UPDATE_RETRY_INTERVAL_MS
+} from './updater/updater-state'
 
 type UpdaterHandlerContext = {
-  autoUpdater: ElectronAutoUpdater
+  autoUpdater: UpdateEngine
   clearBackgroundCheckLaunchPending: () => void
   clearAvailableUpdateContext: () => void
   consumeMissingManifestPrereleaseFallbackResult: () => { userInitiated: boolean } | null
@@ -53,7 +54,7 @@ type UpdaterHandlerContext = {
     source?: 'event' | 'promise' | 'fallback-promise',
     sourceError?: unknown
   ) => Promise<void>
-  sendErrorStatus: (message: string, userInitiated?: boolean) => void
+  sendErrorStatus: (message: string, userInitiated?: boolean, error?: unknown) => void
   sendStatus: (status: UpdateStatus) => void
   scheduleAutomaticUpdateCheck: (delayMs: number) => void
   shouldSuppressMissingManifestPrereleaseFallbackEvent: (message: string, error: unknown) => boolean
@@ -101,6 +102,7 @@ export function registerAutoUpdaterHandlers({
   setUserInitiatedCheck
 }: UpdaterHandlerContext): void {
   registerMacUpdaterEvents({
+    updateEngine: autoUpdater,
     getCurrentStatus,
     hasInstallableDownloadedVersion,
     getPendingInstallVersion,
@@ -329,7 +331,7 @@ export function registerAutoUpdaterHandlers({
       void sendCheckFailureStatus(message, wasUserInitiated || undefined, 'event', err)
       return
     }
-    sendErrorStatus(message, wasUserInitiated || undefined)
+    sendErrorStatus(message, wasUserInitiated || undefined, err)
     if (isLocalBuildCheck() || isPinnedBuildCheck()) {
       restoreReleaseUpdateSource()
     }

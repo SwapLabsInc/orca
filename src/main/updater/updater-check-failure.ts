@@ -1,4 +1,5 @@
 import { isBenignCheckFailure } from '../updater-fallback'
+import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
 import { ReleaseFeedPreflightError } from './updater-state'
 import type { CheckFailureSource } from './updater-state'
 import { UpdaterReleaseFeed } from './updater-release-feed'
@@ -39,6 +40,7 @@ export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
         state: 'error',
         message,
         userInitiated,
+        ...readUpdateErrorPresentation(sourceError),
         ...(releaseSource ? { releaseSource } : {})
       })
       return
@@ -107,7 +109,12 @@ export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
       if (!userInitiated) {
         this.scheduleAutomaticUpdateCheck(this.getAutomaticRetryInterval())
       }
-      this.sendSettledCheckStatus({ state: 'error', message, userInitiated })
+      this.sendSettledCheckStatus({
+        state: 'error',
+        message,
+        userInitiated,
+        ...readUpdateErrorPresentation(sourceError)
+      })
     }
 
     this.pendingCheckFailureKey = failureKey

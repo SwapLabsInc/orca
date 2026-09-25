@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import type { ElectronAutoUpdater } from '../electron-updater-loader'
+import type { UpdateEngine } from './update-engine'
 import type { LocalBuildFeed } from '../local-builds/local-build-feed-server'
 import type { UpdateSource, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseChannel } from '../../shared/release-channel'
@@ -104,7 +104,8 @@ export abstract class UpdaterState {
   protected downloadInFlight = false
   /** Guards the macOS `activate` handler from reopening the old version while ShipIt replaces the .app bundle. */
   protected quittingForUpdate = false
-  protected autoUpdater: ElectronAutoUpdater | null = null
+  // Why an engine, not electron-updater: LOCAL SwapLabs macOS builds drive Orca's own installer through the same surface.
+  protected autoUpdater: UpdateEngine | null = null
   protected activeUpdateSource: 'release' | UpdateSource = 'release'
   protected activeLocalBuildFeed: LocalBuildFeed | null = null
   protected localBuildSelectionInProgress = false

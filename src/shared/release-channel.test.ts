@@ -497,9 +497,28 @@ describe('release channel with a second source', () => {
       expect(manual(platform, 'upstream', 'swaplabs')).toBe(true)
       expect(manual(platform, 'swaplabs', 'upstream')).toBe(true)
       expect(manual(platform, null, 'swaplabs')).toBe(true)
-      expect(manual(platform, 'swaplabs', 'swaplabs')).toBe(false)
       expect(manual(platform, 'upstream', 'upstream')).toBe(false)
     }
+    expect(manual('win32', 'swaplabs', 'swaplabs')).toBe(false)
+    // LOCAL: a fork bundle is not Developer ID signed, so Squirrel.Mac refuses even the fork's own
+    // next build; only Orca's own verified installer (plan §13) makes that jump in-app.
+    expect(manual('darwin', 'swaplabs', 'swaplabs')).toBe(true)
+    expect(
+      fork.requiresManualInstall({
+        platform: 'darwin',
+        running: { source: 'swaplabs', channel: 'stable' },
+        target: { source: 'swaplabs', channel: 'stable' },
+        macSelfUpdate: true
+      })
+    ).toBe(false)
+    expect(
+      fork.requiresManualInstall({
+        platform: 'darwin',
+        running: { source: 'upstream', channel: 'stable' },
+        target: { source: 'swaplabs', channel: 'stable' },
+        macSelfUpdate: true
+      })
+    ).toBe(true)
     expect(manual('linux', 'upstream', 'swaplabs')).toBe(false)
     expect(manual('linux', 'swaplabs', 'upstream')).toBe(false)
     expect(manual('linux', null, 'swaplabs')).toBe(false)

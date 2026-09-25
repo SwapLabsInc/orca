@@ -92,7 +92,8 @@ describe('updater cross-source install', () => {
       expect(autoUpdaterMock.allowDowngrade).toBe(true)
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: FORK_PINNED_URL
+        url: FORK_PINNED_URL,
+        expectedVersion: FORK_VERSION
       })
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
     } finally {
@@ -119,7 +120,8 @@ describe('updater cross-source install', () => {
       })
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197'
+        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197',
+        expectedVersion: '1.4.197'
       })
     } finally {
       platformSpy.mockRestore()
@@ -143,7 +145,8 @@ describe('updater cross-source install', () => {
       })
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197'
+        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197',
+        expectedVersion: '1.4.197'
       })
       expect(send).toHaveBeenCalledWith('updater:status', {
         state: 'checking',
@@ -570,7 +573,8 @@ describe('updater cross-source install', () => {
       })
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197'
+        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197',
+        expectedVersion: '1.4.197'
       })
     } finally {
       platformSpy.mockRestore()

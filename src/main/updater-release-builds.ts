@@ -19,6 +19,8 @@ import { getGhRateLimitBlockedUntilMs, recordGhPrimaryRateLimit } from './git/gh
 import { isValidVersion } from './updater-fallback'
 import { rejectReleaseApiToken, resolveReleaseApiToken } from './updater-release-api-token'
 import { getReleaseDownloadUrlForRepo } from './updater-release-urls'
+import { getMacSelfUpdateManifestName } from '../shared/mac-self-update-assets'
+import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
 
 export { getReleaseDownloadUrlForRepo }
 
@@ -147,12 +149,25 @@ function resolveReleaseVersion(tag: string, name: string, source: ReleaseSource)
   )
 }
 
+/** LOCAL: on macOS a fork release is installable through Orca's own installer when it carries this slice's signed manifest. */
+function hasMacSelfUpdateManifest(
+  assetNames: readonly string[],
+  arch: NodeJS.Architecture,
+  macSelfUpdateSource: ReleaseSource | null
+): boolean {
+  return (
+    macSelfUpdateSource !== null &&
+    assetNames.includes(getMacSelfUpdateManifestName(macSelfUpdateSource, arch))
+  )
+}
+
 function parseReleaseEntry(
   entry: GitHubReleaseEntry,
   repo: string,
   platform: NodeJS.Platform,
   arch: NodeJS.Architecture,
-  source: ReleaseSource
+  source: ReleaseSource,
+  macSelfUpdateSource: ReleaseSource | null
 ): ReleaseBuild | null {
   if (typeof entry.tag_name !== 'string' || entry.draft === true) {
     return null
@@ -169,7 +184,10 @@ function parseReleaseEntry(
   // outright. Asking what the release actually carries covers both without the
   // picker ever offering a row whose download 404s.
   const assetNames = readAssetNames(entry.assets)
-  if (!hasInstallableArtifactForPlatform(platform, assetNames)) {
+  if (
+    !hasInstallableArtifactForPlatform(platform, assetNames) &&
+    !hasMacSelfUpdateManifest(assetNames, arch, macSelfUpdateSource)
+  ) {
     return null
   }
   // Why by arch: the picker's download is installed by hand, so it must be the running slice.
@@ -208,7 +226,8 @@ export async function listReleaseBuilds(
   channel: ReleaseChannel,
   platform: NodeJS.Platform = process.platform,
   source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
-  arch: NodeJS.Architecture = process.arch
+  arch: NodeJS.Architecture = process.arch,
+  macSelfUpdateSource: ReleaseSource | null = getMacSelfUpdateSourceFor(source)
 ): Promise<ReleaseBuild[]> {
   const repo = getReleaseRepoForChannel(channel, source.id)
   // Why: while the gh breaker has the token's core bucket marked spent, an
@@ -243,7 +262,9 @@ export async function listReleaseBuilds(
     throw new Error(`Could not read the ${channel} release list.`)
   }
   const builds = payload
-    .map((entry: GitHubReleaseEntry) => parseReleaseEntry(entry, repo, platform, arch, source))
+    .map((entry: GitHubReleaseEntry) =>
+      parseReleaseEntry(entry, repo, platform, arch, source, macSelfUpdateSource)
+    )
     .filter((build): build is ReleaseBuild => build !== null)
     // Why: the main repo serves both stable and rc, so filter to the asked-for channel.
     .filter((build) => build.channel === channel)

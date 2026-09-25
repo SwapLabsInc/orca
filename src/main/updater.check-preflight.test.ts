@@ -574,7 +574,8 @@ describe('updater', () => {
       })
       const pinnedFeed = {
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50'
+        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50',
+        expectedVersion: '1.0.50'
       }
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith(pinnedFeed)
 
@@ -631,7 +632,8 @@ describe('updater', () => {
       expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledTimes(1)
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
-        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50'
+        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50',
+        expectedVersion: '1.0.50'
       })
     } finally {
       platformSpy.mockRestore()
