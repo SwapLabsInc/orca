@@ -7398,7 +7398,8 @@
           "latestFromSource": "You’re on the latest {{value0}} build.",
           "isAvailable": "is available.",
           "downloadingFromSource": "Downloading v{{value0}} ({{value1}})... {{value2}}%",
-          "openReleasePage": "Open download page"
+          "openReleasePage": "Open download page",
+          "newerThanListed": "You are running a newer build than the newest listed {{value0}} build ({{value1}})."
         },
         "GeneralWorkspaceSettingsSection": {
           "3d538a98f7": "Choose apps available from a workspace's Open in menu.",

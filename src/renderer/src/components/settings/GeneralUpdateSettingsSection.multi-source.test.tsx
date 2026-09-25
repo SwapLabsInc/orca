@@ -208,6 +208,48 @@ it('disables every source button while checking and downloading', async () => {
   expect(upstreamButton().disabled).toBe(true)
 })
 
+// Why: a staged in-app download occupies the updater, but a download page is only a browser
+// tab — and the way out for someone whose in-app jump was refused.
+it('keeps download-page buttons usable while an in-app download is staged', async () => {
+  listSources.mockResolvedValue(sourceRows({ upstream: { install: 'manual-installer' } }))
+  render(<GeneralUpdateSettingsSection />)
+  const pageButton = await screen.findByRole<HTMLButtonElement>('button', {
+    name: 'Open download page (Orca upstream)'
+  })
+
+  setStatus({ state: 'downloading', percent: 5, version: NEWER_FORK_VERSION })
+  await waitFor(() => expect(pageButton.disabled).toBe(true))
+
+  setStatus({ state: 'downloaded', version: NEWER_FORK_VERSION })
+  await waitFor(() => expect(pageButton.disabled).toBe(false))
+  expect(forkButton().disabled).toBe(true)
+  fireEvent.click(pageButton)
+  expect(openUrl).toHaveBeenCalledWith(UPSTREAM_BUILD.installerUrl)
+})
+
+// Why: the list can lag the running build (not yet listed, or withdrawn), and the pinned
+// check allows downgrades — equality alone would offer the older listed build as the primary action.
+it('never offers an older listed build of the running source', async () => {
+  const olderVersion = '1.4.197-swaplabs.202609240800'
+  listSources.mockResolvedValue(
+    sourceRows({ swaplabs: { latest: { ...FORK_BUILD, version: olderVersion } } })
+  )
+  render(<GeneralUpdateSettingsSection />)
+
+  const button = await screen.findByRole<HTMLButtonElement>('button', {
+    name: `Download ${olderVersion} (SwapLabs)`
+  })
+  expect(button.disabled).toBe(true)
+  expect(button.getAttribute('data-variant')).toBe('secondary')
+  expect(button.getAttribute('title')).toBe(
+    `You are running a newer build than the newest listed SwapLabs build (${olderVersion}).`
+  )
+  fireEvent.click(button)
+  expect(check).not.toHaveBeenCalled()
+  // The other source still compares by nothing: its button stays offered.
+  expect(upstreamButton().disabled).toBe(false)
+})
+
 it('routes a routine "available" result through the running source button', async () => {
   render(<GeneralUpdateSettingsSection />)
   await waitFor(() => expect(upstreamButton()).toBeTruthy())

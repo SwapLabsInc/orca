@@ -5,7 +5,10 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { translate } from '@/i18n/i18n'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
-import { getReleaseNotesUrlForVersion } from '../../../../shared/release-channel'
+import {
+  compareReleaseVersions,
+  getReleaseNotesUrlForVersion
+} from '../../../../shared/release-channel'
 import { getReleaseSourceOrPrimary } from '../../../../shared/release-sources'
 import type { ReleaseSourceStatus, UpdateStatus } from '../../../../shared/update-status-types'
 
@@ -50,10 +53,11 @@ function ReleaseSourceButton({
   appVersion: string | null
   loading: boolean
 }): React.JSX.Element {
-  const busy =
-    updateStatus.state === 'checking' ||
-    updateStatus.state === 'downloading' ||
-    updateStatus.state === 'downloaded'
+  const updaterBusy = updateStatus.state === 'checking' || updateStatus.state === 'downloading'
+  // Why a staged download only holds the in-app rows: opening a release page conflicts with
+  // nothing, and it is the way out for someone whose in-app jump was refused.
+  const manual = source.install !== 'in-app'
+  const busy = updaterBusy || (updateStatus.state === 'downloaded' && !manual)
   // Why the fallback to the running source: an absent releaseSource always means the running
   // build's own source, so only that source's button follows an unlabelled status.
   const speaksForThisSource =
@@ -64,9 +68,17 @@ function ReleaseSourceButton({
     updateStatus.state === 'available' && !updateStatus.externallyManaged && speaksForThisSource
   const target = source.latest
   const version = offeredByStatus ? updateStatus.version : (target?.version ?? null)
-  const manual = source.install !== 'in-app'
   const isRunningBuild = version !== null && version === appVersion
-  const disabled = busy || loading || (!offeredByStatus && (target === null || isRunningBuild))
+  // Why "at or newer", not equality: the list may lag the running build (a release not yet
+  // listed, or withdrawn), and the pinned check allows downgrades — so equality alone would
+  // leave a prominent button that installs the older listed build. Only the running source
+  // orders against the running version; across sources the versions do not compare.
+  const runningIsCurrent =
+    source.running &&
+    !offeredByStatus &&
+    (appVersion === null ||
+      (target !== null && compareReleaseVersions(target.version, appVersion) <= 0))
+  const disabled = busy || loading || (!offeredByStatus && (target === null || runningIsCurrent))
   const spinning =
     loading ||
     ((updateStatus.state === 'checking' || updateStatus.state === 'downloading') &&
@@ -133,9 +145,15 @@ function ReleaseSourceButton({
                 'auto.components.settings.ReleaseChannelSection.alreadyRunning',
                 'This is the build you are running.'
               )
-            : manual
-              ? (version ?? undefined)
-              : undefined
+            : runningIsCurrent && target !== null
+              ? translate(
+                  'auto.components.settings.GeneralUpdateSettingsSection.newerThanListed',
+                  'You are running a newer build than the newest listed {{value0}} build ({{value1}}).',
+                  { value0: source.label, value1: target.version }
+                )
+              : manual
+                ? (version ?? undefined)
+                : undefined
         }
       >
         {spinning ? (

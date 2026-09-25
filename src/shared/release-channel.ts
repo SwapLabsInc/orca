@@ -416,16 +416,36 @@ export type ReleaseBuild = {
   installerUrl: string | null
 }
 
+/**
+ * Build-time order for two stamped versions, or null when either carries no stamp
+ * or both were cut in the same minute. Dev build base versions can move backwards
+ * when a branch was cut before the latest main build, and a source series orders
+ * by its stamp too, so the stamp — not semver — is the meaningful "newer" signal.
+ */
+function compareBuildStamps(left: string, right: string): number | null {
+  const leftStamp = parseReleaseBuildStamp(left)?.getTime() ?? null
+  const rightStamp = parseReleaseBuildStamp(right)?.getTime() ?? null
+  if (leftStamp === null || rightStamp === null || leftStamp === rightStamp) {
+    return null
+  }
+  return leftStamp - rightStamp
+}
+
+/**
+ * Positive when `left` is the newer build of one series: by stamp for stamped
+ * builds, by semver otherwise. Only meaningful within a source; across sources
+ * the version strings do not order (a fork build is semver-below upstream stable).
+ */
+export function compareReleaseVersions(left: string, right: string): number {
+  return compareBuildStamps(left, right) ?? compareAppVersions(left, right)
+}
+
 /** Newest first, so the picker's first row is always the channel's current tip. */
 export function sortReleaseBuildsNewestFirst(builds: ReleaseBuild[]): ReleaseBuild[] {
   return [...builds].sort((left, right) => {
-    // Dev build base versions can move backwards when a branch was cut before
-    // the latest main build. Their stamped build time, not semver, is the
-    // meaningful "newest" signal for the picker.
-    const leftStamp = parseReleaseBuildStamp(left.version)?.getTime() ?? null
-    const rightStamp = parseReleaseBuildStamp(right.version)?.getTime() ?? null
-    if (leftStamp !== null && rightStamp !== null && leftStamp !== rightStamp) {
-      return rightStamp - leftStamp
+    const byStamp = compareBuildStamps(right.version, left.version)
+    if (byStamp !== null) {
+      return byStamp
     }
 
     if (hasDedicatedReleaseRepo(left.channel) && hasDedicatedReleaseRepo(right.channel)) {
