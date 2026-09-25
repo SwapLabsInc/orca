@@ -3,6 +3,7 @@ import type { Project, ProjectHostSetup } from '../../../../shared/project-types
 import type { Repo } from '../../../../shared/repo-types'
 import type { RemoveProjectOutcome } from '../../store/repos/project-removal-outcome'
 import { translate } from '@/i18n/i18n'
+import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 import {
   getRepoExecutionHostId,
   LOCAL_EXECUTION_HOST_ID,
@@ -182,8 +183,9 @@ export async function removeSettingsProjectFromAllHosts(
     options: { hostId: ExecutionHostId; errorFeedback?: 'toast' | 'silent' }
   ) => Promise<RemoveProjectOutcome>,
   // Why: required, not defaulted — the fallback label is a raw host id, which means nothing to a
-  // reader, and a caller that forgets to pass this would ship it into the toast below.
-  resolveHostLabel: (hostId: ExecutionHostId) => string
+  // reader, and a caller that forgets to pass this would ship it into the toast below. Null when
+  // the host has no name to show.
+  resolveHostLabel: (hostId: ExecutionHostId) => string | null
 ): Promise<void> {
   for (const setup of setups) {
     if (setup.repoId.trim().length > 0) {
@@ -197,17 +199,28 @@ export async function removeSettingsProjectFromAllHosts(
       // Retrying is safe once the host answers: a removal that did land reports `repo_not_found`,
       // which the store reconciles instead of failing on.
       if (outcome.status === 'owner-unverifiable') {
+        const host =
+          resolveHostLabel(setup.hostId) ??
+          translate('auto.components.settings.settingsProjectList.unnamedOwnerHost', 'that host')
         toast.error(
           translate(
             'auto.components.settings.settingsProjectList.removeOwnerUnverifiable',
             'Could not reach the host that owns this project'
           ),
           {
-            description: translate(
-              'auto.components.settings.settingsProjectList.removeOwnerUnverifiableDescription',
-              'Orca could not confirm the removal with {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only.',
-              { host: resolveHostLabel(setup.hostId) }
-            )
+            // Why: a paired web client has no records of its own, so the sidebar withholds the
+            // client-only forget there and this copy must not point at it.
+            description: isPairedWebClientWindow()
+              ? translate(
+                  'auto.components.settings.settingsProjectList.removeOwnerUnverifiableDescriptionWeb',
+                  'Orca could not confirm the removal with {{host}}. Reconnect that host and try again.',
+                  { host }
+                )
+              : translate(
+                  'auto.components.settings.settingsProjectList.removeOwnerUnverifiableDescription',
+                  'Orca could not confirm the removal with {{host}}. Reconnect that host and try again, or remove the project from the sidebar to clear this computer’s records only.',
+                  { host }
+                )
           }
         )
       }

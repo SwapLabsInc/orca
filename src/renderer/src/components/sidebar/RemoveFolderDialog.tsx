@@ -14,10 +14,9 @@ import { translate } from '@/i18n/i18n'
 import {
   getRepoExecutionHostId,
   isRuntimeOwnedSshTargetId,
-  parseExecutionHostId,
   type ExecutionHostId
 } from '../../../../shared/execution-host'
-import { selectExecutionHostDisplayLabel } from '@/lib/execution-host-display-label'
+import { selectNamedExecutionHostLabel } from '@/lib/execution-host-display-label'
 import { findRepoForHost } from '@/store/slices/repo-host-identity'
 import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 
@@ -94,16 +93,11 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
     const ownerRepo = findRepoForHost(s.repos, repoId, { settings: s.settings })
     return ownerRepo ? getRepoExecutionHostId(ownerRepo) : null
   })
-  const resolvedOwnerLabel = useAppStore((s) => {
-    if (!ownerHostId) {
-      return null
-    }
-    const label = selectExecutionHostDisplayLabel(s, ownerHostId)
-    const parsed = parseExecutionHostId(ownerHostId)
-    // Why: with the environment record gone — the very case this copy describes — the resolver
-    // answers the routing id itself, and a slug like `env-a1b2` names nothing to the user.
-    return parsed?.kind === 'runtime' && label === parsed.environmentId ? null : label
-  })
+  // Why: with the environment record gone — the very case this copy describes — the plain
+  // resolver answers the routing id itself, and a slug like `env-a1b2` names nothing to the user.
+  const resolvedOwnerLabel = useAppStore((s) =>
+    ownerHostId ? selectNamedExecutionHostLabel(s, ownerHostId) : null
+  )
   const ownerLabel =
     resolvedOwnerLabel ??
     translate('auto.components.sidebar.RemoveFolderDialog.unnamedOwnerHost', 'that host')
@@ -120,12 +114,12 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
     ? canForgetLocally
       ? translate(
           'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiable',
-          'Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. Removing it now clears this computer’s records only and sends nothing to {{host}}; if the project is still registered there, it comes back when that host reconnects.',
+          'Orca could not confirm with {{host}} whether {{name}} was removed there. Removing it now clears this computer’s records only and sends nothing to {{host}}; if the project is still registered there, it comes back when that host reconnects.',
           { name: NAME_TOKEN, host: ownerLabel }
         )
       : translate(
           'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiableWeb',
-          'Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. This client keeps no records of its own to clear, so reconnect {{host}} and try again.',
+          'Orca could not confirm with {{host}} whether {{name}} was removed there. This client keeps no records of its own to clear, so reconnect {{host}} and try again.',
           { name: NAME_TOKEN, host: ownerLabel }
         )
     : isRuntimeOwnedSshTargetId(sshConnectionId)
