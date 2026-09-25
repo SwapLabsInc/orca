@@ -10,7 +10,10 @@ import {
   RESET_KITTY_KEYBOARD_PROTOCOL,
   RESET_TERMINAL_CURSOR_STYLE
 } from '../../../../../shared/terminal-mode-reset-profiles'
-import { subscribeToTerminalUserInput } from '../terminal-user-input-signal'
+import {
+  isRealUserTerminalInput,
+  subscribeToTerminalUserInput
+} from '../terminal-user-input-signal'
 import {
   isLocalNativeWindowsConpty,
   resolveWindowsShellOverride
@@ -254,6 +257,9 @@ export function installDirectSshRetryStatus(session: ConnectPanePtySession): voi
     Boolean(session.connectionId) && !session.shouldDeliverStartupViaTerminalPaste
   session.hadExistingPaneTransportAtConnect = session.deps.paneTransportsRef.current.size > 0
   session.lastTerminalInputAt = Number.NEGATIVE_INFINITY
+  // Keystrokes, IME and paste only. lastTerminalInputAt also counts mouse reports, focus reports
+  // and xterm's query replies, none of which mean the user claimed the shell.
+  session.lastRealUserInputAt = Number.NEGATIVE_INFINITY
   session.lastInteractiveRedrawInputAt = Number.NEGATIVE_INFINITY
   session.hasReceivedPtyOutput = false
   session.deferredReattachLiveData = null
@@ -263,6 +269,11 @@ export function installDirectSshRetryStatus(session: ConnectPanePtySession): voi
   session.markTerminalInputSent = (): void => {
     session.lastTerminalInputAt = performance.now()
     session.markInteractiveRedrawInput()
+  }
+  session.markRealUserTerminalInput = (data: string, wasUserInput: boolean): void => {
+    if (isRealUserTerminalInput(data, wasUserInput)) {
+      session.lastRealUserInputAt = performance.now()
+    }
   }
   session.markInteractiveRedrawInput = (): void => {
     session.lastInteractiveRedrawInputAt = performance.now()

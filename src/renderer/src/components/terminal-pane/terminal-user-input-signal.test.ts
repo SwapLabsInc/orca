@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Terminal } from '@xterm/xterm'
 import {
+  isRealUserTerminalInput,
   subscribeToTerminalInputData,
   subscribeToTerminalUserInput
 } from './terminal-user-input-signal'
@@ -102,5 +103,30 @@ describe('subscribeToTerminalInputData', () => {
     core.triggerDataEvent('after-dispose', true)
     expect(listener).toHaveBeenCalledTimes(4)
     terminal.dispose()
+  })
+})
+
+describe('isRealUserTerminalInput', () => {
+  it('accepts keystrokes, IME text and paste', () => {
+    expect(isRealUserTerminalInput('a', true)).toBe(true)
+    expect(isRealUserTerminalInput('\x1b[A', true)).toBe(true)
+    expect(isRealUserTerminalInput('\x03', true)).toBe(true)
+    expect(isRealUserTerminalInput('日本', true)).toBe(true)
+    expect(isRealUserTerminalInput('\x1b[200~paste\x1b[201~', true)).toBe(true)
+  })
+
+  // xterm's MouseService fires its reports with wasUserInput=true, so provenance alone would
+  // count every pointer move over a pane with stale mouse tracking as the user typing.
+  it('rejects mouse reports even though xterm flags them as user input', () => {
+    expect(isRealUserTerminalInput('\x1b[<35;34;1M', true)).toBe(false)
+    expect(isRealUserTerminalInput('\x1b[<0;10;5m', true)).toBe(false)
+    expect(isRealUserTerminalInput('\x1b[M !!', true)).toBe(false)
+  })
+
+  it('rejects focus reports and query replies, which xterm does not flag', () => {
+    expect(isRealUserTerminalInput('\x1b[I', false)).toBe(false)
+    expect(isRealUserTerminalInput('\x1b[O', false)).toBe(false)
+    expect(isRealUserTerminalInput('\x1b[?1;2c', false)).toBe(false)
+    expect(isRealUserTerminalInput('\x1b[24;80R', false)).toBe(false)
   })
 })

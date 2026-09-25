@@ -45,6 +45,8 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     ) {
       return
     }
+    // Before the drops below: a keystroke the pane refuses to deliver still means the user is here.
+    session.markRealUserTerminalInput(data, wasUserInput)
     const currentPtyId = session.transport.getPtyId()
     // Why: after a Codex account switch, the runtime auth has already moved to
     // the newly selected account. Stale panes must not keep sending input until
