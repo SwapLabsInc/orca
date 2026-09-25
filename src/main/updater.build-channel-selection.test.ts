@@ -8,7 +8,8 @@ const {
   chooseLocalBuildMock,
   closeLocalBuildFeedMock,
   moduleFactories,
-  resetUpdaterMocks
+  resetUpdaterMocks,
+  verifyReleaseTagManifestMock
 } = await vi.hoisted(async () => (await import('./updater-test-harness')).createUpdaterMocks())
 
 vi.mock('electron', () => moduleFactories.electron())
@@ -99,6 +100,44 @@ describe('updater', () => {
         userInitiated: true
       })
       expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: hourly, daily and adhoc tags exist only in their own repos. The pin's manifest check
+  // used to read the source's main repo, where every dev tag 404s, and refused each dev pin.
+  it('verifies a dev-channel pin against the repo its feed reads', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      appMock.getVersion.mockReturnValue('1.4.160')
+      const send = vi.fn()
+      const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+      setupAutoUpdater({ webContents: { send } } as never, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      checkForUpdatesFromMenu({ channel: 'hourly', targetTag: 'v1.4.160-hourly.202607281400' })
+
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      expect(verifyReleaseTagManifestMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tag: 'v1.4.160-hourly.202607281400',
+          version: '1.4.160-hourly.202607281400',
+          repo: 'stablyai/orca-hourly'
+        }),
+        expect.objectContaining({ id: 'upstream' })
+      )
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca-hourly/releases/download/v1.4.160-hourly.202607281400'
+      })
+      expect(send).not.toHaveBeenCalledWith(
+        'updater:status',
+        expect.objectContaining({ state: 'error' })
+      )
     } finally {
       platformSpy.mockRestore()
     }

@@ -258,6 +258,38 @@ describe('listReleaseBuilds', () => {
     ])
   })
 
+  // Why: Linux publishes `orca-linux.AppImage` and `orca-linux-arm64.AppImage` side by side, and
+  // any AppImage used to match — so an arm64 host was handed the x64 one to run by hand.
+  it('resolves the Linux installer for the running architecture, or none without that slice', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('v1.4.198', {
+          assets: [
+            { name: 'latest-linux.yml' },
+            { name: 'orca-linux.AppImage' },
+            { name: 'latest-linux-arm64.yml' },
+            { name: 'orca-linux-arm64.AppImage' }
+          ]
+        }),
+        release('v1.4.197', {
+          assets: [{ name: 'latest-linux.yml' }, { name: 'orca-linux.AppImage' }]
+        })
+      ])
+    )
+
+    const arm64Builds = await listReleaseBuilds('stable', 'linux', PRIMARY_RELEASE_SOURCE, 'arm64')
+    expect(arm64Builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-linux-arm64.AppImage',
+      null
+    ])
+
+    const x64Builds = await listReleaseBuilds('stable', 'linux', PRIMARY_RELEASE_SOURCE, 'x64')
+    expect(x64Builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-linux.AppImage',
+      'https://github.com/stablyai/orca/releases/download/v1.4.197/orca-linux.AppImage'
+    ])
+  })
+
   it('leaves the installer url null when the release published no installer', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse([release('v1.4.163-hourly.202607312054', { assets: [{ name: 'latest.yml' }] })])
@@ -574,6 +606,7 @@ describe('listReleaseBuilds for another release source', () => {
     ).toEqual({
       tag: 'swaplabs-v1.4.197+resume.1',
       version: '1.4.197-swaplabs.202609241530.resume.1',
+      repo: 'SwapLabsInc/orca',
       feedUrl: 'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2Bresume.1'
     })
     expect(() => resolveTargetBuild('stable', 'swaplabs-v1.4.197+resume.1', swaplabs)).toThrow(
@@ -638,6 +671,7 @@ describe('resolveTargetBuild', () => {
     expect(resolveTargetBuild('hourly', 'v1.4.160-hourly.202607281400')).toEqual({
       tag: 'v1.4.160-hourly.202607281400',
       version: '1.4.160-hourly.202607281400',
+      repo: 'stablyai/orca-hourly',
       feedUrl:
         'https://github.com/stablyai/orca-hourly/releases/download/v1.4.160-hourly.202607281400'
     })
@@ -647,6 +681,7 @@ describe('resolveTargetBuild', () => {
     expect(resolveTargetBuild('daily', 'v1.4.160-daily.202607281300')).toEqual({
       tag: 'v1.4.160-daily.202607281300',
       version: '1.4.160-daily.202607281300',
+      repo: 'stablyai/orca-daily',
       feedUrl:
         'https://github.com/stablyai/orca-daily/releases/download/v1.4.160-daily.202607281300'
     })

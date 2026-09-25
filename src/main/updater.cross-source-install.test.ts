@@ -520,8 +520,11 @@ describe('updater cross-source install', () => {
           })
         })
         expect(verifyReleaseTagManifestMock).toHaveBeenCalledWith(
-          FORK_TAG,
-          FORK_VERSION,
+          expect.objectContaining({
+            tag: FORK_TAG,
+            version: FORK_VERSION,
+            repo: 'SwapLabsInc/orca'
+          }),
           expect.objectContaining({ id: 'swaplabs' })
         )
         expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(

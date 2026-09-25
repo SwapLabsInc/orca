@@ -1,9 +1,13 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
 import { PrioritySemaphore } from '../shared/priority-semaphore'
-import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
+import { getUpdateManifestName } from '../shared/release-channel'
+import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
 import { isValidVersion } from './updater-fallback'
-import { getReleaseDownloadUrl, getReleaseDownloadUrlPattern } from './updater-release-urls'
+import {
+  getReleaseDownloadUrlForRepo,
+  getReleaseDownloadUrlPatternForRepo
+} from './updater-release-urls'
 
 const FETCH_TIMEOUT_MS = 5000
 const MAX_ASSET_PROBE_CONCURRENCY = 4
@@ -33,18 +37,8 @@ export type ReleaseManifestProbe = {
   version: string | null
 }
 
-function getPlatformManifestName(): string {
-  if (process.platform === 'darwin') {
-    return 'latest-mac.yml'
-  }
-  if (process.platform === 'linux') {
-    return 'latest-linux.yml'
-  }
-  return 'latest.yml'
-}
-
-function getReleaseAssetUrl(tag: string, assetName: string, source: ReleaseSource): string {
-  return `${getReleaseDownloadUrl(tag, source)}/${encodeURIComponent(assetName)}`
+function getReleaseAssetUrl(repo: string, tag: string, assetName: string): string {
+  return `${getReleaseDownloadUrlForRepo(repo, tag)}/${encodeURIComponent(assetName)}`
 }
 
 type ManifestAssetEntry = {
@@ -121,16 +115,16 @@ function getGitHubReleaseAssetReadiness(assetUrl: string): Promise<ReleaseReadin
 }
 
 async function getReleaseAssetReadiness(
+  repo: string,
   tag: string,
-  assetName: string,
-  source: ReleaseSource
+  assetName: string
 ): Promise<ReleaseReadiness> {
   const isRelativeAsset = !/^https?:\/\//i.test(assetName)
   const isGitHubReleaseAsset =
     process.platform === 'win32' &&
-    (isRelativeAsset || getReleaseDownloadUrlPattern(source).test(assetName))
+    (isRelativeAsset || getReleaseDownloadUrlPatternForRepo(repo).test(assetName))
   const assetUrl = isRelativeAsset
-    ? getReleaseAssetUrl(tag, assetName.split('/').findLast(Boolean) ?? assetName, source)
+    ? getReleaseAssetUrl(repo, tag, assetName.split('/').findLast(Boolean) ?? assetName)
     : assetName
   if (isGitHubReleaseAsset) {
     return getGitHubReleaseAssetReadiness(assetUrl)
@@ -157,14 +151,16 @@ async function getReleaseAssetReadiness(
  * Why: cancelled/draft releases can appear in GitHub's atom feed before they have
  * updater manifests or the ZIP/exe/AppImage assets referenced by those
  * manifests. Pinning to those tags makes download clicks 404.
+ *
+ * `repo` is the one the tag's feed reads — a dev channel's is not its source's own.
  */
 export async function probeReleaseManifest(
   tag: string,
-  source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
+  repo: string = PRIMARY_RELEASE_SOURCE.repo,
   assetProbes: AssetProbeBudget = new AssetProbeBudget()
 ): Promise<ReleaseManifestProbe> {
   try {
-    const manifestUrl = `${getReleaseDownloadUrl(tag, source)}/${getPlatformManifestName()}`
+    const manifestUrl = `${getReleaseDownloadUrlForRepo(repo, tag)}/${getUpdateManifestName(process.platform, process.arch)}`
     const res = await net.fetch(manifestUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
     if (res.status === 404) {
       return { readiness: 'not-ready', version: null }
@@ -186,7 +182,7 @@ export async function probeReleaseManifest(
     }
     const assetResults = await Promise.all(
       assetNames.map((assetName) =>
-        assetProbes.run(() => getReleaseAssetReadiness(tag, assetName, source))
+        assetProbes.run(() => getReleaseAssetReadiness(repo, tag, assetName))
       )
     )
     const readiness = assetResults.includes('not-ready')

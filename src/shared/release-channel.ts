@@ -318,6 +318,9 @@ export function getReleaseNotesUrlForVersion(version: string | null): string {
     : `https://github.com/${repo}/releases`
 }
 
+/** The slices the Linux release legs build; each publishes its own manifest and AppImage. */
+const LINUX_RELEASE_ARCHITECTURES: readonly NodeJS.Architecture[] = ['x64', 'arm64']
+
 /**
  * The electron-updater manifest each platform's updater fetches before it can
  * install anything. A release without one has nothing that platform can use,
@@ -329,7 +332,25 @@ const PLATFORM_UPDATE_MANIFESTS: Partial<Record<NodeJS.Platform, readonly string
   darwin: ['latest-mac.yml'],
   win32: ['latest.yml'],
   // Both, because one release carries x64 and arm64 and either makes it installable.
-  linux: ['latest-linux.yml', 'latest-linux-arm64.yml']
+  linux: LINUX_RELEASE_ARCHITECTURES.map((arch) => getUpdateManifestName('linux', arch))
+}
+
+/**
+ * The manifest the updater running on one slice fetches. electron-builder suffixes
+ * only Linux manifests by architecture, and only off x64 (`latest-linux-arm64.yml`);
+ * macOS and Windows list every slice in one file.
+ */
+export function getUpdateManifestName(
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture
+): string {
+  if (platform === 'darwin') {
+    return 'latest-mac.yml'
+  }
+  if (platform === 'linux') {
+    return arch === 'x64' ? 'latest-linux.yml' : `latest-linux-${arch}.yml`
+  }
+  return 'latest.yml'
 }
 
 export function getUpdateManifestNamesForPlatform(platform: NodeJS.Platform): readonly string[] {
@@ -352,16 +373,19 @@ export function hasInstallableArtifactForPlatform(
 
 /** Matches the electron-builder `artifactName` for each platform's directly
  *  runnable installer — the file someone downloads when the in-app updater
- *  cannot make the jump. macOS publishes one DMG per slice
- *  (`orca-macos-<arch>.dmg`), so its pattern is picked by architecture. */
+ *  cannot make the jump. macOS and Linux publish one per slice
+ *  (`orca-macos-<arch>.dmg`; `orca-linux.AppImage` and `orca-linux-arm64.AppImage`),
+ *  so theirs are picked by architecture. */
 const PLATFORM_INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
-  win32: /windows-setup\.exe$/i,
-  linux: /\.AppImage$/i
+  win32: /windows-setup\.exe$/i
 }
 
-const MAC_INSTALLER_PATTERNS: Partial<Record<NodeJS.Architecture, RegExp>> = {
-  arm64: /-arm64\.dmg$/i,
-  x64: /-x64\.dmg$/i
+const SLICE_INSTALLER_PATTERNS: Partial<
+  Record<NodeJS.Platform, Partial<Record<NodeJS.Architecture, RegExp>>>
+> = {
+  darwin: { arm64: /-arm64\.dmg$/i, x64: /-x64\.dmg$/i },
+  // Why the lookbehind: the x64 AppImage carries no arch suffix, so it is any AppImage but the arm64 one.
+  linux: { arm64: /-arm64\.AppImage$/i, x64: /(?<!-arm64)\.AppImage$/i }
 }
 
 export function findInstallerAssetName(
@@ -369,8 +393,8 @@ export function findInstallerAssetName(
   assetNames: readonly string[],
   arch: NodeJS.Architecture
 ): string | null {
-  const pattern =
-    platform === 'darwin' ? MAC_INSTALLER_PATTERNS[arch] : PLATFORM_INSTALLER_PATTERNS[platform]
+  const slicePatterns = SLICE_INSTALLER_PATTERNS[platform]
+  const pattern = slicePatterns ? slicePatterns[arch] : PLATFORM_INSTALLER_PATTERNS[platform]
   if (!pattern) {
     return null
   }

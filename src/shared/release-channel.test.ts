@@ -6,6 +6,7 @@ import {
   formatHourlyVersion,
   getReleaseNotesUrlForVersion,
   getReleaseRepoForChannel,
+  getUpdateManifestName,
   getVersionChannel,
   hasDedicatedReleaseRepo,
   hasInstallableArtifactForPlatform,
@@ -253,6 +254,47 @@ describe('release channel', () => {
       findInstallerAssetName('darwin', ['latest-mac.yml', 'orca-macos-x64.dmg'], 'arm64')
     ).toBeNull()
     expect(findInstallerAssetName('darwin', assets, 'ia32')).toBeNull()
+  })
+
+  // Why: the Linux legs publish `orca-linux.AppImage` (x64) and `orca-linux-arm64.AppImage`
+  // side by side, and an arch-agnostic AppImage match handed arm64 hosts whichever came first.
+  it('picks the AppImage built for the running architecture, and none without a matching slice', () => {
+    const assets = [
+      'latest-linux.yml',
+      'orca-linux.AppImage',
+      'latest-linux-arm64.yml',
+      'orca-linux-arm64.AppImage'
+    ]
+    expect(findInstallerAssetName('linux', assets, 'arm64')).toBe('orca-linux-arm64.AppImage')
+    expect(findInstallerAssetName('linux', assets, 'x64')).toBe('orca-linux.AppImage')
+    expect(
+      findInstallerAssetName('linux', ['latest-linux.yml', 'orca-linux.AppImage'], 'arm64')
+    ).toBeNull()
+    expect(
+      findInstallerAssetName(
+        'linux',
+        ['latest-linux-arm64.yml', 'orca-linux-arm64.AppImage'],
+        'x64'
+      )
+    ).toBeNull()
+    expect(findInstallerAssetName('linux', assets, 'ia32')).toBeNull()
+  })
+
+  // Why: electron-builder suffixes only Linux manifests by architecture, and only off x64; the
+  // probe must ask for the one the running slice's updater reads.
+  it('names the update manifest electron-builder publishes for a slice', () => {
+    expect(getUpdateManifestName('linux', 'x64')).toBe('latest-linux.yml')
+    expect(getUpdateManifestName('linux', 'arm64')).toBe('latest-linux-arm64.yml')
+    expect(getUpdateManifestName('darwin', 'arm64')).toBe('latest-mac.yml')
+    expect(getUpdateManifestName('darwin', 'x64')).toBe('latest-mac.yml')
+    expect(getUpdateManifestName('win32', 'x64')).toBe('latest.yml')
+    expect(getUpdateManifestName('win32', 'arm64')).toBe('latest.yml')
+    // Every per-slice name is one the release-list filter treats as installable.
+    for (const arch of ['x64', 'arm64'] as const) {
+      expect(
+        hasInstallableArtifactForPlatform('linux', [getUpdateManifestName('linux', arch)])
+      ).toBe(true)
+    }
   })
 
   it('offers stable and rc on every platform', () => {

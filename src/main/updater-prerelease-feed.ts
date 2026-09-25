@@ -82,13 +82,23 @@ function judgeManifestProbe(
   }
 }
 
-/** Reads the manifest published under `tag` and says whether it installs `version` of `source` on this platform. */
+/** A tag, the version it advertises, and the repo its feed reads — a dev channel's repo is not its source's own. */
+export type ReleaseTagTarget = {
+  tag: string
+  version: string
+  repo: string
+}
+
+/** Reads the manifest published under the target's tag in its repo and says whether it installs the advertised version of `source` on this platform. */
 export async function verifyReleaseTagManifest(
-  tag: string,
-  version: string,
+  target: ReleaseTagTarget,
   source: ReleaseSource
 ): Promise<ReleaseTagManifestVerdict> {
-  return judgeManifestProbe(await probeReleaseManifest(tag, source), version, source)
+  return judgeManifestProbe(
+    await probeReleaseManifest(target.tag, target.repo),
+    target.version,
+    source
+  )
 }
 
 const XML_ENTITIES: Record<string, string> = {
@@ -176,7 +186,7 @@ async function resolveVersionsFromManifests(
   const results = await Promise.all(
     unresolved.map(async ({ tag }) => ({
       tag,
-      probe: await probeReleaseManifest(tag, source, assetProbes)
+      probe: await probeReleaseManifest(tag, source.repo, assetProbes)
     }))
   )
   const resolved: ReleaseFeedTag[] = []
@@ -283,7 +293,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
       probeCandidates.map(async ({ tag, version }) => ({
         tag,
         version,
-        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source, assetProbes))
+        probe: probes.get(tag) ?? (await probeReleaseManifest(tag, source.repo, assetProbes))
       }))
     )
   ).flatMap(({ tag, version, probe }) => {
@@ -297,10 +307,15 @@ export async function fetchNewerReleaseTagsWithReadiness(
     }
     return [{ tag, version, readiness: verdict.kind }]
   })
-  // Why no-newer rather than not-ready: a skipped release never becomes installable, so nothing is
-  // gained by pinning the last-good tag and retrying at the publishing-window cadence.
+  // Why not-ready rather than no-newer: the primary source answers no-newer with GitHub's
+  // /releases/latest/download redirect, which serves the very release skipped above. A verified
+  // last-good tag gives electron-updater a real result instead, and the publishing-window retry
+  // notices a re-upload under the same tag.
   if (!manifestResults.some(({ version }) => compareVersions(version, currentVersion) > 0)) {
-    return { tags: [], state: 'no-newer' }
+    const lastGoodTag = manifestResults.find(({ readiness }) => readiness === 'ready')?.tag
+    return lastGoodTag
+      ? { tags: [], state: 'not-ready', lastGoodTag }
+      : { tags: [], state: 'not-ready' }
   }
 
   const primaryIndex = manifestResults.findIndex(

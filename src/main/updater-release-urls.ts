@@ -35,7 +35,7 @@ export function getReleaseTagHrefPattern(source: ReleaseSource): RegExp {
   )
 }
 
-/** Matches absolute asset URLs that live under this source's release downloads. */
-export function getReleaseDownloadUrlPattern(source: ReleaseSource): RegExp {
-  return new RegExp(`^https://github\\.com/${escapeRegex(source.repo)}/releases/download/`, 'i')
+/** Matches absolute asset URLs that live under this repo's release downloads. */
+export function getReleaseDownloadUrlPatternForRepo(repo: string): RegExp {
+  return new RegExp(`^https://github\\.com/${escapeRegex(repo)}/releases/download/`, 'i')
 }

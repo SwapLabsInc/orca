@@ -373,6 +373,29 @@ describe('fetchNewerReleaseTag', () => {
     })
   })
 
+  // Why: no-newer sends the primary source to GitHub's /releases/latest/download redirect, which
+  // is exactly the release just skipped — the manifest under it would then be installed unverified.
+  it('never reports no-newer when the only newer releases were skipped as mismatches', async () => {
+    respondWithAtom(['v1.4.3', 'v1.4.2', 'v1.4.1'], [], [], [], {
+      'v1.4.3': '1.4.9',
+      'v1.4.2': '1.4.197-swaplabs.202609241530'
+    })
+    const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
+
+    expect(await fetchNewerReleaseTagsWithReadiness('1.4.1', 1)).toEqual({
+      tags: [],
+      state: 'not-ready',
+      lastGoodTag: 'v1.4.1'
+    })
+
+    // Without a verified older tag in the window there is nothing safe to pin either.
+    respondWithAtom(['v1.4.3'], [], [], [], { 'v1.4.3': '1.4.9' })
+    expect(await fetchNewerReleaseTagsWithReadiness('1.4.1', 1)).toEqual({
+      tags: [],
+      state: 'not-ready'
+    })
+  })
+
   it('probes a bounded manifest window concurrently', async () => {
     const feedTags = [
       'v1.4.8-rc.0',
@@ -579,11 +602,13 @@ describe('fetchNewerReleaseTag across release sources', () => {
         source: swaplabs
       })
     ).toEqual({ tags: ['swaplabs-v1.4.197+resume.1'], state: 'ready' })
+    // Why not-ready: every newer release was skipped, and the running build's own tag is the
+    // verified feed that answers, rather than a fallback that could serve the skipped one.
     expect(
       await fetchNewerReleaseTagsWithReadiness('1.4.197-swaplabs.202609241530.resume.1', 2, {
         source: swaplabs
       })
-    ).toEqual({ tags: [], state: 'no-newer' })
+    ).toEqual({ tags: [], state: 'not-ready', lastGoodTag: 'swaplabs-v1.4.197+resume.1' })
   })
 
   // Why: the feed is in publish order, so a build re-published or cut out of sequence can sit
@@ -661,19 +686,18 @@ describe('fetchNewerReleaseTag across release sources', () => {
     ])
     const { verifyReleaseTagManifest } = await import('./updater-prerelease-feed')
     const { swaplabs } = await loadFeed()
+    const forkTarget = (tag: string, version: string) => ({ tag, version, repo: swaplabs.repo })
 
     await expect(
       verifyReleaseTagManifest(
-        'swaplabs-v1.4.197+resume.2',
-        '1.4.197-swaplabs.202609241600.resume.2',
+        forkTarget('swaplabs-v1.4.197+resume.2', '1.4.197-swaplabs.202609241600.resume.2'),
         swaplabs
       )
     ).resolves.toEqual({ kind: 'ready' })
     // A title edited by hand: the manifest still names the build that was uploaded.
     await expect(
       verifyReleaseTagManifest(
-        'swaplabs-v1.4.197+resume.2',
-        '1.4.197-swaplabs.202609241601.resume.2',
+        forkTarget('swaplabs-v1.4.197+resume.2', '1.4.197-swaplabs.202609241601.resume.2'),
         swaplabs
       )
     ).resolves.toEqual({
@@ -683,15 +707,13 @@ describe('fetchNewerReleaseTag across release sources', () => {
     // An upstream build uploaded under a fork tag.
     await expect(
       verifyReleaseTagManifest(
-        'swaplabs-v1.4.197+resume.3',
-        '1.4.197-swaplabs.202609241700.resume.3',
+        forkTarget('swaplabs-v1.4.197+resume.3', '1.4.197-swaplabs.202609241700.resume.3'),
         swaplabs
       )
     ).resolves.toEqual({ kind: 'mismatch', manifestVersion: '1.4.197' })
     await expect(
       verifyReleaseTagManifest(
-        'swaplabs-v1.4.197+resume.4',
-        '1.4.197-swaplabs.202609241800.resume.4',
+        forkTarget('swaplabs-v1.4.197+resume.4', '1.4.197-swaplabs.202609241800.resume.4'),
         swaplabs
       )
     ).resolves.toEqual({ kind: 'not-ready' })
@@ -699,11 +721,47 @@ describe('fetchNewerReleaseTag across release sources', () => {
     netFetchMock.mockRejectedValue(new Error('network down'))
     await expect(
       verifyReleaseTagManifest(
-        'swaplabs-v1.4.197+resume.2',
-        '1.4.197-swaplabs.202609241600.resume.2',
+        forkTarget('swaplabs-v1.4.197+resume.2', '1.4.197-swaplabs.202609241600.resume.2'),
         swaplabs
       )
     ).resolves.toEqual({ kind: 'unavailable' })
+  })
+
+  // Why: hourly, daily and adhoc tags exist only in their own repos, and the source's main repo
+  // 404s them — every dev-channel pin used to be refused as having no installable build.
+  it("verifies a dev-channel tag in the repo its pin reads, not the source's main one", async () => {
+    setPlatformForTest('darwin')
+    const tag = 'v1.4.160-hourly.202607281400'
+    const manifestUrls: string[] = []
+    netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (/\/latest(?:-[a-z0-9]+)?\.yml$/.test(url)) {
+        manifestUrls.push(url)
+        if (!url.startsWith('https://github.com/stablyai/orca-hourly/releases/download/')) {
+          return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('') })
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(buildManifest(tag))
+        })
+      }
+      if (init?.method === 'HEAD') {
+        return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
+      }
+      return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('') })
+    })
+    const { verifyReleaseTagManifest } = await import('./updater-prerelease-feed')
+    const { PRIMARY_RELEASE_SOURCE } = await import('../shared/release-sources')
+
+    await expect(
+      verifyReleaseTagManifest(
+        { tag, version: '1.4.160-hourly.202607281400', repo: 'stablyai/orca-hourly' },
+        PRIMARY_RELEASE_SOURCE
+      )
+    ).resolves.toEqual({ kind: 'ready' })
+    expect(manifestUrls).toEqual([
+      `https://github.com/stablyai/orca-hourly/releases/download/${tag}/latest-mac.yml`
+    ])
   })
 
   it('reports no-newer for a source build whose feed holds only older stamps', async () => {

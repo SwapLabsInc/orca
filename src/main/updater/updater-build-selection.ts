@@ -232,8 +232,9 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       // pin its own feed while this one is off reading the manifest.
       const attemptId = this.beginUpdateCheckAttempt()
       // Why: the picker's version came from a title, and a tag's `latest*.yml` is whatever was
-      // uploaded under it; only the manifest says what electron-updater would install.
-      const verdict = await verifyReleaseTagManifest(resolved.tag, resolved.version, source)
+      // uploaded under it; only the manifest says what electron-updater would install. The
+      // resolved target names the repo the pin reads, which for a dev channel is not the source's.
+      const verdict = await verifyReleaseTagManifest(resolved, source)
       if (!this.isActiveUpdateCheckAttempt(attemptId)) {
         return
       }

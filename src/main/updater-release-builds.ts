@@ -253,6 +253,8 @@ export async function listReleaseBuilds(
 export type ResolvedTargetBuild = {
   tag: string
   version: string
+  /** The repo the feed reads: a dev channel's own, not the source's main one. */
+  repo: string
   feedUrl: string
 }
 
@@ -274,5 +276,5 @@ export function resolveTargetBuild(
     )
   }
   const repo = getReleaseRepoForChannel(channel, source.id)
-  return { tag, version, feedUrl: getReleaseDownloadUrlForRepo(repo, tag) }
+  return { tag, version, repo, feedUrl: getReleaseDownloadUrlForRepo(repo, tag) }
 }
