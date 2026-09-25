@@ -17,6 +17,7 @@ import { useShortcutLabel } from '../hooks/useShortcutLabel'
 import { useAppStore } from '../store'
 import { hasCustomTitleBar, isMac } from './app-window-chrome'
 import type { AppChromeLayout } from './use-app-chrome-layout'
+import { useTitlebarAppVersion } from './titlebar-app-version'
 
 /**
  * The titlebar's left cluster: window chrome padding, app name, sidebar toggle, and the
@@ -31,6 +32,11 @@ export function TitlebarLeftControls({ layout }: { layout: AppChromeLayout }): R
   const leftSidebarShortcutLabel = useShortcutLabel('sidebar.left.toggle')
   const historyBackShortcutLabel = useShortcutLabel('worktree.history.back')
   const historyForwardShortcutLabel = useShortcutLabel('worktree.history.forward')
+  const appVersion = useTitlebarAppVersion()
+  const appName = translate('auto.App.5096cbbc86', 'Orca{{value0}} (SwapLabs{{value1}})', {
+    value0: appVersion ? ` ${appVersion.upstream}` : '',
+    value1: appVersion?.revision ? `/${appVersion.revision}` : ''
+  })
 
   return (
     // Why: measure the ENTIRE row so TabGroupPanel's collapse spacer reserves enough width; measuring only the inner cluster left back/forward over the first tab.
@@ -69,13 +75,8 @@ export function TitlebarLeftControls({ layout }: { layout: AppChromeLayout }): R
         {layout.showSidebar && !hasCustomTitleBar && layout.showTitlebarAppName && (
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <div
-                className="titlebar-app-name"
-                aria-label={translate('auto.App.5096cbbc86', 'Orca (SwapLabs)')}
-              >
-                <span className="titlebar-app-name-main">
-                  {translate('auto.App.5096cbbc86', 'Orca (SwapLabs)')}
-                </span>
+              <div className="titlebar-app-name" aria-label={appName}>
+                <span className="titlebar-app-name-main">{appName}</span>
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
