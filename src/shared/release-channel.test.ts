@@ -20,6 +20,7 @@ import {
   parseDevBuildStamp,
   parseHourlyVersionStamp,
   requiresManualDevChannelInstall,
+  compareReleaseVersions,
   sortReleaseBuildsNewestFirst,
   type ReleaseBuild,
   type ReleaseChannel
@@ -510,5 +511,31 @@ describe('release channel with a second source', () => {
         target: { source: 'upstream', channel: 'adhoc' }
       })
     ).toBe(true)
+  })
+})
+
+describe('compareReleaseVersions', () => {
+  it('orders stamped builds of one series by cut time, plain versions by semver', () => {
+    expect(
+      compareReleaseVersions('1.4.197-swaplabs.202609260900', '1.4.197-swaplabs.202609251710')
+    ).toBeGreaterThan(0)
+    expect(
+      compareReleaseVersions('1.4.197-swaplabs.202609251710', '1.4.197-swaplabs.202609260900')
+    ).toBeLessThan(0)
+    expect(
+      compareReleaseVersions('1.4.197-swaplabs.202609251710', '1.4.197-swaplabs.202609251710')
+    ).toBe(0)
+    expect(compareReleaseVersions('1.4.198', '1.4.197')).toBeGreaterThan(0)
+    expect(compareReleaseVersions('1.4.197', '1.4.198')).toBeLessThan(0)
+  })
+
+  // Why: a same-minute stamp with a different delta cannot be ordered by time; semver breaks the tie.
+  it('falls back to semver when stamps tie', () => {
+    expect(
+      compareReleaseVersions(
+        '1.4.197-swaplabs.202609251710.resume.2',
+        '1.4.197-swaplabs.202609251710.resume.1'
+      )
+    ).toBeGreaterThan(0)
   })
 })

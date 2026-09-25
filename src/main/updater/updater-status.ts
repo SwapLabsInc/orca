@@ -46,7 +46,9 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
    * the states a card acts on, so absence always means "the running source".
    */
   protected getStatusReleaseSource(state: UpdateStatus['state']): ReleaseSourceId | null {
-    if (!isMultiSourceBuild()) {
+    // Why the local exclusion: a local build is no source's release, and stamping the running
+    // source on it would let a source button claim the offer as its own.
+    if (!isMultiSourceBuild() || this.activeUpdateSource === 'local') {
       return null
     }
     const running = this.getRunningReleaseSource()

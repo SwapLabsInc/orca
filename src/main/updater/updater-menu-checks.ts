@@ -46,6 +46,11 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
     ) {
       return
     }
+    // Why: a staged pinned build stays registered with electron-updater's quit handler, so unpinning
+    // here would report "latest" while quitting still installs it. It is restarted into or not at all.
+    if (this.isPinnedBuildActive && this.currentStatus.state === 'downloaded') {
+      return
+    }
     this.restoreReleaseUpdateSource()
 
     const checkVariant = this.getUpdateCheckVariant(options)

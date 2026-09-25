@@ -1,6 +1,10 @@
 import { app, ipcMain } from 'electron'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import type { ReleaseBuildListResult, UpdateCheckOptions } from '../../shared/update-status-types'
+import type {
+  ReleaseBuildListResult,
+  ReleaseSourceStatus,
+  UpdateCheckOptions
+} from '../../shared/update-status-types'
 import { RELEASE_CHANNELS, type ReleaseChannel } from '../../shared/release-channel'
 import { getReleaseSource } from '../../shared/release-sources'
 import { isTrustedUIRenderer } from '../ipc/ui'
@@ -14,6 +18,7 @@ import {
   getLinuxPackageInstallInstructions,
   getUpdateStatus,
   listAvailableReleaseBuilds,
+  listReleaseSources,
   quitAndInstall,
   setupAutoUpdater,
   showLinuxPackage,
@@ -91,6 +96,7 @@ export function registerUpdaterHandlers(_store: Store): void {
   ipcMain.removeHandler('updater:getLinuxPackageInstallInstructions')
   ipcMain.removeHandler('updater:showLinuxPackage')
   ipcMain.removeHandler('updater:listBuilds')
+  ipcMain.removeHandler('updater:listSources')
 
   ipcMain.handle('updater:getStatus', () => getUpdateStatus())
   ipcMain.handle('updater:getVersion', () => app.getVersion())
@@ -141,6 +147,13 @@ export function registerUpdaterHandlers(_store: Store): void {
         return { ok: false, channel, message: String((error as Error)?.message ?? error) }
       }
     }
+  )
+  // Why no per-source rejection: each source reports its own list failure as data, so the
+  // Updates section can still offer the sources that answered.
+  ipcMain.handle(
+    'updater:listSources',
+    (_event, options?: { force?: boolean }): Promise<ReleaseSourceStatus[]> =>
+      listReleaseSources({ force: options?.force === true })
   )
 }
 
