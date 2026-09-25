@@ -678,7 +678,10 @@ jobs:
 
       # Why download again: the check must cover the bytes GitHub serves, not the
       # local files. A manifest that does not verify is removed from the release
-      # before this step fails, so the updater can never be offered it.
+      # before this step fails, so the updater can never be offered it, and the
+      # removal is confirmed from the release rather than from the delete's exit
+      # status: a delete can fail transiently, and a manifest left attached to a
+      # live release is exactly what an installed build would fetch.
       - name: Verify the macOS assets published
         shell: bash
         env:
@@ -731,12 +734,32 @@ jobs:
             done
           fi
           if (( failed )); then
-            for arch in x64 arm64; do
-              for name in "swaplabs-update-mac-$arch.json" "swaplabs-update-mac-$arch.json.sig"; do
-                gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            # Every manifest or signature still attached, in any upload state; a
+            # listing failure is an unknown, never an empty result.
+            stray_manifests() {
+              local names
+              names="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')" || return 1
+              grep -E '^swaplabs-update-mac-.*\.json(\.sig)?$' <<<"$names" || true
+            }
+            live="unknown"
+            for attempt in 1 2 3; do
+              (( attempt == 1 )) || sleep 10
+              live="$(stray_manifests)" || { live="unknown"; continue; }
+              [[ -n "$live" ]] || break
+              for name in $live; do
+                gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes \
+                  || echo "::warning::Attempt $attempt could not delete $name from $TAG."
               done
+              live="$(stray_manifests)" || live="unknown"
+              [[ -n "$live" ]] || break
             done
-            echo "::error::Fork release $TAG: the macOS update manifests did not verify and were removed; the DMGs stay as download-only assets."
+            if [[ "$live" == "unknown" ]]; then
+              echo "::error::Fork release $TAG: the macOS update manifests did not verify, and whether they were removed could not be confirmed; check the release's assets by hand."
+            elif [[ -n "$live" ]]; then
+              echo "::error::Fork release $TAG: the macOS update manifests did not verify and could not be removed; still attached: ${live//$'\n'/ }. Delete them by hand before an installed build fetches them."
+            else
+              echo "::error::Fork release $TAG: the macOS update manifests did not verify and were removed; the DMGs stay as download-only assets."
+            fi
             exit 1
           fi
           echo "Signed macOS update assets verified for $VERSION."

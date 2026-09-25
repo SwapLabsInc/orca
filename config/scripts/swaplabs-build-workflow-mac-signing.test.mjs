@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { runProcess } from '../../src/shared/child-process/run-process'
+import packageJson from '../../package.json' with { type: 'json' }
 import {
   SWAPLABS_MAC_SIGN_IDENTITY,
   SWAPLABS_UPDATE_PUBLIC_KEY_ENV,
@@ -74,6 +75,23 @@ describe('swaplabs fork build macOS signing', () => {
       `\${{ vars.${SWAPLABS_SIGNING_VARIABLE} }}`
     )
     expect(mac.env.SWAPLABS_MAC_SIGN_IDENTITY).toBe(SWAPLABS_MAC_SIGN_IDENTITY)
+  })
+
+  // The app compiles the key in (electron.vite.config.ts, PR #16) from the env
+  // `pnpm build:release` runs electron-vite under, which is the workflow-level
+  // value only while no job or step redefines it.
+  it('lets the workflow-level public key reach the electron-vite build unshadowed', () => {
+    expect(packageJson.scripts['build:release']).toContain('build:electron-vite')
+    for (const [name, job] of Object.entries(jobs)) {
+      expect(job.env?.[SWAPLABS_UPDATE_PUBLIC_KEY_ENV], `${name} job env`).toBeUndefined()
+      for (const step of job.steps) {
+        expect(step.env?.[SWAPLABS_UPDATE_PUBLIC_KEY_ENV], `${name}: ${step.name}`).toBeUndefined()
+      }
+    }
+    for (const name of ['build-linux', 'build-mac']) {
+      expect(stepNamed(jobs[name], 'Build app').run).toBe('pnpm build:release')
+      expect(stepNamed(jobs[name], 'Build app').env).toBeUndefined()
+    }
   })
 
   it('decides first, then imports the keychain before the identity check and the build', () => {
@@ -247,10 +265,22 @@ describe('swaplabs fork build macOS asset verification', () => {
     ...dmgs,
     ...MAC_ARCHES.flatMap((arch) => Object.values(swaplabsMacUpdateAssetNames(arch)))
   ]
-  // `gh release download` copies the fixtures into --dir; delete-asset records what it removed.
+  // `gh release view` lists $ASSETS minus what delete-asset removed, and fails
+  // once VIEW_CALLS_BEFORE_OUTAGE calls have been made; `gh release download`
+  // copies the fixtures into --dir; delete-asset fails DELETE_FAILURES times
+  // for DELETE_FAILS and records everything it removed.
   const mock = `gh() {
     case "$*" in
-      "release view "*) printf '%s\\n' $ASSETS ;;
+      "release view "*)
+        echo view >>"$RUNNER_TEMP/view-calls"
+        if [ "$(grep -c view "$RUNNER_TEMP/view-calls")" -gt "\${VIEW_CALLS_BEFORE_OUTAGE:-1000}" ]; then
+          echo "HTTP 503: service unavailable" >&2
+          return 1
+        fi
+        for name in $ASSETS; do
+          grep -qx "$name" "$RUNNER_TEMP/deleted" 2>/dev/null || printf '%s\\n' "$name"
+        done
+        ;;
       "release download "*)
         dir=""
         while [ $# -gt 0 ]; do
@@ -259,10 +289,19 @@ describe('swaplabs fork build macOS asset verification', () => {
         done
         cp "$FIXTURES"/* "$dir"/
         ;;
-      "release delete-asset "*) echo "deleted $4" ;;
+      "release delete-asset "*)
+        echo "$4" >>"$RUNNER_TEMP/delete-calls"
+        if [ "$4" = "\${DELETE_FAILS:-}" ] && [ "$(grep -cx "$4" "$RUNNER_TEMP/delete-calls")" -le "\${DELETE_FAILURES:-0}" ]; then
+          echo "HTTP 502: bad gateway" >&2
+          return 1
+        fi
+        echo "$4" >>"$RUNNER_TEMP/deleted"
+        echo "deleted $4"
+        ;;
       *) return 1 ;;
     esac
-  }`
+  }
+  sleep() { :; }`
 
   async function signedFixtures() {
     const directory = mkdtempSync(join(tmpdir(), 'swaplabs-mac-assets-'))
@@ -362,7 +401,7 @@ describe('swaplabs fork build macOS asset verification', () => {
   })
 
   it.each(signedAssets.filter((name) => !name.endsWith('.dmg')))(
-    'fails, removing the manifests, when %s never uploaded',
+    'fails, removing the manifests that did upload, when %s never uploaded',
     async (missing) => {
       const fixtures = await signedFixtures()
       try {
@@ -371,12 +410,83 @@ describe('swaplabs fork build macOS asset verification', () => {
         })
         expect(result.exitCode).not.toBe(0)
         expect(result.stdout).toContain(`missing ${missing}`)
-        expect(result.stdout).toContain('deleted swaplabs-update-mac-arm64.json.sig')
+        // Only what the release holds is deleted: a missing name is already gone.
+        const deleted = result.stdout.split('\n').filter((line) => line.startsWith('deleted '))
+        expect(new Set(deleted)).toEqual(
+          new Set(
+            signedAssets
+              .filter((name) => /\.json(\.sig)?$/.test(name) && name !== missing)
+              .map((name) => `deleted ${name}`)
+          )
+        )
+        expect(result.stdout).toContain('did not verify and were removed')
       } finally {
         fixtures.cleanup()
       }
     }
   )
+
+  // The step's promise is that a failed run leaves no manifest behind, so a
+  // delete that fails must be retried and, if it keeps failing, said out loud.
+  it('retries a transient delete failure and confirms from the release that nothing is left', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      writeFileSync(join(fixtures.directory, 'orca-macos-arm64.zip'), 'corrupted upload')
+      const result = await check(fixtures, {
+        DELETE_FAILS: 'swaplabs-update-mac-arm64.json',
+        DELETE_FAILURES: '1'
+      })
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('HTTP 502')
+      expect(result.stdout).toContain(
+        '::warning::Attempt 1 could not delete swaplabs-update-mac-arm64.json from swaplabs-v1.4.197+202609241530.'
+      )
+      expect(result.stdout).toContain('deleted swaplabs-update-mac-arm64.json')
+      expect(result.stdout).toContain('did not verify and were removed')
+      expect(result.stdout).not.toContain('could not be removed')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
+
+  it('reports the manifest still attached when every delete attempt fails', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      writeFileSync(join(fixtures.directory, 'orca-macos-arm64.zip'), 'corrupted upload')
+      const result = await check(fixtures, {
+        DELETE_FAILS: 'swaplabs-update-mac-arm64.json',
+        DELETE_FAILURES: '99'
+      })
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stdout).toContain(
+        '::warning::Attempt 3 could not delete swaplabs-update-mac-arm64.json'
+      )
+      expect(result.stdout).toContain(
+        '::error::Fork release swaplabs-v1.4.197+202609241530: the macOS update manifests did not verify and could not be removed; still attached: swaplabs-update-mac-arm64.json.'
+      )
+      expect(result.stdout).not.toContain('were removed')
+      // The other three were removed and are not reported as attached.
+      expect(result.stdout).toContain('deleted swaplabs-update-mac-x64.json')
+      expect(result.stdout).not.toContain('still attached: swaplabs-update-mac-x64')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
+
+  it('never claims the manifests were removed when the release cannot be listed again', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      writeFileSync(join(fixtures.directory, 'orca-macos-arm64.zip'), 'corrupted upload')
+      // One listing for the verification itself; every later one fails.
+      const result = await check(fixtures, { VIEW_CALLS_BEFORE_OUTAGE: '1' })
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('HTTP 503')
+      expect(result.stdout).toContain('whether they were removed could not be confirmed')
+      expect(result.stdout).not.toContain('were removed;')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
 
   it('in download-only mode requires a DMG and refuses any manifest or latest-mac.yml', async () => {
     const fixtures = await signedFixtures()

@@ -12,8 +12,17 @@
 
 import { execFileSync } from 'node:child_process'
 import { generateKeyPairSync, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
@@ -43,6 +52,8 @@ export const SWAPLABS_SIGNING_FILES = {
   certificatePassword: 'swaplabs-mac-cert.password',
   certificatePublic: 'swaplabs-mac-cert.pem'
 }
+// The RSA key openssl writes before packing it into the .p12; never a deliverable.
+const LOOSE_CERTIFICATE_KEY_FILE = 'swaplabs-mac-cert.key'
 const DEFAULT_VALIDITY_DAYS = 3650
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..')
 
@@ -78,8 +89,28 @@ subjectKeyIdentifier = hash
 `
 }
 
+// Where a path will really land: its nearest existing ancestor through the OS
+// realpath (symlinks, and the on-disk case of a case-insensitive volume), plus
+// the tail that has yet to be created. A lexical `resolve` alone would pass an
+// outside-looking link into the repository.
+function canonicalize(path) {
+  let existing = resolve(path)
+  const tail = []
+  while (!lstatSync(existing, { throwIfNoEntry: false })) {
+    tail.unshift(basename(existing))
+    existing = dirname(existing)
+  }
+  return join(realpathSync.native(existing), ...tail)
+}
+
 export function assertOutsideRepository(outDir, repoRoot = REPO_ROOT) {
-  const rel = relative(repoRoot, resolve(outDir))
+  let target
+  try {
+    target = canonicalize(outDir)
+  } catch (error) {
+    throw new Error(`--out-dir ${outDir} cannot be resolved: ${error.message}`)
+  }
+  const rel = relative(realpathSync.native(repoRoot), target)
   // Outside means `relative` had to climb (`..`) or, on Windows, changed drive.
   if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
     throw new Error(
@@ -89,8 +120,8 @@ export function assertOutsideRepository(outDir, repoRoot = REPO_ROOT) {
 }
 
 function assertNothingToOverwrite(outDir) {
-  const present = Object.values(SWAPLABS_SIGNING_FILES).filter((name) =>
-    existsSync(join(outDir, name))
+  const present = [...Object.values(SWAPLABS_SIGNING_FILES), LOOSE_CERTIFICATE_KEY_FILE].filter(
+    (name) => existsSync(join(outDir, name))
   )
   if (present.length > 0) {
     throw new Error(
@@ -110,6 +141,13 @@ function openssl(args, { env = {}, cwd } = {}) {
 
 function writePrivate(path, contents) {
   writeFileSync(path, contents, { mode: 0o600 })
+}
+
+// Why create the file before openssl does: its mode is then ours, not the
+// flavour's (OpenSSL 3 uses 0600, LibreSSL the umask), because openssl only
+// truncates a file that already exists.
+function reservePrivateFile(path) {
+  closeSync(openSync(path, 'wx', 0o600))
 }
 
 export function generateSwaplabsSigningMaterial({
@@ -150,12 +188,14 @@ export function generateSwaplabsSigningMaterial({
 
   // Self-signed code-signing certificate, packed as .p12 with a random password.
   const configPath = join(outDir, 'swaplabs-mac-cert.cnf')
-  const keyPath = join(outDir, 'swaplabs-mac-cert.key')
+  const keyPath = join(outDir, LOOSE_CERTIFICATE_KEY_FILE)
   const certPath = join(outDir, SWAPLABS_SIGNING_FILES.certificatePublic)
   const p12Path = join(outDir, SWAPLABS_SIGNING_FILES.certificate)
   const password = randomBytes(24).toString('base64url')
   try {
     writeFileSync(configPath, opensslConfig(identity))
+    reservePrivateFile(keyPath)
+    reservePrivateFile(p12Path)
     openssl([
       'req',
       '-x509',

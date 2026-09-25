@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +35,44 @@ const SCRIPT = fileURLToPath(new URL('./swaplabs-mac-signing-setup.mjs', import.
 const REPO_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const hasOpenssl = spawnSync('openssl', ['version'], { encoding: 'utf8' }).status === 0
 
-const runSetup = (args) => runProcess({ program: process.execPath, args: [SCRIPT, ...args] })
+const runSetup = (args, env = {}) =>
+  runProcess({
+    program: process.execPath,
+    args: [SCRIPT, ...args],
+    env: { ...process.env, ...env }
+  })
+// A case-insensitive checkout (macOS, Windows) resolves an aliased spelling of a real directory.
+const caseInsensitive = existsSync(join(REPO_ROOT, 'CONFIG'))
+
+// An `openssl` on PATH that writes every output the way a umask-honouring build
+// (LibreSSL, older OpenSSL) does, and records the mode the loose key had while
+// it existed: the real one deletes it before the test could look.
+function stubOpenssl(directory) {
+  const bin = join(directory, 'bin')
+  mkdirSync(bin)
+  const stub = join(directory, 'openssl-stub.cjs')
+  writeFileSync(
+    stub,
+    `const fs = require('node:fs')
+process.umask(0o022)
+const args = process.argv.slice(2)
+const arg = (flag) => args[args.indexOf(flag) + 1]
+if (args[0] === 'req') {
+  fs.writeFileSync(arg('-keyout'), 'rsa key')
+  fs.writeFileSync(arg('-out'), 'certificate')
+  fs.writeFileSync(process.env.STUB_KEY_MODE_FILE, String(fs.statSync(arg('-keyout')).mode & 0o777))
+} else if (args[0] === 'pkcs12') {
+  fs.writeFileSync(arg('-out'), 'pkcs12')
+} else if (args[0] === 'x509') {
+  process.stdout.write('sha256 Fingerprint=AA:BB\\n')
+}
+`
+  )
+  const launcher = join(bin, 'openssl')
+  writeFileSync(launcher, `#!/bin/sh\nexec "${process.execPath}" "${stub}" "$@"\n`)
+  chmodSync(launcher, 0o755)
+  return { bin, keyModeFile: join(directory, 'key-mode') }
+}
 
 describe('swaplabs mac signing setup', () => {
   it('names the secrets and variable the workflow reads', () => {
@@ -47,6 +94,78 @@ describe('swaplabs mac signing setup', () => {
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('inside the repository')
   })
+
+  // Where the files land is decided by the filesystem, not by how the path is spelled.
+  it('follows a symbolic link before deciding whether the output directory is inside the repository', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'swaplabs-signing-'))
+    try {
+      const intoRepo = join(directory, 'into-repo')
+      symlinkSync(join(REPO_ROOT, 'config'), intoRepo, 'junction')
+      expect(() => assertOutsideRepository(intoRepo)).toThrow(/inside the repository/)
+      expect(() => assertOutsideRepository(join(intoRepo, 'keys', 'not-yet-created'))).toThrow(
+        /inside the repository/
+      )
+      const result = await runSetup(['--out-dir', join(intoRepo, 'keys')])
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('inside the repository')
+      expect(existsSync(join(REPO_ROOT, 'config', 'keys'))).toBe(false)
+
+      // The repository itself reached through a link, the target spelled directly.
+      const repoLink = join(directory, 'repo')
+      symlinkSync(REPO_ROOT, repoLink, 'junction')
+      expect(() => assertOutsideRepository(join(REPO_ROOT, 'config'), repoLink)).toThrow(
+        /inside the repository/
+      )
+
+      const elsewhere = join(directory, 'elsewhere')
+      mkdirSync(elsewhere)
+      symlinkSync(elsewhere, join(directory, 'out'), 'junction')
+      expect(() => assertOutsideRepository(join(directory, 'out', 'keys'))).not.toThrow()
+
+      symlinkSync(join(directory, 'missing'), join(directory, 'dangling'), 'junction')
+      expect(() => assertOutsideRepository(join(directory, 'dangling'))).toThrow(
+        /cannot be resolved/
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(!caseInsensitive)('refuses a case-aliased spelling of a repository directory', () => {
+    expect(() => assertOutsideRepository(join(REPO_ROOT, 'CONFIG', 'keys'))).toThrow(
+      /inside the repository/
+    )
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'keeps the loose key and the .p12 private whatever mode openssl would have used',
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'swaplabs-signing-'))
+      try {
+        const { bin, keyModeFile } = stubOpenssl(directory)
+        const outDir = join(directory, 'keys')
+        const result = await runSetup(['--out-dir', outDir], {
+          PATH: `${bin}:${process.env.PATH}`,
+          STUB_KEY_MODE_FILE: keyModeFile
+        })
+        expect(result.code, result.stderr).toBe(0)
+        expect(Number(readFileSync(keyModeFile, 'utf8'))).toBe(0o600)
+        expect(statSync(join(outDir, SWAPLABS_SIGNING_FILES.certificate)).mode & 0o777).toBe(0o600)
+        expect(existsSync(join(outDir, 'swaplabs-mac-cert.key'))).toBe(false)
+        expect(result.stdout).toContain('fingerprint AA:BB')
+
+        // A key left behind by a run that died is signing material too.
+        rmSync(join(outDir, SWAPLABS_SIGNING_FILES.signingKey))
+        writeFileSync(join(outDir, 'swaplabs-mac-cert.key'), 'stale')
+        const again = await runSetup(['--out-dir', outDir], { PATH: `${bin}:${process.env.PATH}` })
+        expect(again.code).not.toBe(0)
+        expect(again.stderr).toContain('swaplabs-mac-cert.key')
+        expect(again.stderr).toContain('refusing to overwrite')
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  )
 
   it('prints instructions that name every file, secret and the variable, but no secret value', () => {
     const text = formatSetupInstructions({
