@@ -8,7 +8,8 @@ const {
   fetchChangelogMock,
   fetchNewerReleaseTagsMock,
   moduleFactories,
-  resetUpdaterMocks
+  resetUpdaterMocks,
+  verifyReleaseTagManifestMock
 } = await vi.hoisted(async () => (await import('./updater-test-harness')).createUpdaterMocks())
 
 vi.mock('electron', () => moduleFactories.electron())
@@ -588,6 +589,49 @@ describe('updater', () => {
       updater.checkForUpdates()
       await vi.waitFor(() => {
         expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(2)
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: the jump now reads the tag's manifest before pinning. It must own the attempt before that
+  // read yields, or a background preflight finishing in the gap would pin its own feed underneath.
+  it('supersedes a background preflight before the pinned manifest probe resolves', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      let resolveProbe: (verdict: { kind: 'ready' }) => void = () => {}
+      verifyReleaseTagManifestMock.mockImplementationOnce(
+        () =>
+          new Promise<{ kind: 'ready' }>((resolve) => {
+            resolveProbe = resolve
+          })
+      )
+      autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+        autoUpdaterMock.emit('checking-for-update')
+        return Promise.resolve(undefined)
+      })
+      const { resolvePreflight, updater } = await startBackgroundCheckInPreflight()
+
+      updater.checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.0.50' })
+      await vi.waitFor(() => {
+        expect(verifyReleaseTagManifestMock).toHaveBeenCalledTimes(1)
+      })
+      autoUpdaterMock.setFeedURL.mockClear()
+
+      resolvePreflight(['v1.0.52'])
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+      resolveProbe({ kind: 'ready' })
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledTimes(1)
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca/releases/download/v1.0.50'
       })
     } finally {
       platformSpy.mockRestore()

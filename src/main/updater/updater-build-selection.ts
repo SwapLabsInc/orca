@@ -14,14 +14,37 @@ import {
 import {
   getReleaseSource,
   getReleaseSourceOrPrimary,
-  PRIMARY_RELEASE_SOURCE
+  PRIMARY_RELEASE_SOURCE,
+  type ReleaseSource
 } from '../../shared/release-sources'
 import { compareVersions } from '../updater-fallback'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
+import {
+  verifyReleaseTagManifest,
+  type ReleaseTagManifestVerdict
+} from '../updater-prerelease-feed'
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { getReleaseTagPageUrl } from '../updater-release-urls'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
+
+/** Why a message per verdict: the dev picked this tag by hand, so the refusal must say what the release actually holds. */
+function describeRefusedPinnedManifest(
+  verdict: Exclude<ReleaseTagManifestVerdict, { kind: 'ready' }>,
+  tag: string,
+  version: string,
+  source: ReleaseSource
+): string {
+  const release = `${source.prereleaseIdentifier === null ? '' : `${source.label} `}release "${tag}"`
+  switch (verdict.kind) {
+    case 'mismatch':
+      return `The ${release} advertises ${version}, but its update manifest installs ${verdict.manifestVersion}. Nothing was installed.`
+    case 'not-ready':
+      return `The ${release} has no installable build for this platform yet.`
+    case 'unavailable':
+      return `Could not read the ${release} manifest. Check your connection and try again.`
+  }
+}
 
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
@@ -191,12 +214,6 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       this.activeUpdateNudgeId = null
       this.userInitiatedCheck = true
       this.sendStatus({ state: 'checking', userInitiated: true })
-
-      const updater = this.getAutoUpdater()
-      // Why: an intentional jump to an older tag must not be filtered out as "not newer".
-      updater.allowDowngrade = true
-      updater.disableDifferentialDownload = true
-      updater.allowPrerelease = true
       if (source.id !== runningSource) {
         recordUpdaterLifecycle('cross_source_install_requested', {
           from: runningSource,
@@ -205,12 +222,42 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
           autoDownload: target.autoDownload
         })
       }
+      // Why before the probe: a background check still in preflight is superseded now, so it cannot
+      // pin its own feed while this one is off reading the manifest.
+      const attemptId = this.beginUpdateCheckAttempt()
+      // Why: the picker's version came from a title, and a tag's `latest*.yml` is whatever was
+      // uploaded under it; only the manifest says what electron-updater would install.
+      const verdict = await verifyReleaseTagManifest(resolved.tag, resolved.version, source)
+      if (!this.isActiveUpdateCheckAttempt(attemptId)) {
+        return
+      }
+      if (verdict.kind !== 'ready') {
+        recordUpdaterLifecycle(
+          'pinned_build_refused',
+          {
+            source: source.id,
+            tag: resolved.tag,
+            version: resolved.version,
+            verdict: verdict.kind,
+            ...(verdict.kind === 'mismatch' ? { manifestVersion: verdict.manifestVersion } : {})
+          },
+          { level: 'warn' }
+        )
+        throw new Error(
+          describeRefusedPinnedManifest(verdict, resolved.tag, resolved.version, source)
+        )
+      }
+
+      const updater = this.getAutoUpdater()
+      // Why: an intentional jump to an older tag must not be filtered out as "not newer".
+      updater.allowDowngrade = true
+      updater.disableDifferentialDownload = true
+      updater.allowPrerelease = true
       console.info(
         `[updater] pinned to ${source.id} ${channel} build ${resolved.tag} → ${resolved.feedUrl}`
       )
       updater.setFeedURL({ provider: 'generic', url: resolved.feedUrl })
       this.availableReleaseUrl = resolved.feedUrl
-      const attemptId = this.beginUpdateCheckAttempt()
       this.markUpdateCheckLaunched(attemptId)
       await updater.checkForUpdates()
       this.handleSettledUpdateCheckPromise(attemptId)

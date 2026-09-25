@@ -6,8 +6,15 @@ import {
   setReleaseSourcesLiteralForTest
 } from '../shared/release-sources.fixture'
 
-const { appMock, autoUpdaterMock, fetchNewerReleaseTagsMock, moduleFactories, resetUpdaterMocks } =
-  await vi.hoisted(async () => (await import('./updater-test-harness')).createUpdaterMocks())
+const {
+  appMock,
+  autoUpdaterMock,
+  fetchNewerReleaseTagsMock,
+  moduleFactories,
+  recordUpdaterLifecycleMock,
+  resetUpdaterMocks,
+  verifyReleaseTagManifestMock
+} = await vi.hoisted(async () => (await import('./updater-test-harness')).createUpdaterMocks())
 
 vi.mock('electron', () => moduleFactories.electron())
 vi.mock('electron-updater', () => moduleFactories.electronUpdater())
@@ -364,6 +371,117 @@ describe('updater cross-source install', () => {
       platformSpy.mockRestore()
     }
   })
+
+  // Why: a version no configured source owns has no feed of its own. Reading the primary's instead
+  // would offer upstream's release over the fork build on every startup, wake, and menu check.
+  it('never reads a feed for a routine check when no configured source owns the running build', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const runningVersion = '1.4.197-nightly.202609241530'
+      asMultiSourceBuild(runningVersion)
+      const { mainWindow, send } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdates, checkForUpdatesFromMenu } =
+        await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+      autoUpdaterMock.setFeedURL.mockClear()
+
+      checkForUpdates()
+      await vi.waitFor(() => {
+        expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+          'routine_check_skipped_unknown_source',
+          { current: runningVersion, variant: 'default' },
+          expect.objectContaining({ level: 'warn' })
+        )
+      })
+      checkForUpdatesFromMenu()
+      await vi.waitFor(() => {
+        expect(send).toHaveBeenCalledWith('updater:status', {
+          state: 'not-available',
+          userInitiated: true
+        })
+      })
+      expect(fetchNewerReleaseTagsMock).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+
+      // An explicit pinned jump still crosses: the dev named the source and the tag.
+      checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.4.197', source: 'upstream' })
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197'
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: the picker's version comes from a release title, and a tag's `latest*.yml` is whatever was
+  // uploaded under it; the manifest alone says what electron-updater would install.
+  it.each([
+    [
+      { kind: 'mismatch', manifestVersion: '1.4.197' },
+      `advertises ${FORK_VERSION}, but its update manifest installs 1.4.197`
+    ],
+    [{ kind: 'not-ready' }, 'has no installable build for this platform yet'],
+    [{ kind: 'unavailable' }, 'Could not read the SwapLabs release']
+  ] as const)(
+    'refuses a pinned build whose manifest does not prove the advertised version (%o)',
+    async (verdict, messagePart) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+      try {
+        asMultiSourceBuild('1.4.197')
+        verifyReleaseTagManifestMock.mockResolvedValue(verdict)
+        const { mainWindow, send } = createUpdaterMainWindowFake()
+        const { setupAutoUpdater, checkForUpdates, checkForUpdatesFromMenu } =
+          await loadUpdaterModule()
+        setupAutoUpdater(mainWindow, {
+          getLastUpdateCheckAt: () => Date.now()
+        })
+        autoUpdaterMock.setFeedURL.mockClear()
+
+        checkForUpdatesFromMenu({ ...toSwapLabs, autoDownload: true })
+
+        await vi.waitFor(() => {
+          expect(send).toHaveBeenCalledWith('updater:status', {
+            state: 'error',
+            message: expect.stringContaining(messagePart),
+            userInitiated: true,
+            releaseSource: 'swaplabs'
+          })
+        })
+        expect(verifyReleaseTagManifestMock).toHaveBeenCalledWith(
+          FORK_TAG,
+          FORK_VERSION,
+          expect.objectContaining({ id: 'swaplabs' })
+        )
+        expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+          'pinned_build_refused',
+          expect.objectContaining({ source: 'swaplabs', tag: FORK_TAG, verdict: verdict.kind }),
+          { level: 'warn' }
+        )
+        expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+        expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+        expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled()
+        expect(autoUpdaterMock.allowDowngrade).toBe(false)
+
+        // The running source's routine checks are back.
+        checkForUpdates()
+        await vi.waitFor(() => {
+          expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+        })
+        expect(fetchNewerReleaseTagsMock).toHaveBeenLastCalledWith('1.4.197', 1, {
+          includePrerelease: false
+        })
+      } finally {
+        platformSpy.mockRestore()
+      }
+    }
+  )
 
   it('rejects an unknown release source and a dev channel on a non-primary source', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')

@@ -123,12 +123,15 @@ describe('updater', () => {
 
         checkForUpdatesFromMenu({ channel, targetTag })
 
+        // Why waitFor: the jump reads the tag's manifest before it pins.
+        await vi.waitFor(() => {
+          expect(autoUpdaterMock.allowDowngrade).toBe(true)
+        })
         expect(send).not.toHaveBeenCalledWith('updater:status', {
           state: 'error',
           message: expect.stringContaining('Download the installer'),
           userInitiated: true
         })
-        expect(autoUpdaterMock.allowDowngrade).toBe(true)
       } finally {
         platformSpy.mockRestore()
       }

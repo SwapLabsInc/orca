@@ -4,9 +4,10 @@ import {
   getReleaseDownloadUrl
 } from '../updater-prerelease-feed'
 import { isMissingUpdateManifestFailure, isPrereleaseVersion } from '../updater-fallback'
+import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
-import { getReleaseSourceOrPrimary } from '../../shared/release-sources'
-import type { CheckFailureSource } from './updater-state'
+import { getReleaseSourceOrPrimary, isMultiSourceBuild } from '../../shared/release-sources'
+import type { CheckFailureSource, ReleaseFeedPreflightResult } from './updater-state'
 import type { UpdateCheckVariant } from './updater-types'
 import { ReleaseFeedPreflightError } from './updater-state'
 import { UpdaterInstallExecution } from './updater-install-execution'
@@ -121,12 +122,28 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
   protected async pinDefaultReleaseFeed(
     variant: UpdateCheckVariant = 'default',
     attemptId?: number
-  ): Promise<'ready' | 'not-available' | 'superseded'> {
+  ): Promise<ReleaseFeedPreflightResult> {
     const autoUpdater = this.getAutoUpdater()
     // Why: the latest/download redirect can move between check and download, so pin the concrete tag (prerelease users resolve any channel, stable only stable).
     const currentVersion = app.getVersion()
+    const runningSource = this.getRunningReleaseSource()
+    if (runningSource === null && isMultiSourceBuild()) {
+      // Why not the primary: no configured source owns this build, so no feed is its own, and the
+      // primary's would offer upstream's release over it. Only an explicit pinned jump may cross.
+      this.clearPrereleaseFallbackContext()
+      this.clearPublishingWindowLastGoodCheck()
+      recordUpdaterLifecycle(
+        'routine_check_skipped_unknown_source',
+        { current: currentVersion, variant },
+        {
+          level: 'warn',
+          message: `routine ${variant} check skipped: no configured release source owns ${currentVersion}`
+        }
+      )
+      return 'not-available'
+    }
     // Why sticky: routine checks only ever read the running build's own source, so a fork build is never offered upstream's newer semver.
-    const source = getReleaseSourceOrPrimary(this.getRunningReleaseSource())
+    const source = getReleaseSourceOrPrimary(runningSource)
     const isPrimarySource = source.prereleaseIdentifier === null
     // Why: perf builds and the rc series exist only in the primary source; elsewhere every build is a prerelease.
     const isPerfCheck = variant === 'perf' && isPrimarySource

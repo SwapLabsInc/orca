@@ -57,6 +57,36 @@ function manifestNamesAdvertisedVersion(
   )
 }
 
+/** What a tag's manifest proves about the build advertised as `version`: `mismatch` names another build or source. */
+export type ReleaseTagManifestVerdict =
+  | { kind: 'ready' }
+  | { kind: 'not-ready' }
+  | { kind: 'unavailable' }
+  | { kind: 'mismatch'; manifestVersion: string }
+
+function judgeManifestProbe(
+  probe: ReleaseManifestProbe,
+  version: string,
+  source: ReleaseSource
+): ReleaseTagManifestVerdict {
+  if (probe.version !== null && !manifestNamesAdvertisedVersion(probe, version, source)) {
+    return { kind: 'mismatch', manifestVersion: probe.version }
+  }
+  // Why: a manifest that names no version cannot prove which build it installs.
+  return {
+    kind: probe.readiness === 'ready' && probe.version === null ? 'not-ready' : probe.readiness
+  }
+}
+
+/** Reads the manifest published under `tag` and says whether it installs `version` of `source` on this platform. */
+export async function verifyReleaseTagManifest(
+  tag: string,
+  version: string,
+  source: ReleaseSource
+): Promise<ReleaseTagManifestVerdict> {
+  return judgeManifestProbe(await probeReleaseManifest(tag, source), version, source)
+}
+
 const XML_ENTITIES: Record<string, string> = {
   '&amp;': '&',
   '&lt;': '<',
@@ -124,22 +154,18 @@ async function fetchReleaseFeedEntries(source: ReleaseSource): Promise<ReleaseFe
 
 /**
  * Names the entries the tag and title could not, by reading each release's
- * manifest. A source's stamp is its cut time, so its feed lists builds in
- * version order: an untitled entry is probed only while it sits above the
- * newest entry already known to be no newer than the running build, and
- * running the newest build probes nothing. Bounded, since every probe is a
- * network round trip; probes are kept so the readiness pass does not repeat them.
+ * manifest. The feed is in publish order, not version order, so no entry's
+ * position says whether it is newer than the running build: every untitled
+ * entry is a candidate, and the budget takes the most recently published ones.
+ * Bounded, since every probe is a network round trip; probes are kept so the
+ * readiness pass does not repeat them.
  */
 async function resolveVersionsFromManifests(
   entries: ReleaseFeedEntry[],
-  currentVersion: string,
   source: ReleaseSource,
   probes: Map<string, ReleaseManifestProbe>
 ): Promise<ReleaseFeedTag[]> {
-  const notNewerIndex = entries.findIndex(
-    ({ version }) => version !== null && compareVersions(version, currentVersion) <= 0
-  )
-  const unresolved = (notNewerIndex === -1 ? entries : entries.slice(0, notNewerIndex))
+  const unresolved = entries
     .filter((entry) => entry.version === null)
     .slice(0, MAX_MANIFEST_PROBE_CANDIDATES)
   const results = await Promise.all(
@@ -217,7 +243,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
     version ? [{ tag, version }] : []
   )
   if (!isPrimarySource) {
-    tags.push(...(await resolveVersionsFromManifests(entries, currentVersion, source, probes)))
+    tags.push(...(await resolveVersionsFromManifests(entries, source, probes)))
   }
   tags.sort((left, right) => compareVersions(right.version, left.version))
 
@@ -251,17 +277,15 @@ export async function fetchNewerReleaseTagsWithReadiness(
       }))
     )
   ).flatMap(({ tag, version, probe }) => {
-    if (probe.version !== null && !manifestNamesAdvertisedVersion(probe, version, source)) {
+    const verdict = judgeManifestProbe(probe, version, source)
+    if (verdict.kind === 'mismatch') {
       // Why skipped rather than not-ready: the mismatch is a publishing error, not a window that closes.
       console.warn(
-        `[updater] ${source.id} release ${tag} advertises ${version} but its manifest names ${probe.version}; skipped`
+        `[updater] ${source.id} release ${tag} advertises ${version} but its manifest names ${verdict.manifestVersion}; skipped`
       )
       return []
     }
-    // Why: a manifest that names no version cannot prove which build it installs.
-    const readiness =
-      probe.readiness === 'ready' && probe.version === null ? 'not-ready' : probe.readiness
-    return [{ tag, version, readiness }]
+    return [{ tag, version, readiness: verdict.kind }]
   })
   // Why no-newer rather than not-ready: a skipped release never becomes installable, so nothing is
   // gained by pinning the last-good tag and retrying at the publishing-window cadence.

@@ -20,7 +20,8 @@ export const UPDATE_CHECK_STALL_TIMEOUT_MS = 45_000
 export type CheckFailureSource = 'event' | 'promise' | 'fallback-promise'
 export type MissingManifestPrereleaseFallbackResult = { userInitiated: boolean }
 export type ReleaseFeedPreflightFailure = 'manifest-unavailable' | 'release-not-ready'
-export type ReleaseFeedPreflightResult = 'ready' | 'not-available'
+/** `superseded`: another check took the attempt over mid-preflight, so the feed was left alone. */
+export type ReleaseFeedPreflightResult = 'ready' | 'not-available' | 'superseded'
 export type UpdateInstallMode =
   | 'interactive'
   | 'supervised-headless-serve'

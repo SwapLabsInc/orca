@@ -1,10 +1,13 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
+import { mapWithConcurrency } from '../shared/map-with-concurrency'
 import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
 import { isValidVersion } from './updater-fallback'
 import { getReleaseDownloadUrl, getReleaseDownloadUrlPattern } from './updater-release-urls'
 
 const FETCH_TIMEOUT_MS = 5000
+// Why: a check probes up to six manifests at once, each naming several assets; unbounded HEADs multiply.
+const MAX_ASSET_PROBE_CONCURRENCY = 4
 
 export type ReleaseReadiness = 'ready' | 'not-ready' | 'unavailable'
 
@@ -164,8 +167,10 @@ export async function probeReleaseManifest(
     if (assetNames.length === 0) {
       return { readiness: 'not-ready', version }
     }
-    const assetResults = await Promise.all(
-      assetNames.map((assetName) => getReleaseAssetReadiness(tag, assetName, source))
+    const assetResults = await mapWithConcurrency(
+      assetNames,
+      MAX_ASSET_PROBE_CONCURRENCY,
+      (assetName) => getReleaseAssetReadiness(tag, assetName, source)
     )
     const readiness = assetResults.includes('not-ready')
       ? 'not-ready'
