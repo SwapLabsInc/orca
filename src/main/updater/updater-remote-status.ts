@@ -50,13 +50,15 @@ export abstract class UpdaterRemoteStatus extends UpdaterNudge {
   }
 
   protected getRemoteServerUpdaterSnapshot(runtimeId: string): RemoteServerUpdaterSnapshot {
+    // Why only multi-source builds: a single-source host's wire stays byte-identical to today's.
+    // An unrecognised version stays absent too, so a client places it by its own rules.
+    const releaseSource = isMultiSourceBuild() ? this.getRunningReleaseSource() : null
     return {
       appVersion: app.getVersion(),
       runtimeId,
       support: this.getRemoteServerUpdateSupport(),
       status: this.getUpdateStatus(),
-      // Why only multi-source builds: a single-source host's wire stays byte-identical to today's.
-      ...(isMultiSourceBuild() ? { releaseSource: this.getRunningReleaseSource() } : {})
+      ...(releaseSource ? { releaseSource } : {})
     }
   }
 

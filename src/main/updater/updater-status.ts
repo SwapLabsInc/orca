@@ -3,7 +3,6 @@ import { loadElectronAutoUpdater, type ElectronAutoUpdater } from '../electron-u
 import { statusesEqual } from '../updater-fallback'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
 import {
-  PRIMARY_RELEASE_SOURCE,
   getVersionReleaseSource,
   isMultiSourceBuild,
   type ReleaseSourceId
@@ -32,9 +31,13 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
     }
   }
 
-  /** The source the running build was published from, derived from its version. */
-  protected getRunningReleaseSource(): ReleaseSourceId {
-    return getVersionReleaseSource(app.getVersion()) ?? PRIMARY_RELEASE_SOURCE.id
+  /**
+   * The source the running build was published from, derived from its version. Null when no
+   * configured source owns it: the wire then says nothing rather than "upstream", and the
+   * manual-install gate treats it as different from every target.
+   */
+  protected getRunningReleaseSource(): ReleaseSourceId | null {
+    return getVersionReleaseSource(app.getVersion())
   }
 
   /**

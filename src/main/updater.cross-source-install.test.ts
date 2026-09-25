@@ -336,6 +336,35 @@ describe('updater cross-source install', () => {
     }
   )
 
+  // Why: a version no configured source owns stays unknown — the wire says nothing, and macOS
+  // refuses the jump — rather than reading the build as an outdated upstream one.
+  it('keeps an unrecognised running version unknown on the wire and in the macOS gate', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      asMultiSourceBuild('1.4.197-nightly.202609241530')
+      const { mainWindow, send } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdatesFromMenu, getRemoteServerUpdaterSnapshot } =
+        await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      expect(getRemoteServerUpdaterSnapshot('runtime-1')).not.toHaveProperty('releaseSource')
+
+      checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.4.197', source: 'upstream' })
+      expect(send).toHaveBeenCalledWith('updater:status', {
+        state: 'error',
+        message: expect.stringContaining('install it by hand'),
+        userInitiated: true,
+        releaseSource: 'upstream',
+        manualInstallUrl: 'https://github.com/stablyai/orca/releases/tag/v1.4.197'
+      })
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
   it('rejects an unknown release source and a dev channel on a non-primary source', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     try {
