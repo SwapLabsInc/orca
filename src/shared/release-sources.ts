@@ -220,7 +220,8 @@ export function getVersionReleaseSource(version: string): ReleaseSourceId | null
   const identifier = readSourceIdentifier(version)
   const source = RELEASE_SOURCES.find(
     (candidate) =>
-      candidate.prereleaseIdentifier !== null && candidate.prereleaseIdentifier === identifier
+      candidate.prereleaseIdentifier !== null &&
+      candidate.prereleaseIdentifier.toLowerCase() === identifier?.toLowerCase()
   )
   return source?.id ?? PRIMARY_RELEASE_SOURCE.id
 }
@@ -236,6 +237,7 @@ export function getReleaseSourceVersionPattern(source: ReleaseSource): RegExp | 
   }
   const identifier = escapeRegex(source.prereleaseIdentifier)
   return new RegExp(
-    `^\\d+\\.\\d+\\.\\d+(?:-rc\\.\\d+\\.|-)${identifier}\\.(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(?:\\.[0-9A-Za-z-]+)*$`
+    `^\\d+\\.\\d+\\.\\d+(?:-rc\\.\\d+\\.|-)${identifier}\\.(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(?:\\.[0-9A-Za-z-]+)*$`,
+    'i'
   )
 }

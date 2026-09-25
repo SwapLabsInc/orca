@@ -162,6 +162,8 @@ describe('release source registry', () => {
     // A fork build cut before stamps landed still belongs to its source.
     expect(getVersionReleaseSource('1.4.204-swaplabs.resume.1')).toBe('swaplabs')
     expect(getVersionReleaseSource('1.4.197-swaplabsx.202609241530')).toBe('upstream')
+    // Identifiers are case-insensitive identity everywhere else in the registry.
+    expect(getVersionReleaseSource('1.4.197-SwapLabs.202609241530')).toBe('swaplabs')
     expect(getVersionReleaseSource('garbage')).toBeNull()
   })
 

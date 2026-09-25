@@ -11,7 +11,11 @@ import {
   type ReleaseBuild,
   type ReleaseChannel
 } from '../../shared/release-channel'
-import { getReleaseSource, getReleaseSourceOrPrimary } from '../../shared/release-sources'
+import {
+  getReleaseSource,
+  getReleaseSourceOrPrimary,
+  PRIMARY_RELEASE_SOURCE
+} from '../../shared/release-sources'
 import { compareVersions } from '../updater-fallback'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
@@ -111,9 +115,9 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       this.sendStatus({ state: 'not-available', userInitiated: true })
       return
     }
-    const source = target.source
-      ? getReleaseSource(target.source)
-      : getReleaseSourceOrPrimary(this.getRunningReleaseSource())
+    // Why primary, not the running source: an omitted source must match listBuilds' default, or the
+    // picker on a fork build lists upstream tags and then resolves them against the fork.
+    const source = target.source ? getReleaseSource(target.source) : PRIMARY_RELEASE_SOURCE
     if (!source) {
       this.sendStatus({
         state: 'error',

@@ -92,6 +92,32 @@ describe('updater cross-source install', () => {
     }
   })
 
+  // Why: the dev picker lists the primary source's builds without naming a source, so an omitted
+  // source on install must resolve the same way or every listed tag is looked up on the fork.
+  it('resolves an omitted source to the primary source, as the build list does', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      asMultiSourceBuild(FORK_VERSION)
+      const { mainWindow } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      checkForUpdatesFromMenu({ channel: 'stable', targetTag: 'v1.4.197' })
+
+      await vi.waitFor(() => {
+        expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      })
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca/releases/download/v1.4.197'
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
   it('pins a fork build back to upstream on Linux', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
     try {
