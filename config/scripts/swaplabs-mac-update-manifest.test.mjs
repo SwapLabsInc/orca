@@ -83,6 +83,11 @@ describe('swaplabs update manifest bytes', () => {
 
   it.each([
     ['a bare package version', { version: '1.4.197' }, /SwapLabs build version/],
+    [
+      'a stamped version with a tail semver rejects',
+      { version: `${VERSION}.foo bar` },
+      /SwapLabs build version/
+    ],
     ['an unknown arch', { arch: 'universal' }, /arch must be one of/],
     ['a short commit', { commit: 'abcdef0' }, /12 lowercase hex/],
     ['an uppercase commit', { commit: 'ABCDEF012345' }, /12 lowercase hex/],

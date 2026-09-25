@@ -237,7 +237,9 @@ export function generateSwaplabsSigningMaterial({
     rmSync(keyPath, { force: true })
     rmSync(configPath, { force: true })
   }
-  writePrivate(join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword), `${password}\n`)
+  // Exactly the bytes `security import -P` must receive: a trailing newline would
+  // survive a paste into the Actions UI and make every signed-mode import fail.
+  writePrivate(join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword), password)
   const fingerprint = openssl(['x509', '-in', certPath, '-noout', '-fingerprint', '-sha256'])
     .trim()
     .replace(/^[^=]*=/, '')
@@ -252,7 +254,7 @@ export function formatSetupInstructions({ outDir, publicKey, fingerprint, identi
 
   ${SWAPLABS_SIGNING_FILES.signingKey}   Ed25519 private key (PKCS8 PEM) that signs update manifests
   ${SWAPLABS_SIGNING_FILES.certificate}             self-signed code-signing certificate "${identity}" with its RSA key, valid ${days} days
-  ${SWAPLABS_SIGNING_FILES.certificatePassword}        password of the .p12
+  ${SWAPLABS_SIGNING_FILES.certificatePassword}        password of the .p12, exactly (no trailing newline)
   ${SWAPLABS_SIGNING_FILES.certificatePublic}             the certificate alone (public); SHA-256 fingerprint ${fingerprint}
 
 Create these on ${repo} (Settings → Secrets and variables → Actions), or run:

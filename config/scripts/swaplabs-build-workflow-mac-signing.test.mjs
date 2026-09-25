@@ -173,13 +173,16 @@ describe('swaplabs fork build macOS signing', () => {
     }
   })
 
-  it('uploads DMG, then both zips, then each manifest before its signature, then verifies', () => {
+  it('uploads DMG, then both zips, then each signature before its manifest, then verifies', () => {
     const zips = stepNamed(mac, 'Upload the macOS update zips')
     const manifests = stepNamed(mac, 'Upload the macOS update manifests')
     const verify = stepNamed(mac, 'Verify the macOS assets published')
     expect(zips.if).toBe(SIGNING_GATE)
     expect(manifests.if).toBe(SIGNING_GATE)
-    expect(verify.if).toBeUndefined()
+    // Runs after a failed zip or manifest upload too, so a partial set is
+    // reconciled; skipped when no DMG (so no release) is there to reconcile.
+    expect(stepNamed(mac, 'Upload macOS artifacts').id).toBe('upload_dmg')
+    expect(verify.if).toBe("${{ !cancelled() && steps.upload_dmg.outcome == 'success' }}")
     expect(index('Confirm the release still exists')).toBeLessThan(index('Upload macOS artifacts'))
     expect(index('Upload macOS artifacts')).toBeLessThan(index(zips.name))
     expect(index(zips.name)).toBeLessThan(index(manifests.name))
@@ -195,7 +198,8 @@ describe('swaplabs fork build macOS signing', () => {
     expect(uploads).toEqual(
       MAC_ARCHES.flatMap((arch) => {
         const names = swaplabsMacUpdateAssetNames(arch)
-        return [names.manifest, names.signature].map(
+        // Signature first: a manifest the app can see always has its signature.
+        return [names.signature, names.manifest].map(
           (name) => `gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/${name}`
         )
       })
@@ -267,8 +271,9 @@ describe('swaplabs fork build macOS asset verification', () => {
   ]
   // `gh release view` lists $ASSETS minus what delete-asset removed, and fails
   // once VIEW_CALLS_BEFORE_OUTAGE calls have been made; `gh release download`
-  // copies the fixtures into --dir; delete-asset fails DELETE_FAILURES times
-  // for DELETE_FAILS and records everything it removed.
+  // fails its first DOWNLOAD_FAILURES calls, then copies the fixtures into
+  // --dir; delete-asset fails DELETE_FAILURES times for DELETE_FAILS and
+  // records everything it removed.
   const mock = `gh() {
     case "$*" in
       "release view "*)
@@ -282,6 +287,11 @@ describe('swaplabs fork build macOS asset verification', () => {
         done
         ;;
       "release download "*)
+        echo download >>"$RUNNER_TEMP/download-calls"
+        if [ "$(grep -c download "$RUNNER_TEMP/download-calls")" -le "\${DOWNLOAD_FAILURES:-0}" ]; then
+          echo "HTTP 502: bad gateway" >&2
+          return 1
+        fi
         dir=""
         while [ $# -gt 0 ]; do
           if [ "$1" = "--dir" ]; then dir="$2"; fi
@@ -483,6 +493,61 @@ describe('swaplabs fork build macOS asset verification', () => {
       expect(result.stderr).toContain('HTTP 503')
       expect(result.stdout).toContain('whether they were removed could not be confirmed')
       expect(result.stdout).not.toContain('were removed;')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
+
+  // The upload steps failed before any manifest landed (the verify step now runs
+  // anyway): nothing to remove, and the message must not claim a removal.
+  it('reports that no manifest was attached when the uploads never got that far', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      const result = await check(fixtures, { ASSETS: dmgs.join(' ') })
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stdout).toContain('missing orca-macos-x64.zip')
+      expect(result.stdout).not.toContain('deleted')
+      expect(result.stdout).toContain(
+        'did not verify; none was attached, so the DMGs stay as download-only assets.'
+      )
+      expect(result.stdout).not.toContain('were removed')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
+
+  it('retries a transient download failure and still verifies the assets', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      const result = await check(fixtures, { DOWNLOAD_FAILURES: '1' })
+      expect(result.exitCode, `${result.stdout} ${result.stderr}`).toBe(0)
+      expect(result.stdout).toContain(
+        '::warning::Attempt 1 could not download the macOS update assets of swaplabs-v1.4.197+202609241530 for verification.'
+      )
+      expect(result.stdout).toContain(`Signed macOS update assets verified for ${version}`)
+      expect(result.stdout).not.toContain('deleted')
+    } finally {
+      fixtures.cleanup()
+    }
+  })
+
+  // A check that never ran leaves the manifests as unverified as a check that
+  // failed; the release may already be live.
+  it('removes the manifests when the assets cannot be downloaded for verification', async () => {
+    const fixtures = await signedFixtures()
+    try {
+      const result = await check(fixtures, { DOWNLOAD_FAILURES: '99' })
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stdout).toContain('::warning::Attempt 3 could not download')
+      for (const arch of MAC_ARCHES) {
+        const names = swaplabsMacUpdateAssetNames(arch)
+        expect(result.stdout).toContain(`deleted ${names.manifest}`)
+        expect(result.stdout).toContain(`deleted ${names.signature}`)
+      }
+      expect(result.stdout).toContain(
+        'could not be downloaded from the release for verification and were removed'
+      )
+      expect(result.stdout).not.toContain('did not verify')
     } finally {
       fixtures.cleanup()
     }

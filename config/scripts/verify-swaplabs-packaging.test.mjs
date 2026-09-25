@@ -68,6 +68,15 @@ describe('collectSwaplabsPackagingProblems', () => {
       expect.stringContaining('not a SwapLabs build version'),
       expect.stringContaining('extraMetadata.version')
     ])
+    // A stamped prefix is not enough: the whole version must be semver the updater installs.
+    expect(
+      problems({
+        env: { ORCA_LOCAL_BUILD_VERSION: '1.4.197-swaplabs.202609241530.resume.1+extra' }
+      })
+    ).toEqual([
+      expect.stringContaining('not a SwapLabs build version'),
+      expect.stringContaining('extraMetadata.version')
+    ])
     const config = { ...goodConfig(), extraMetadata: { version: '1.4.197' } }
     expect(problems({ config })).toEqual([expect.stringContaining('ORCA_MAC_* or ORCA_WIN_*')])
   })

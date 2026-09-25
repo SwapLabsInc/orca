@@ -636,6 +636,7 @@ jobs:
       # latest-mac.yml never exists (see the packaging step) so a late upload
       # advertises nothing to electron-updater.
       - name: Upload macOS artifacts
+        id: upload_dmg
         uses: nick-fields/retry@v4
         with:
           timeout_minutes: 20
@@ -648,9 +649,10 @@ jobs:
 
       # Why the zips land before any manifest: the release may already be live
       # (the Linux legs flip it), and a manifest is the updater's promise that
-      # its zip is there. The manifests follow in a separate step, and the
-      # signature after its manifest, so the app never sees a manifest whose
-      # payload is still uploading.
+      # its zip is there. The manifests follow in a separate step, each
+      # signature before its manifest, so the app never sees a manifest whose
+      # payload or signature is still uploading, and a run that dies between
+      # two uploads leaves at most a signature nobody fetches.
       - name: Upload the macOS update zips
         if: steps.signing.outputs.enabled == 'true'
         uses: nick-fields/retry@v4
@@ -671,7 +673,7 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 30
           # One file per call, in order: gh uploads several files concurrently.
-          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json.sig
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
@@ -682,7 +684,14 @@ jobs:
       # removal is confirmed from the release rather than from the delete's exit
       # status: a delete can fail transiently, and a manifest left attached to a
       # live release is exactly what an installed build would fetch.
+      #
+      # Why not the default success condition: an upload step that fails after
+      # some of its files landed leaves a partial set on a possibly live release,
+      # and this step is the only thing that removes it. It still needs the DMG
+      # upload to have succeeded (a release to reconcile, and a leg that got that
+      # far), and never runs on a cancelled job.
       - name: Verify the macOS assets published
+        if: ${{ !cancelled() && steps.upload_dmg.outcome == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -722,16 +731,33 @@ jobs:
             done
           done
           downloads="$RUNNER_TEMP/swaplabs-mac-verify"
+          outcome="did not verify"
           if (( failed == 0 )); then
             mkdir -p "$downloads"
-            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'orca-macos-*.zip' --pattern 'swaplabs-update-mac-*' --dir "$downloads" --clobber
-            for arch in x64 arm64; do
-              node config/scripts/swaplabs-mac-update-manifest.mjs verify \
-                --arch "$arch" --zip "$downloads/orca-macos-$arch.zip" \
-                --manifest "$downloads/swaplabs-update-mac-$arch.json" \
-                --signature "$downloads/swaplabs-update-mac-$arch.json.sig" \
-                --version "$VERSION" --commit "$COMMIT" || failed=1
+            # A download that keeps failing still reaches the reconciliation
+            # below: a manifest this step could not check is as unverified as
+            # one that failed the check.
+            downloaded=0
+            for attempt in 1 2 3; do
+              (( attempt == 1 )) || sleep 10
+              if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'orca-macos-*.zip' --pattern 'swaplabs-update-mac-*' --dir "$downloads" --clobber; then
+                downloaded=1
+                break
+              fi
+              echo "::warning::Attempt $attempt could not download the macOS update assets of $TAG for verification."
             done
+            if (( downloaded )); then
+              for arch in x64 arm64; do
+                node config/scripts/swaplabs-mac-update-manifest.mjs verify \
+                  --arch "$arch" --zip "$downloads/orca-macos-$arch.zip" \
+                  --manifest "$downloads/swaplabs-update-mac-$arch.json" \
+                  --signature "$downloads/swaplabs-update-mac-$arch.json.sig" \
+                  --version "$VERSION" --commit "$COMMIT" || failed=1
+              done
+            else
+              outcome="could not be downloaded from the release for verification"
+              failed=1
+            fi
           fi
           if (( failed )); then
             # Every manifest or signature still attached, in any upload state; a
@@ -742,10 +768,12 @@ jobs:
               grep -E '^swaplabs-update-mac-.*\.json(\.sig)?$' <<<"$names" || true
             }
             live="unknown"
+            attached=0
             for attempt in 1 2 3; do
               (( attempt == 1 )) || sleep 10
               live="$(stray_manifests)" || { live="unknown"; continue; }
               [[ -n "$live" ]] || break
+              attached=1
               for name in $live; do
                 gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes \
                   || echo "::warning::Attempt $attempt could not delete $name from $TAG."
@@ -754,11 +782,13 @@ jobs:
               [[ -n "$live" ]] || break
             done
             if [[ "$live" == "unknown" ]]; then
-              echo "::error::Fork release $TAG: the macOS update manifests did not verify, and whether they were removed could not be confirmed; check the release's assets by hand."
+              echo "::error::Fork release $TAG: the macOS update manifests $outcome, and whether they were removed could not be confirmed; check the release's assets by hand."
             elif [[ -n "$live" ]]; then
-              echo "::error::Fork release $TAG: the macOS update manifests did not verify and could not be removed; still attached: ${live//$'\n'/ }. Delete them by hand before an installed build fetches them."
+              echo "::error::Fork release $TAG: the macOS update manifests $outcome and could not be removed; still attached: ${live//$'\n'/ }. Delete them by hand before an installed build fetches them."
+            elif (( attached )); then
+              echo "::error::Fork release $TAG: the macOS update manifests $outcome and were removed; the DMGs stay as download-only assets."
             else
-              echo "::error::Fork release $TAG: the macOS update manifests did not verify and were removed; the DMGs stay as download-only assets."
+              echo "::error::Fork release $TAG: the macOS update manifests $outcome; none was attached, so the DMGs stay as download-only assets."
             fi
             exit 1
           fi

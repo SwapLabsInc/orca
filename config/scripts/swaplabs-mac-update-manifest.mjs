@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // LOCAL: the SwapLabs macOS update manifest — the pipeline's half of the asset
 // contract the fork's custom macOS updater consumes (plan §13.1). Per release and
-// architecture the mac leg uploads `orca-macos-<arch>.zip`, then this manifest,
-// then its detached Ed25519 signature. The manifest bytes are canonical (fixed
-// key order, no whitespace, no trailing newline) so the signature covers exactly
-// what the app re-reads, and every field is validated at both ends because a
-// manifest is the only thing standing between a GitHub asset and a replaced app.
+// architecture the mac leg uploads `orca-macos-<arch>.zip`, then this manifest's
+// detached Ed25519 signature, then the manifest itself. The manifest bytes are
+// canonical (fixed key order, no whitespace, no trailing newline) so the signature
+// covers exactly what the app re-reads, and every field is validated at both ends
+// because a manifest is the only thing standing between a GitHub asset and a
+// replaced app.
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import {

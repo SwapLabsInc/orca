@@ -12,6 +12,7 @@ import {
   formatSwaplabsBuildStamp,
   formatSwaplabsReleaseName,
   getSwaplabsBuildIdentity,
+  isSwaplabsBuildVersion,
   parseSwaplabsBaseVersion,
   requireSwaplabsDelta
 } from './swaplabs-build-version.mjs'
@@ -228,5 +229,34 @@ describe('swaplabs fork build monotonic versions', () => {
         '1.4.198-swaplabs.202609241500'
       )
     ).toThrow(/does not sort above/)
+  })
+})
+
+describe('isSwaplabsBuildVersion', () => {
+  it('accepts exactly what createSwaplabsBuildVersion emits', () => {
+    for (const [base, delta] of [
+      ['1.4.197', ''],
+      ['1.4.198-rc.1', ''],
+      ['1.4.197', 'resume.1'],
+      ['1.4.198-rc.1', 'hotfix-2']
+    ]) {
+      expect(isSwaplabsBuildVersion(createSwaplabsBuildVersion(base, at, delta))).toBe(true)
+    }
+  })
+
+  // Why: this one check gates packaging and the manifest, so anything the
+  // updater's semver parser would refuse must be refused here first.
+  it.each([
+    ['a bare package version', '1.4.197'],
+    ['a stamp without the fork identifier', '1.4.197-202609241530'],
+    ['a short stamp', '1.4.197-swaplabs.20260924'],
+    ['build metadata in the tail', '1.4.197-swaplabs.202609241530.resume.1+extra'],
+    ['a space in the tail', '1.4.197-swaplabs.202609241530.foo bar'],
+    ['an empty identifier in the tail', '1.4.197-swaplabs.202609241530.resume..1'],
+    ['a trailing dot', '1.4.197-swaplabs.202609241530.'],
+    ['a leading zero in the tail', '1.4.197-swaplabs.202609241530.resume.01'],
+    ['a non-string', undefined]
+  ])('refuses %s', (_name, version) => {
+    expect(isSwaplabsBuildVersion(version)).toBe(false)
   })
 })

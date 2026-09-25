@@ -59,13 +59,14 @@ zip to Squirrel.Mac, which requires the new bundle to satisfy the running app's
 Developer ID designated requirement, and the fork has no Apple credentials. So
 `latest-mac.yml` is never uploaded (the leg packages `--mac dmg` only and the
 verify step fails on one), and the fork's own updater in the app installs from a
-contract of three assets per architecture (`arm64`, `x64`), uploaded in this order:
+contract of three assets per architecture (`arm64`, `x64`), uploaded in this order
+(the manifest last, so one the app can see always has its zip and its signature):
 
 | Asset                                 | Content                                                                                                                                                                                                                                                            |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `orca-macos-<arch>.zip`               | the signed `Orca.app`, zipped with `ditto -c -k --keepParent` so symlinks and the signature survive `ditto -x -k`                                                                                                                                                  |
-| `swaplabs-update-mac-<arch>.json`     | canonical JSON, no whitespace or trailing newline, keys in this order: `schema` (1), `source` (`swaplabs`), `version`, `arch`, `file`, `size`, `sha512` (base64), `bundleId` (`com.stablyai.orca`), `commit` (12 hex), `designatedRequirementSha256`, `releasedAt` |
 | `swaplabs-update-mac-<arch>.json.sig` | base64 Ed25519 signature over the manifest's exact bytes                                                                                                                                                                                                           |
+| `swaplabs-update-mac-<arch>.json`     | canonical JSON, no whitespace or trailing newline, keys in this order: `schema` (1), `source` (`swaplabs`), `version`, `arch`, `file`, `size`, `sha512` (base64), `bundleId` (`com.stablyai.orca`), `commit` (12 hex), `designatedRequirementSha256`, `releasedAt` |
 
 `designatedRequirementSha256` is the SHA-256 of the text after `designated => `
 in `codesign -d -r- Orca.app`, trimmed. It is stable for one certificate and
@@ -79,10 +80,12 @@ the `SWAPLABS_UPDATE_SIGNING_KEY` secret; `verify` re-checks a manifest, its
 signature and its zip against the public key in `ORCA_SWAPLABS_UPDATE_PUBLIC_KEY`,
 the same value the app is compiled with. The mac leg runs `verify` twice: on the
 local files before any upload (a key pair mismatch fails the run, not every user's
-update check) and on the assets downloaded back from the release. If that second
-check fails, both manifests and signatures are deleted from the release before the
-step fails, so a live release never carries a manifest the app would refuse; the
-DMGs stay as download-only assets.
+update check) and on the assets downloaded back from the release. The second check
+also runs when an upload step failed part-way (the release may already be live),
+and retries the download. If it fails, or cannot run because the assets could not
+be downloaded, every manifest and signature still attached is deleted from the
+release before the step fails, so a live release never carries a manifest the app
+would refuse or one this step could not check; the DMGs stay as download-only assets.
 
 In the app bundle, signing is the config's existing path with a different identity:
 the keychain step exports `CSC_NAME` (the certificate's common name, `SwapLabs Orca`)
@@ -143,7 +146,7 @@ printed.
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
 | `SWAPLABS_UPDATE_SIGNING_KEY` | secret   | Ed25519 private key, PKCS8 PEM (`swaplabs-update-signing-key.pem`)                                          |
 | `SWAPLABS_MAC_CERT_P12`       | secret   | base64 of `swaplabs-mac-cert.p12`                                                                           |
-| `SWAPLABS_MAC_CERT_PASSWORD`  | secret   | contents of `swaplabs-mac-cert.password`                                                                    |
+| `SWAPLABS_MAC_CERT_PASSWORD`  | secret   | contents of `swaplabs-mac-cert.password`, exactly (the file has no trailing newline)                        |
 | `SWAPLABS_UPDATE_PUBLIC_KEY`  | variable | raw 32-byte Ed25519 public key, base64; compiled into every fork build as `ORCA_SWAPLABS_UPDATE_PUBLIC_KEY` |
 
 In the run, the `.p12` is imported into a keychain created for the job under

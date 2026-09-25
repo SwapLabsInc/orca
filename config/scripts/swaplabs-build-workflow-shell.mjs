@@ -20,6 +20,10 @@ export const jobs = workflow.jobs
 export const stepNamed = (job, name) => job.steps.find((step) => step.name === name)
 export const stepIndex = (job, name) => job.steps.findIndex((step) => step.name === name)
 
+// The mac leg's steps run under the runner's /bin/bash 3.2; point this at such a
+// binary to run the contract under it instead of the host's bash.
+const BASH = process.env.SWAPLABS_WORKFLOW_BASH || 'bash'
+
 export async function runWorkflowShell(script, { env = {}, mock }) {
   const directory = mkdtempSync(join(tmpdir(), 'swaplabs-workflow-'))
   const output = join(directory, 'output')
@@ -27,7 +31,7 @@ export async function runWorkflowShell(script, { env = {}, mock }) {
   mkdirSync(runnerTemp)
   try {
     const result = await runProcess({
-      program: 'bash',
+      program: BASH,
       args: ['-c', `${mock}\n${script}`],
       env: {
         ...process.env,

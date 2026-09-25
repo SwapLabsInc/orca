@@ -228,9 +228,14 @@ describe('swaplabs mac signing setup', () => {
             parseSwaplabsUpdatePublicKey(publicKey)
           )
         ).toBe(true)
-        expect(result.stdout).not.toContain(
-          readFileSync(join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword), 'utf8').trim()
+        // The file is the secret's exact bytes: `gh secret set < file` trims a
+        // trailing newline, but a paste into the Actions UI does not.
+        const password = readFileSync(
+          join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword),
+          'utf8'
         )
+        expect(password).toMatch(/^[A-Za-z0-9_-]{32}$/)
+        expect(result.stdout).not.toContain(password)
 
         const certificate = spawnSync(
           'openssl',
@@ -262,13 +267,7 @@ describe('swaplabs mac signing setup', () => {
           ],
           {
             encoding: 'utf8',
-            env: {
-              ...process.env,
-              P12_PASSWORD: readFileSync(
-                join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword),
-                'utf8'
-              ).trim()
-            }
+            env: { ...process.env, P12_PASSWORD: password }
           }
         )
         expect(container.status, container.stderr).toBe(0)

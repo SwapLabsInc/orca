@@ -24,23 +24,25 @@ const BUILD_STAMP = /^\d{12}$/
  * express the last rule, and the packaging step rejects the version long after a
  * looser check would have said yes.
  */
-function requirePrereleaseIdentifiers(value, what) {
+function findPrereleaseIdentifierProblem(value, what) {
   for (const identifier of value.split('.')) {
     if (!identifier) {
-      throw new Error(
-        `${what} has an empty dot-separated part (e.g. resume.1): ${JSON.stringify(value)}`
-      )
+      return `${what} has an empty dot-separated part (e.g. resume.1): ${JSON.stringify(value)}`
     }
     if (!PRERELEASE_IDENTIFIER.test(identifier)) {
-      throw new Error(
-        `${what} parts must be alphanumerics and dashes, separated by dots (e.g. resume.1): ${JSON.stringify(value)}`
-      )
+      return `${what} parts must be alphanumerics and dashes, separated by dots (e.g. resume.1): ${JSON.stringify(value)}`
     }
     if (/^0\d/.test(identifier)) {
-      throw new Error(
-        `${what} part ${JSON.stringify(identifier)} is numeric with a leading zero, which semver forbids in a prerelease: ${JSON.stringify(value)}`
-      )
+      return `${what} part ${JSON.stringify(identifier)} is numeric with a leading zero, which semver forbids in a prerelease: ${JSON.stringify(value)}`
     }
+  }
+  return null
+}
+
+function requirePrereleaseIdentifiers(value, what) {
+  const problem = findPrereleaseIdentifierProblem(value, what)
+  if (problem !== null) {
+    throw new Error(problem)
   }
 }
 
@@ -150,11 +152,21 @@ function compareIdentifiers(left, right) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-/** Whether a version carries the fork identifier and minute stamp `createSwaplabsBuildVersion` emits. */
+/**
+ * Whether a version is one `createSwaplabsBuildVersion` could have emitted: semver
+ * whose prerelease carries the fork identifier followed by a minute stamp, with
+ * every identifier legal. Why the whole string is parsed: this gates packaging and
+ * the manifest, so a tail electron-updater's semver parser would refuse (`foo bar`,
+ * `resume.1+extra`, `resume..1`, a leading zero) has to fail here, not at install time.
+ */
 export function isSwaplabsBuildVersion(version) {
-  return new RegExp(
-    `^\\d+\\.\\d+\\.\\d+-(?:[0-9A-Za-z-]+\\.)*${SWAPLABS_PRERELEASE_IDENTIFIER}\\.\\d{12}(?:\\.|$)`
-  ).test(String(version ?? ''))
+  const prerelease = SEMVER.exec(String(version ?? ''))?.[2]
+  if (!prerelease || findPrereleaseIdentifierProblem(prerelease, 'version') !== null) {
+    return false
+  }
+  const identifiers = prerelease.split('.')
+  const marker = identifiers.indexOf(SWAPLABS_PRERELEASE_IDENTIFIER)
+  return marker !== -1 && BUILD_STAMP.test(identifiers[marker + 1] ?? '')
 }
 
 /** SemVer 2.0 precedence, the order electron-updater installs by. */
