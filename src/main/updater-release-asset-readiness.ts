@@ -1,8 +1,12 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
 import { PrioritySemaphore } from '../shared/priority-semaphore'
+import {
+  getMacSelfUpdateManifestName,
+  getMacSelfUpdateSignatureName
+} from '../shared/mac-self-update-assets'
 import { getUpdateManifestName } from '../shared/release-channel'
-import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
+import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
 import { isValidVersion } from './updater-fallback'
 import {
   getReleaseDownloadUrlForRepo,
@@ -50,6 +54,8 @@ type ParsedManifest = {
   version?: unknown
   files?: ManifestAssetEntry[]
   path?: unknown
+  /** LOCAL: the self-update manifest names its one zip here. */
+  file?: unknown
 }
 
 function getManifestAssetNames(parsed: ParsedManifest | null): string[] {
@@ -62,6 +68,9 @@ function getManifestAssetNames(parsed: ParsedManifest | null): string[] {
   }
   if (typeof parsed?.path === 'string' && parsed.path.trim()) {
     names.add(parsed.path.trim())
+  }
+  if (typeof parsed?.file === 'string' && parsed.file.trim()) {
+    names.add(parsed.file.trim())
   }
   return [...names]
 }
@@ -153,14 +162,20 @@ async function getReleaseAssetReadiness(
  * manifests. Pinning to those tags makes download clicks 404.
  *
  * `repo` is the one the tag's feed reads — a dev channel's is not its source's own.
+ * LOCAL: `macSelfUpdateSource` reads that source's per-slice self-update manifest (JSON, which
+ * the YAML parser accepts) and its signature instead of `latest-mac.yml`.
  */
 export async function probeReleaseManifest(
   tag: string,
   repo: string = PRIMARY_RELEASE_SOURCE.repo,
-  assetProbes: AssetProbeBudget = new AssetProbeBudget()
+  assetProbes: AssetProbeBudget = new AssetProbeBudget(),
+  macSelfUpdateSource: ReleaseSource | null = null
 ): Promise<ReleaseManifestProbe> {
   try {
-    const manifestUrl = `${getReleaseDownloadUrlForRepo(repo, tag)}/${getUpdateManifestName(process.platform, process.arch)}`
+    const manifestName = macSelfUpdateSource
+      ? getMacSelfUpdateManifestName(macSelfUpdateSource, process.arch)
+      : getUpdateManifestName(process.platform, process.arch)
+    const manifestUrl = `${getReleaseDownloadUrlForRepo(repo, tag)}/${manifestName}`
     const res = await net.fetch(manifestUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
     if (res.status === 404) {
       return { readiness: 'not-ready', version: null }
@@ -179,6 +194,10 @@ export async function probeReleaseManifest(
     const assetNames = getManifestAssetNames(parsed)
     if (assetNames.length === 0) {
       return { readiness: 'not-ready', version }
+    }
+    if (macSelfUpdateSource) {
+      // Why: the signature is uploaded last, so its presence is what makes the release installable.
+      assetNames.push(getMacSelfUpdateSignatureName(manifestName))
     }
     const assetResults = await Promise.all(
       assetNames.map((assetName) =>

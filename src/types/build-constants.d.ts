@@ -24,3 +24,7 @@ declare const ORCA_DIAGNOSTICS_TOKEN_URL: string | null
 // ORCA_RELEASE_SOURCES (the update-source registry) is declared beside its
 // reader in `src/shared/release-sources.ts`, because the renderer typecheck
 // includes `src/shared` but not this directory.
+//
+// ORCA_SWAPLABS_UPDATE_PUBLIC_KEY (LOCAL: the key SwapLabs macOS builds verify
+// update manifests with) is declared beside its reader in
+// `src/shared/mac-self-update-public-key.ts` for the same reason.

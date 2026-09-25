@@ -27,6 +27,10 @@ import {
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { getReleaseTagPageUrl } from '../updater-release-urls'
+import {
+  getMacSelfUpdateSupport,
+  isMacSelfUpdateActive
+} from './mac-self-update/mac-self-update-activation'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
 
@@ -126,7 +130,8 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   ): Promise<ReleaseSourceStatus[]> {
     return listReleaseSourceStatuses(
       (source, force) => this.releaseBuildCache.list('stable', { force, source: source.id }),
-      options?.force === true
+      options?.force === true,
+      await isMacSelfUpdateActive()
     )
   }
 
@@ -190,11 +195,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       return
     }
     const runningSource = this.getRunningReleaseSource()
+    // Why only await a candidate: the gate stays synchronous everywhere the custom installer cannot apply.
+    const macSelfUpdate = getMacSelfUpdateSupport().supported && (await isMacSelfUpdateActive())
     if (
       requiresManualInstall({
         platform: process.platform,
         running: { source: runningSource, channel: getVersionChannel(app.getVersion()) },
-        target: { source: source.id, channel }
+        target: { source: source.id, channel },
+        macSelfUpdate
       })
     ) {
       if (source.id !== runningSource) {
@@ -275,7 +283,12 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       console.info(
         `[updater] pinned to ${source.id} ${channel} build ${resolved.tag} → ${resolved.feedUrl}`
       )
-      updater.setFeedURL({ provider: 'generic', url: resolved.feedUrl })
+      // Why expectedVersion: an engine that reads the manifest itself must install this tag's build and nothing else.
+      updater.setFeedURL({
+        provider: 'generic',
+        url: resolved.feedUrl,
+        expectedVersion: resolved.version
+      })
       this.availableReleaseUrl = resolved.feedUrl
       this.markUpdateCheckLaunched(attemptId)
       await updater.checkForUpdates()

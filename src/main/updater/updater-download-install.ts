@@ -92,7 +92,7 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
         if (localBuildDownload) {
           this.sendLocalBuildErrorAndRestore(message)
         } else {
-          this.sendErrorStatus(message)
+          this.sendErrorStatus(message, undefined, undefined, err)
         }
       })
   }

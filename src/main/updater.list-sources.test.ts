@@ -111,8 +111,9 @@ describe('updater listReleaseSources', () => {
   })
 
   // Why: the button that names the action must not promise an in-app install that
-  // `checkForPinnedBuild` would refuse with a signature error a moment later.
-  it('reports a manual installer for a cross-source jump on macOS', async () => {
+  // `checkForPinnedBuild` would refuse with a signature error a moment later. LOCAL: without
+  // Orca's own installer, even the fork's own next build is a manual DMG on macOS (D4).
+  it('reports a manual installer for every macOS jump while the self-updater is off', async () => {
     usePlatform('darwin')
     listBuildsBySource()
     const { setupAutoUpdater, listReleaseSources } = await loadUpdaterModule()
@@ -121,7 +122,7 @@ describe('updater listReleaseSources', () => {
     const rows = await listReleaseSources()
     expect(rows.map((row) => [row.id, row.install])).toEqual([
       ['upstream', 'manual-installer'],
-      ['swaplabs', 'in-app']
+      ['swaplabs', 'manual-installer']
     ])
   })
 
