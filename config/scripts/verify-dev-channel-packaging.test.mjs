@@ -64,6 +64,20 @@ describe('electron-builder dev-channel identity', () => {
     })
   })
 
+  it('reports a dev-channel build whose publish owner was overridden', () => {
+    const config = loadConfigWithEnv({ ...WIN_ADHOC_ENV, ORCA_PUBLISH_OWNER: 'SwapLabsInc' })
+
+    expect(config.publish.owner).toBe('SwapLabsInc')
+    expect(
+      collectDevChannelPackagingProblems({
+        channel: 'adhoc',
+        platform: 'win32',
+        config,
+        env: WIN_ADHOC_ENV
+      })
+    ).toEqual([expect.stringContaining('publish.owner is "SwapLabsInc"')])
+  })
+
   it('reports a dev-channel build whose publish repo was overridden', () => {
     const config = loadConfigWithEnv({ ...WIN_ADHOC_ENV, ORCA_PUBLISH_REPO: 'orca' })
 
@@ -136,7 +150,7 @@ describe('electron-builder dev-channel identity', () => {
 
 describe('collectDevChannelPackagingProblems', () => {
   const goodWinConfig = {
-    publish: { repo: 'orca-adhoc', releaseType: 'prerelease' },
+    publish: { owner: 'stablyai', repo: 'orca-adhoc', releaseType: 'prerelease' },
     extraMetadata: { version: '1.4.178-adhoc.20260819010203' },
     win: { verifyUpdateCodeSignature: false }
   }
@@ -155,11 +169,28 @@ describe('collectDevChannelPackagingProblems', () => {
 
   // The failure this script exists for: a branch predating Windows dev builds
   // resolves publish.repo to the main repo.
+  it('rejects a config whose publish owner is not stablyai', () => {
+    const problems = collectDevChannelPackagingProblems({
+      channel: 'adhoc',
+      platform: 'win32',
+      config: {
+        ...goodWinConfig,
+        publish: { owner: 'SwapLabsInc', repo: 'orca-adhoc', releaseType: 'prerelease' }
+      },
+      env
+    })
+
+    expect(problems).toEqual([expect.stringContaining('must publish to "stablyai/orca-adhoc"')])
+  })
+
   it('rejects a config that resolved the main repo', () => {
     const problems = collectDevChannelPackagingProblems({
       channel: 'adhoc',
       platform: 'win32',
-      config: { ...goodWinConfig, publish: { repo: 'orca', releaseType: 'release' } },
+      config: {
+        ...goodWinConfig,
+        publish: { owner: 'stablyai', repo: 'orca', releaseType: 'release' }
+      },
       env
     })
 
@@ -200,7 +231,7 @@ describe('collectDevChannelPackagingProblems', () => {
         channel: 'adhoc',
         platform: 'darwin',
         config: {
-          publish: { repo: 'orca-adhoc', releaseType: 'prerelease' },
+          publish: { owner: 'stablyai', repo: 'orca-adhoc', releaseType: 'prerelease' },
           extraMetadata: { version: '1.4.178-adhoc.20260819010203' },
           win: { signtoolOptions: { publisherName: 'SignPath Foundation' } }
         },
