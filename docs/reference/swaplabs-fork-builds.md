@@ -48,8 +48,9 @@ Releases publish to `https://github.com/SwapLabsInc/orca/releases` with
 4. verifies `latest-linux.yml` and `latest-linux-arm64.yml` are uploaded, carry the
    stamped version and sit next to their AppImages;
 5. flips the draft live as a prerelease and prunes the series to the newest 30;
-6. discards the draft if anything before the flip failed. A macOS failure after
-   the flip leaves the release live without macOS assets.
+6. discards the draft whenever the publish job did not succeed. The macOS leg
+   never gates the flip, so a macOS failure — before or after it — leaves a live
+   release without macOS assets rather than blocking or removing it.
 
 ### Version, tag and title
 
