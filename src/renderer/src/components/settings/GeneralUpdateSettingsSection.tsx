@@ -10,7 +10,70 @@ import { translate } from '@/i18n/i18n'
 import { getUpdateCheckClickOptions, getUpdateCheckHint } from '@/lib/update-check-click-options'
 import { GeneralRemoteServerUpdates } from './GeneralRemoteServerUpdates'
 import { ReleaseChannelSection } from './ReleaseChannelSection'
+import {
+  ReleaseSourceDownloadButtons,
+  ReleaseSourceListErrors,
+  ReleaseSourceUpdateHint,
+  UpdateErrorHint
+} from './ReleaseSourceUpdateControls'
+import { useReleaseSourceStatuses } from './use-release-source-statuses'
 import { getReleaseNotesUrlForVersion } from '../../../../shared/release-channel'
+import {
+  RELEASE_SOURCES,
+  getReleaseSource,
+  getVersionReleaseSource,
+  isMultiSourceBuild
+} from '../../../../shared/release-sources'
+import type { UpdateStatus } from '../../../../shared/update-status-types'
+
+function CheckForUpdatesButton({
+  updateStatus,
+  onCheck
+}: {
+  updateStatus: UpdateStatus
+  onCheck: (event: React.MouseEvent<HTMLButtonElement>) => void
+}): React.JSX.Element {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      // Why: modifier-click channels are power-user update affordances, not
+      // persistent settings toggles.
+      onClick={onCheck}
+      title={getUpdateCheckHint()}
+      disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
+    >
+      {updateStatus.state === 'checking' ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <RefreshCw className="size-3.5" />
+      )}
+      {translate(
+        'auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5',
+        'Check for Updates'
+      )}
+    </Button>
+  )
+}
+
+function RestartToUpdateButton({
+  version,
+  onRestart
+}: {
+  version: string
+  onRestart: () => void
+}): React.JSX.Element {
+  return (
+    <Button variant="default" size="sm" onClick={onRestart}>
+      <Download className="size-3.5" />
+      {translate(
+        'auto.components.settings.GeneralUpdateSettingsSection.f44299636f',
+        'Restart to Update ('
+      )}
+      {version})
+    </Button>
+  )
+}
 
 export function GeneralUpdateSettingsSection(): React.JSX.Element {
   const updateStatus = useAppStore((s) => s.updateStatus)
@@ -30,11 +93,16 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   }
 
   const [appVersion, setAppVersion] = useState<string | null>(null)
-  const updateCheckHint = getUpdateCheckHint()
   // Why: channel switching is a power-user escape hatch that can downgrade the app
   // onto an unvetted build. Option/Alt-clicking the header reveals it rather than
   // shipping it on the default surface.
   const [channelSwitcherRevealed, setChannelSwitcherRevealed] = useState(false)
+  // Why only multi-source builds list sources: an upstream build has one source and keeps
+  // today's row; the read is never issued for it.
+  const multiSource = isMultiSourceBuild()
+  const releaseSources = useReleaseSourceStatuses(multiSource)
+  const runningSource =
+    multiSource && appVersion ? getReleaseSource(getVersionReleaseSource(appVersion) ?? '') : null
 
   useEffect(() => {
     let cancelled = false
@@ -47,6 +115,14 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
       cancelled = true
     }
   }, [])
+
+  const handleCheck = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    void window.api.updater.check(getUpdateCheckClickOptions(event))
+    if (multiSource) {
+      // Why force: the click means "what is out there now", not "what did the cache say five minutes ago".
+      void releaseSources.reload({ force: true })
+    }
+  }
 
   const handleRestartToUpdate = (): void => {
     // Why: quitAndInstall resolves immediately (the actual quit happens in a
@@ -70,11 +146,19 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
             'auto.components.settings.GeneralUpdateSettingsSection.f2b1ccc12a',
             'Updates'
           )}
-          description={translate(
-            'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
-            'Current version: {{value0}}',
-            { value0: appVersion ?? '...' }
-          )}
+          description={
+            runningSource
+              ? translate(
+                  'auto.components.settings.GeneralUpdateSettingsSection.currentVersionWithSource',
+                  'Current version: {{value0}} · {{value1}}',
+                  { value0: appVersion ?? '...', value1: runningSource.label }
+                )
+              : translate(
+                  'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
+                  'Current version: {{value0}}',
+                  { value0: appVersion ?? '...' }
+                )
+          }
         />
       </div>
 
@@ -90,167 +174,176 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
         keywords={['update', 'version', 'release notes', 'download']}
         className="space-y-3"
       >
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            // Why: modifier-click channels are power-user update affordances, not
-            // persistent settings toggles.
-            onClick={(event) => window.api.updater.check(getUpdateCheckClickOptions(event))}
-            title={updateCheckHint}
-            disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
-            className="gap-2"
-          >
-            {updateStatus.state === 'checking' ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-            {translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5',
-              'Check for Updates'
-            )}
-          </Button>
+        {multiSource ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
+            {updateStatus.state === 'downloaded' ? (
+              <RestartToUpdateButton
+                version={updateStatus.version}
+                onRestart={handleRestartToUpdate}
+              />
+            ) : null}
+            <ReleaseSourceDownloadButtons
+              sources={releaseSources.sources}
+              loading={releaseSources.loading}
+              placeholders={RELEASE_SOURCES}
+              runningSourceId={runningSource?.id ?? null}
+              updateStatus={updateStatus}
+              appVersion={appVersion}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
 
-          {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => {
-                void window.api.updater.download().catch((error) => {
-                  toast.error(
-                    translate(
-                      'auto.components.settings.GeneralUpdateSettingsSection.02dc082e70',
-                      'Could not start the update download.'
-                    ),
-                    {
-                      description: String((error as Error)?.message ?? error)
-                    }
-                  )
-                })
-              }}
-              className="gap-2"
-            >
-              <Download className="size-3.5" />
-              {translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.42717918f4',
-                'Download Update ('
-              )}
-              {updateStatus.version})
-            </Button>
-          ) : updateStatus.state === 'downloaded' ? (
-            <Button variant="default" size="sm" onClick={handleRestartToUpdate} className="gap-2">
-              <Download className="size-3.5" />
-              {translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.f44299636f',
-                'Restart to Update ('
-              )}
-              {updateStatus.version})
-            </Button>
-          ) : null}
-        </div>
+            {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  void window.api.updater.download().catch((error) => {
+                    toast.error(
+                      translate(
+                        'auto.components.settings.GeneralUpdateSettingsSection.02dc082e70',
+                        'Could not start the update download.'
+                      ),
+                      {
+                        description: String((error as Error)?.message ?? error)
+                      }
+                    )
+                  })
+                }}
+              >
+                <Download className="size-3.5" />
+                {translate(
+                  'auto.components.settings.GeneralUpdateSettingsSection.42717918f4',
+                  'Download Update ('
+                )}
+                {updateStatus.version})
+              </Button>
+            ) : updateStatus.state === 'downloaded' ? (
+              <RestartToUpdateButton
+                version={updateStatus.version}
+                onRestart={handleRestartToUpdate}
+              />
+            ) : null}
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
-          {updateStatus.state === 'idle' &&
-            translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.d69a09b672',
-              'Updates are checked automatically on launch.'
-            )}
-          {updateStatus.state === 'checking' &&
-            translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.31fd7150cf',
-              'Checking for updates...'
-            )}
-          {updateStatus.state === 'available' && (
-            <>
-              {translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc',
-                'Version'
-              )}{' '}
-              {updateStatus.version}{' '}
-              {updateStatus.externallyManaged
-                ? translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.e3b9d21c07',
-                    'is available. Update Orca through your system package manager — Orca cannot install this release itself.'
-                  )
-                : translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.8311da27ba',
-                    'is available. Click "Download Update" to download it.'
-                  )}{' '}
-              {updateStatus.source !== 'local' && (
-                <a
-                  href={
-                    updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-foreground"
-                >
-                  {translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
-                    'Release notes'
-                  )}
-                </a>
-              )}
-            </>
+          {multiSource ? (
+            <ReleaseSourceUpdateHint
+              runningSourceId={runningSource?.id ?? null}
+              updateStatus={updateStatus}
+              checkFailed={updateVersionRef.current === null}
+            />
+          ) : (
+            <SingleSourceUpdateHint
+              updateStatus={updateStatus}
+              checkFailed={updateVersionRef.current === null}
+            />
           )}
-          {updateStatus.state === 'not-available' &&
-            translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
-              'You’re on the latest version.'
-            )}
-          {updateStatus.state === 'downloading' &&
-            translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',
-              'Downloading v{{value0}}... {{value1}}%',
-              { value0: updateStatus.version, value1: updateStatus.percent }
-            )}
-          {updateStatus.state === 'downloaded' && (
-            <>
-              {translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc',
-                'Version'
-              )}{' '}
-              {updateStatus.version}{' '}
-              {translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
-                'is ready to install.'
-              )}{' '}
-              {updateStatus.source !== 'local' && (
-                <a
-                  href={
-                    updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-foreground"
-                >
-                  {translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
-                    'Release notes'
-                  )}
-                </a>
-              )}
-            </>
-          )}
-          {updateStatus.state === 'error' &&
-            (updateStatus.recovery?.kind === 'linux-package-install'
-              ? updateStatus.message
-              : updateVersionRef.current
-                ? translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.b9ad70c30d',
-                    'Update error. {{value0}}',
-                    { value0: updateStatus.message }
-                  )
-                : translate(
-                    'auto.components.settings.GeneralUpdateSettingsSection.bd79d412f0',
-                    'Update check failed. {{value0}}',
-                    { value0: updateStatus.message }
-                  ))}
         </p>
+        {multiSource ? (
+          <ReleaseSourceListErrors sources={releaseSources.sources} error={releaseSources.error} />
+        ) : null}
       </SearchableSetting>
       {channelSwitcherRevealed ? <ReleaseChannelSection /> : null}
       <GeneralRemoteServerUpdates />
     </section>
+  )
+}
+
+/** Today's single-source hint copy, unchanged apart from the download link on a refused jump. */
+function SingleSourceUpdateHint({
+  updateStatus,
+  checkFailed
+}: {
+  updateStatus: UpdateStatus
+  checkFailed: boolean
+}): React.JSX.Element {
+  return (
+    <>
+      {updateStatus.state === 'idle' &&
+        translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.d69a09b672',
+          'Updates are checked automatically on launch.'
+        )}
+      {updateStatus.state === 'checking' &&
+        translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.31fd7150cf',
+          'Checking for updates...'
+        )}
+      {updateStatus.state === 'available' && (
+        <>
+          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
+          {updateStatus.version}{' '}
+          {updateStatus.externallyManaged
+            ? translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.e3b9d21c07',
+                'is available. Update Orca through your system package manager — Orca cannot install this release itself.'
+              )
+            : translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.8311da27ba',
+                'is available. Click "Download Update" to download it.'
+              )}{' '}
+          {updateStatus.source !== 'local' && (
+            <a
+              href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              {translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
+                'Release notes'
+              )}
+            </a>
+          )}
+        </>
+      )}
+      {updateStatus.state === 'not-available' &&
+        translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
+          'You’re on the latest version.'
+        )}
+      {updateStatus.state === 'downloading' &&
+        translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',
+          'Downloading v{{value0}}... {{value1}}%',
+          { value0: updateStatus.version, value1: updateStatus.percent }
+        )}
+      {updateStatus.state === 'downloaded' && (
+        <>
+          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
+          {updateStatus.version}{' '}
+          {translate(
+            'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
+            'is ready to install.'
+          )}{' '}
+          {updateStatus.source !== 'local' && (
+            <a
+              href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              {translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
+                'Release notes'
+              )}
+            </a>
+          )}
+        </>
+      )}
+      {updateStatus.state === 'error' && (
+        <UpdateErrorHint
+          message={updateStatus.message}
+          checkFailed={checkFailed}
+          plain={updateStatus.recovery?.kind === 'linux-package-install'}
+          manualInstallUrl={updateStatus.manualInstallUrl ?? null}
+        />
+      )}
+    </>
   )
 }

@@ -17,6 +17,7 @@ import {
   PRIMARY_RELEASE_SOURCE,
   type ReleaseSource
 } from '../../shared/release-sources'
+import type { ReleaseSourceStatus } from '../../shared/update-status-types'
 import { compareVersions } from '../updater-fallback'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import {
@@ -27,6 +28,7 @@ import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { getReleaseTagPageUrl } from '../updater-release-urls'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
+import { listReleaseSourceStatuses } from './updater-release-sources'
 
 /** Why a message per verdict: the dev picked this tag by hand, so the refusal must say what the release actually holds. */
 function describeRefusedPinnedManifest(
@@ -116,6 +118,16 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     options?: ReleaseBuildListOptions
   ): Promise<ReleaseBuild[]> {
     return this.releaseBuildCache.list(channel, options)
+  }
+
+  /** Every configured source with its newest stable build, read through the shared list cache. */
+  protected async listReleaseSources(
+    options?: Pick<ReleaseBuildListOptions, 'force'>
+  ): Promise<ReleaseSourceStatus[]> {
+    return listReleaseSourceStatuses(
+      (source, force) => this.releaseBuildCache.list('stable', { force, source: source.id }),
+      options?.force === true
+    )
   }
 
   /**

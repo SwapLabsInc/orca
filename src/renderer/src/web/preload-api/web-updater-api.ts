@@ -28,6 +28,9 @@ export function createUpdaterApi(): NonNullable<Partial<PreloadApi>['updater']> 
           'Switching builds is only available in the desktop app.'
         )
       }),
+    // Why empty: the section only renders source buttons for the entries it gets back, and the
+    // web client has no desktop build to move between sources.
+    listSources: () => Promise.resolve([]),
     onStatus: () => noopUnsubscribe,
     onClearDismissal: () => noopUnsubscribe
   }

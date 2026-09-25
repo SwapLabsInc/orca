@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import type {
   LinuxPackageInstallInstructions,
+  ReleaseSourceStatus,
   UpdateCheckOptions,
   UpdateStatus
 } from '../shared/update-status-types'
@@ -83,6 +84,12 @@ export async function listAvailableReleaseBuilds(
   options?: ReleaseBuildListOptions
 ): Promise<ReleaseBuild[]> {
   return updater.listAvailableReleaseBuilds(channel, options)
+}
+
+export async function listReleaseSources(
+  options?: Pick<ReleaseBuildListOptions, 'force'>
+): Promise<ReleaseSourceStatus[]> {
+  return updater.listReleaseSources(options)
 }
 
 export function dismissNudge(): void {

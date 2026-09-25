@@ -1,6 +1,7 @@
 import type {
   LinuxPackageInstallInstructions,
   ReleaseBuildListResult,
+  ReleaseSourceStatus,
   UpdateCheckOptions,
   UpdateStatus
 } from '../../shared/update-status-types'
@@ -25,6 +26,9 @@ export type UpdaterApi = {
     channel: ReleaseChannel,
     options?: { force?: boolean; source?: ReleaseSourceId }
   ) => Promise<ReleaseBuildListResult>
+  /** Desktop-only. Every configured release source with its newest build; `force` bypasses the
+   *  main-process list cache, as a "Check for updates" click should. */
+  listSources: (options?: { force?: boolean }) => Promise<ReleaseSourceStatus[]>
 
   onStatus: (callback: (status: UpdateStatus) => void) => () => void
   onClearDismissal: (callback: () => void) => () => void

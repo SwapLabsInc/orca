@@ -117,3 +117,25 @@ export type UpdateStatus = (
 export type ReleaseBuildListResult =
   | { ok: true; channel: ReleaseChannel; builds: ReleaseBuild[] }
   | { ok: false; channel: ReleaseChannel; message: string }
+
+/**
+ * How this install can move to a build of one release source. `in-app` runs the
+ * updater; `manual-installer` means the running build's signature check would
+ * refuse the download (a cross-source jump on macOS or Windows); `externally-managed`
+ * means a Linux package manager owns this copy and Orca never installs anything.
+ */
+export type ReleaseSourceInstallMode = 'in-app' | 'manual-installer' | 'externally-managed'
+
+/** One configured release source and its newest published build for this platform.
+ *  Desktop-only (`updater:listSources`); never crosses the runtime wire. */
+export type ReleaseSourceStatus = {
+  id: ReleaseSourceId
+  label: string
+  /** True for the source the running build was published from. */
+  running: boolean
+  install: ReleaseSourceInstallMode
+  /** Newest build carrying an installable artifact for this platform, or null when none is listed. */
+  latest: ReleaseBuild | null
+  /** Why `latest` is null when the list failed, returned as data so the row can show it. */
+  error: string | null
+}

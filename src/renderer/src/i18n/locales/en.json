@@ -7386,7 +7386,19 @@
           "3394d1f663": "checking",
           "d69a09b672": "Updates are checked automatically on launch.",
           "7173352632": "idle",
-          "e3b9d21c07": "is available. Update Orca through your system package manager — Orca cannot install this release itself."
+          "e3b9d21c07": "is available. Update Orca through your system package manager — Orca cannot install this release itself.",
+          "currentVersionWithSource": "Current version: {{value0}} · {{value1}}",
+          "sourceUpdateFailed": "Could not start the {{value0}} update.",
+          "openDownloadPage": "Open download page ({{value0}})",
+          "downloadFromSource": "Download {{value0}} ({{value1}})",
+          "downloadFromSourcePending": "Download ({{value0}})",
+          "currentSource": "Current source",
+          "idleWithSource": "Updates are checked automatically on launch against the {{value0}} releases.",
+          "checkingSource": "Checking {{value0}} releases...",
+          "latestFromSource": "You’re on the latest {{value0}} build.",
+          "isAvailable": "is available.",
+          "downloadingFromSource": "Downloading v{{value0}} ({{value1}})... {{value2}}%",
+          "openReleasePage": "Open download page"
         },
         "GeneralWorkspaceSettingsSection": {
           "3d538a98f7": "Choose apps available from a workspace's Open in menu.",
