@@ -71,7 +71,7 @@ export function toResponseChunk(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return copy
 }
 
-/** A fake fetch response streaming `chunks`; `arrayBuffer()` returns them joined. */
+/** A fake `net.fetch` response streaming `chunks`. */
 export function createReleaseAssetResponse(
   status: number,
   chunks: readonly Uint8Array[]
@@ -86,8 +86,7 @@ export function createReleaseAssetResponse(
         }
         controller.close()
       }
-    }),
-    arrayBuffer: async () => toResponseChunk(Buffer.concat(chunks)).buffer
+    })
   }
 }
 
@@ -133,7 +132,7 @@ export function createMacSelfUpdateEngineFixture(
   )
 
   const fetchedUrls: string[] = []
-  const fetch: ReleaseAssetFetch = async (url) => {
+  const fetchAsset: ReleaseAssetFetch = async (url) => {
     fetchedUrls.push(url)
     if (url.endsWith('.json')) {
       return respond(options.manifestStatus ?? 200, manifestBytes)
@@ -189,7 +188,7 @@ export function createMacSelfUpdateEngineFixture(
     readRunningBundleSignature: async () => ({
       designatedRequirementSha256: hashDesignatedRequirement(FIXTURE_DR)
     }),
-    fetch,
+    fetchAsset,
     run,
     spawnHelper,
     relaunchProgram: '/usr/bin/open',

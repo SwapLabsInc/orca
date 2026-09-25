@@ -2,17 +2,22 @@ import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 
-/** The slice of a fetch `Response` the installer reads. */
+/** The slice of a `net.fetch` `Response` the installer reads. */
 export type ReleaseAssetResponse = {
   ok: boolean
   status: number
   body: ReadableStream<Uint8Array<ArrayBuffer>> | null
-  arrayBuffer(): Promise<ArrayBuffer>
 }
 
-/** `net.fetch`'s shape, injected so the download is testable without Electron. */
+/**
+ * Electron `net.fetch`'s shape, injected so the download is testable without Electron. The
+ * production value is `net.fetch` (Chromium's stack), never Node's global fetch, whose undici
+ * can take the process down over an unread body (orca#8695).
+ */
 export type ReleaseAssetFetch = (
   url: string,
   init?: { signal?: AbortSignal }
@@ -22,40 +27,76 @@ const SMALL_ASSET_TIMEOUT_MS = 10_000
 /** A stalled transfer is abandoned after this long without a byte; a slow one is not. */
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
 
-/** Fetches a manifest-sized asset whole, refusing anything over `maxBytes`. */
+const describeError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+/** Drops a body nothing will read, so the connection is not held open behind it. */
+async function discardBody(response: ReleaseAssetResponse): Promise<void> {
+  await response.body?.cancel().catch(() => undefined)
+}
+
+/**
+ * Fetches a manifest-sized asset, cutting the transfer off the moment it runs past `maxBytes`,
+ * so an oversized response costs at most one chunk over the limit and is never buffered whole.
+ */
 export async function fetchSmallReleaseAsset(
-  fetch: ReleaseAssetFetch,
+  fetchAsset: ReleaseAssetFetch,
   url: string,
   maxBytes: number
 ): Promise<Buffer> {
   let response: ReleaseAssetResponse
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(SMALL_ASSET_TIMEOUT_MS) })
+    response = await fetchAsset(url, { signal: AbortSignal.timeout(SMALL_ASSET_TIMEOUT_MS) })
   } catch (error) {
     throw new MacSelfUpdateError(
       'manifest-unavailable',
-      `Could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`
+      `Could not reach ${url}: ${describeError(error)}`
     )
   }
   if (!response.ok) {
+    await discardBody(response)
     throw new MacSelfUpdateError(
       'manifest-unavailable',
       `Could not read ${url} (HTTP ${response.status}).`
     )
   }
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.length > maxBytes) {
+  if (!response.body) {
+    return Buffer.alloc(0)
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      received += value.byteLength
+      if (received > maxBytes) {
+        throw new MacSelfUpdateError(
+          'manifest-malformed',
+          `${url} is over the ${maxBytes}-byte limit.`,
+          { retryable: false }
+        )
+      }
+      chunks.push(value)
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined)
+    if (error instanceof MacSelfUpdateError) {
+      throw error
+    }
     throw new MacSelfUpdateError(
-      'manifest-malformed',
-      `${url} is ${bytes.length} bytes, over the ${maxBytes}-byte limit.`,
-      { retryable: false }
+      'manifest-unavailable',
+      `Could not read ${url}: ${describeError(error)}`
     )
   }
-  return bytes
+  return Buffer.concat(chunks)
 }
 
 export type VerifiedDownloadOptions = {
-  fetch: ReleaseAssetFetch
+  fetchAsset: ReleaseAssetFetch
   url: string
   destinationPath: string
   /** Exact byte count the signed manifest promised; the transfer stops as soon as it is exceeded. */
@@ -71,17 +112,20 @@ export type VerifiedDownloadOptions = {
  * and the sha512 match the signed manifest. Any failure removes the partial file.
  */
 export async function downloadVerifiedReleaseZip(options: VerifiedDownloadOptions): Promise<void> {
-  const { fetch, url, destinationPath, size, sha512, onProgress, signal } = options
-  await mkdir(dirname(destinationPath), { recursive: true })
+  const { fetchAsset, url, destinationPath, size, sha512, onProgress, signal } = options
   const controller = new AbortController()
   const abort = (): void => controller.abort()
   signal?.addEventListener('abort', abort, { once: true })
+  let stalled = false
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   const armIdleTimer = (): void => {
     if (idleTimer) {
       clearTimeout(idleTimer)
     }
-    idleTimer = setTimeout(() => controller.abort(), DOWNLOAD_IDLE_TIMEOUT_MS)
+    idleTimer = setTimeout(() => {
+      stalled = true
+      controller.abort()
+    }, DOWNLOAD_IDLE_TIMEOUT_MS)
     idleTimer.unref?.()
   }
   const fail = (reason: MacSelfUpdateError['reason'], message: string): MacSelfUpdateError =>
@@ -94,53 +138,58 @@ export async function downloadVerifiedReleaseZip(options: VerifiedDownloadOption
     armIdleTimer()
     let response: ReleaseAssetResponse
     try {
-      response = await fetch(url, { signal: controller.signal })
+      response = await fetchAsset(url, { signal: controller.signal })
     } catch (error) {
-      throw fail(
-        'download-failed',
-        `Could not download the update: ${error instanceof Error ? error.message : String(error)}`
-      )
+      throw fail('download-failed', `Could not download the update: ${describeError(error)}`)
     }
     if (!response.ok || !response.body) {
+      await discardBody(response)
       throw fail('download-failed', `Could not download the update (HTTP ${response.status}).`)
     }
     const hash = createHash('sha512')
-    const file = createWriteStream(destinationPath, { mode: 0o600 })
     let transferred = 0
     let lastPercent = -1
-    try {
-      const reader = response.body.getReader()
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) {
-          break
-        }
-        if (controller.signal.aborted) {
-          throw fail('download-failed', 'The update download stalled and was abandoned.')
-        }
+    const verify = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
         armIdleTimer()
-        transferred += value.byteLength
+        transferred += chunk.byteLength
         // Why stop here: the manifest fixed the size, so extra bytes can only be a wrong or tampered asset.
         if (transferred > size) {
-          throw fail(
-            'download-size-mismatch',
-            `The downloaded update is larger than the ${size} bytes its manifest promised.`
+          callback(
+            fail(
+              'download-size-mismatch',
+              `The downloaded update is larger than the ${size} bytes its manifest promised.`
+            )
           )
+          return
         }
-        hash.update(value)
-        if (!file.write(value)) {
-          await new Promise<void>((resolve) => file.once('drain', resolve))
-        }
+        hash.update(chunk)
         const percent = Math.floor((transferred / size) * 100)
         if (percent !== lastPercent) {
           lastPercent = percent
           onProgress?.({ percent, transferred, total: size })
         }
+        callback(null, chunk)
       }
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        file.end((error?: Error | null) => (error ? reject(error) : resolve()))
-      })
+    })
+    try {
+      await mkdir(dirname(destinationPath), { recursive: true })
+      // Why pipeline: it owns every stream's error, so a full disk rejects here instead of crashing
+      // the process; tearing the source down cancels the body, which aborts the request.
+      await pipeline(
+        Readable.from(response.body, { objectMode: false }),
+        verify,
+        createWriteStream(destinationPath, { mode: 0o600 }),
+        { signal: controller.signal }
+      )
+    } catch (error) {
+      if (error instanceof MacSelfUpdateError) {
+        throw error
+      }
+      if (stalled) {
+        throw fail('download-failed', 'The update download stalled and was abandoned.')
+      }
+      throw fail('download-failed', `Could not download the update: ${describeError(error)}`)
     }
     if (transferred !== size) {
       throw fail(

@@ -132,7 +132,7 @@ export function createMacSelfUpdateEngineIfSupported(): UpdateEngine | null {
     paths: resolveRunningMacSelfUpdatePaths(),
     getCurrentVersion: () => app.getVersion(),
     readRunningBundleSignature,
-    fetch: (url, init) => net.fetch(url, init),
+    fetchAsset: (url, init) => net.fetch(url, init),
     run: runProcess,
     requestQuit: () => app.quit(),
     getPid: () => process.pid

@@ -13,6 +13,7 @@ const {
   appMock,
   autoUpdaterMock,
   armExitWatchdogMock,
+  chooseLocalBuildMock,
   fetchNewerReleaseTagsMock,
   moduleFactories,
   recordUpdaterLifecycleMock,
@@ -211,6 +212,32 @@ describe('updater with the macOS self-update engine', () => {
       userInitiated: true,
       releaseSource: 'swaplabs'
     })
+  })
+
+  // Why: the loopback feed serves latest-mac.yml, which the engine cannot verify; before the
+  // refusal, the switch failed after the file dialog with a 404 for the signed manifest.
+  it('refuses local-build switching while the engine is active, before any dialog opens', async () => {
+    const { fetchedUrls } = activateEngine()
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
+
+    checkForUpdatesFromMenu({ localBuild: true })
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'updater:status',
+        expect.objectContaining({
+          state: 'error',
+          message: expect.stringContaining('signed with the SwapLabs release identity'),
+          userInitiated: true,
+          source: 'local'
+        })
+      )
+    })
+    expect(chooseLocalBuildMock).not.toHaveBeenCalled()
+    expect(fetchedUrls).toEqual([])
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
   })
 
   it('keeps electron-updater when the engine is not supported', async () => {
