@@ -150,6 +150,13 @@ function compareIdentifiers(left, right) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
+/** Whether a version carries the fork identifier and minute stamp `createSwaplabsBuildVersion` emits. */
+export function isSwaplabsBuildVersion(version) {
+  return new RegExp(
+    `^\\d+\\.\\d+\\.\\d+-(?:[0-9A-Za-z-]+\\.)*${SWAPLABS_PRERELEASE_IDENTIFIER}\\.\\d{12}(?:\\.|$)`
+  ).test(String(version ?? ''))
+}
+
 /** SemVer 2.0 precedence, the order electron-updater installs by. */
 export function compareSwaplabsVersions(left, right) {
   const [a, b] = [left, right].map((version) => {

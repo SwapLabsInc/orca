@@ -11,7 +11,15 @@
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { SWAPLABS_PRERELEASE_IDENTIFIER } from './swaplabs-build-version.mjs'
+import {
+  SWAPLABS_MAC_SIGN_IDENTITY,
+  SWAPLABS_UPDATE_PUBLIC_KEY_ENV,
+  parseSwaplabsUpdatePublicKey
+} from './swaplabs-mac-update-manifest.mjs'
+import {
+  SWAPLABS_PRERELEASE_IDENTIFIER,
+  isSwaplabsBuildVersion
+} from './swaplabs-build-version.mjs'
 
 /** The two sources every SwapLabs build must be compiled with, in the shape the updater parses. */
 export const UPSTREAM_RELEASE_SOURCE = { id: 'upstream', repo: 'stablyai/orca' }
@@ -88,7 +96,7 @@ export function collectSwaplabsPackagingProblems({ config, env, platform = proce
       'ORCA_LOCAL_BUILD_VERSION is unset; the app would report the bare upstream version.'
     )
   } else {
-    if (!new RegExp(`[-.]${SWAPLABS_PRERELEASE_IDENTIFIER}\\.\\d{12}(?:\\.|$)`).test(version)) {
+    if (!isSwaplabsBuildVersion(version)) {
       problems.push(
         `ORCA_LOCAL_BUILD_VERSION "${version}" is not a SwapLabs build version (<base>-${SWAPLABS_PRERELEASE_IDENTIFIER}.<YYYYMMDDHHMM>[.<delta>]).`
       )
@@ -110,17 +118,39 @@ export function collectSwaplabsPackagingProblems({ config, env, platform = proce
     )
   }
 
-  // macOS stays ad-hoc: no Developer ID, no notarization, no forced signing.
+  // The public key the app is compiled with must parse, or the packaged updater
+  // refuses every manifest and nobody notices until a Mac tries to update.
+  if (env[SWAPLABS_UPDATE_PUBLIC_KEY_ENV]) {
+    try {
+      parseSwaplabsUpdatePublicKey(env[SWAPLABS_UPDATE_PUBLIC_KEY_ENV])
+    } catch (error) {
+      problems.push(`${SWAPLABS_UPDATE_PUBLIC_KEY_ENV} is unusable: ${error.message}`)
+    }
+  }
+
+  // macOS signs ad-hoc or with the fork's own certificate: no Developer ID, no
+  // notarization, no forced signing, and never an Apple identity that happens
+  // to sit in the runner's keychain.
   if (platform === 'darwin') {
     if (env.ORCA_MAC_RELEASE === '1' || config.forceCodeSigning) {
       problems.push(
-        'macOS fork builds are ad-hoc; ORCA_MAC_RELEASE and forceCodeSigning must be off.'
+        'macOS fork builds are ad-hoc or SwapLabs-signed; ORCA_MAC_RELEASE and forceCodeSigning must be off.'
       )
     }
     for (const secret of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_TEAM_ID']) {
       if (env[secret]) {
         problems.push(`${secret} is set; the fork build must not carry Apple signing credentials.`)
       }
+    }
+    if (env.CSC_NAME !== undefined && env.CSC_NAME !== SWAPLABS_MAC_SIGN_IDENTITY) {
+      problems.push(
+        `CSC_NAME is ${JSON.stringify(env.CSC_NAME)}; macOS fork builds sign with "${SWAPLABS_MAC_SIGN_IDENTITY}" or ad-hoc, nothing else.`
+      )
+    }
+    if (env.CSC_NAME === SWAPLABS_MAC_SIGN_IDENTITY && !env.CSC_KEYCHAIN) {
+      problems.push(
+        'CSC_KEYCHAIN is unset; the SwapLabs identity lives in the temporary keychain the workflow imports it into.'
+      )
     }
   }
 

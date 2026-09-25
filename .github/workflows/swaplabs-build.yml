@@ -6,8 +6,11 @@ name: SwapLabs Fork Build
 #
 # Deliberately narrow scope, mirroring the upstream dev channels:
 #   - Linux x64 and arm64 are required: the release goes live once both have
-#     verified update manifests. macOS is best-effort, ad-hoc signed and
-#     download-only — no Developer ID, no notarization, no Apple secrets. There
+#     verified update manifests. macOS is best-effort and carries no Apple
+#     credentials: no Developer ID, no notarization. With the fork's own signing
+#     material in place (see build-mac) it is signed with the SwapLabs
+#     certificate and ships a signed update manifest the in-app updater
+#     installs from; without it, it is ad-hoc signed and download-only. There
 #     is no Windows leg.
 #   - No tests, no lint, no e2e. Upstream PR CI already gated every commit the
 #     mirror carries; local changes are reviewed on their fork PR.
@@ -58,6 +61,13 @@ env:
   ORCA_RELEASE_SOURCES: '[{"id":"upstream","label":"Orca upstream","repo":"stablyai/orca","prereleaseIdentifier":null},{"id":"swaplabs","label":"SwapLabs","repo":"SwapLabsInc/orca","prereleaseIdentifier":"swaplabs"}]'
   ORCA_PUBLISH_OWNER: SwapLabsInc
   ORCA_PUBLISH_REPO: orca
+  # Why every leg, and why a variable rather than a secret: the app compiles this
+  # public key in as a define and refuses any macOS update manifest it does not
+  # verify. It is public by nature, and the Linux legs must carry the same value
+  # as the mac leg so one release is one build. Empty when the variable is
+  # unset, which the app treats as "no custom updater" and the mac leg as
+  # "download-only".
+  ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: ${{ vars.SWAPLABS_UPDATE_PUBLIC_KEY }}
 
 jobs:
   # Cheap Linux job that decides whether to build and fixes the identity every
@@ -219,10 +229,13 @@ jobs:
           The deb and rpm packages are installed by your package manager and update
           the same way.
 
-          **macOS builds are unsigned (ad-hoc).** The in-app updater cannot install
-          them: download the DMG, drag Orca over the installed app, and right-click →
-          Open the first time to pass Gatekeeper. macOS assets are best-effort and
-          may be missing from this release.
+          **macOS builds carry no Apple signature** (no Developer ID, not notarized), so
+          a fresh DMG install needs right-click → Open the first time to pass Gatekeeper.
+          When this release carries \`swaplabs-update-mac-<arch>.json\`, the app bundle
+          is signed with the SwapLabs certificate and an installed SwapLabs build
+          updates to it in-app; otherwise the build is ad-hoc signed and download-only:
+          download the DMG and drag Orca over the installed app. macOS assets are
+          best-effort and may be missing from this release.
 
           There is no Windows build in this series."
           echo "tag=$TAG" >>"$GITHUB_OUTPUT"
@@ -404,6 +417,15 @@ jobs:
 
   # Best-effort: nothing downstream waits on this job, and the release goes live
   # without it. A failure here still shows on the run so it is not forgotten.
+  #
+  # Two modes, decided by the first step. Signed: the SwapLabs signing material
+  # (three secrets and one variable, created once with
+  # config/scripts/swaplabs-mac-signing-setup.mjs) is present, so both bundles
+  # are signed with the fork's own self-signed certificate and each arch ships an
+  # update zip plus an Ed25519-signed manifest the in-app updater installs from.
+  # Download-only: anything is missing, so the leg builds today's ad-hoc DMG and
+  # publishes no manifest. Either way the DMG is uploaded and no latest-mac.yml
+  # exists, so electron-updater never tries Squirrel.Mac on a fork build.
   build-mac:
     needs: [preflight, draft]
     runs-on: macos-15
@@ -415,7 +437,37 @@ jobs:
       ORCA_LOCAL_BUILD_VERSION: ${{ needs.preflight.outputs.version }}
       ORCA_BUILD_COMMIT: ${{ needs.preflight.outputs.commit }}
       ORCA_DIAGNOSTICS_TOKEN_URL: https://www.onorca.dev/diagnostics/token
+      # The certificate's common name, as the setup script issues it. The keychain
+      # step refuses any other identity, and it becomes CSC_NAME so electron-builder
+      # and the config's helper signing both use it.
+      SWAPLABS_MAC_SIGN_IDENTITY: SwapLabs Orca
     steps:
+      # Why presence checks in expressions: `!= ''` yields a boolean, so no secret
+      # value reaches this step's environment, and a missing one is named in the
+      # run's annotations rather than discovered as a mysterious signing failure.
+      - name: Decide whether the SwapLabs signing material is available
+        id: signing
+        shell: bash
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.SWAPLABS_UPDATE_SIGNING_KEY != '' }}
+          HAS_CERT: ${{ secrets.SWAPLABS_MAC_CERT_P12 != '' }}
+          HAS_CERT_PASSWORD: ${{ secrets.SWAPLABS_MAC_CERT_PASSWORD != '' }}
+          HAS_PUBLIC_KEY: ${{ vars.SWAPLABS_UPDATE_PUBLIC_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ "$HAS_SIGNING_KEY" == "true" ]] || missing+=("secret SWAPLABS_UPDATE_SIGNING_KEY")
+          [[ "$HAS_CERT" == "true" ]] || missing+=("secret SWAPLABS_MAC_CERT_P12")
+          [[ "$HAS_CERT_PASSWORD" == "true" ]] || missing+=("secret SWAPLABS_MAC_CERT_PASSWORD")
+          [[ "$HAS_PUBLIC_KEY" == "true" ]] || missing+=("variable SWAPLABS_UPDATE_PUBLIC_KEY")
+          if (( ${#missing[@]} > 0 )); then
+            echo "::warning::macOS fork build is ad-hoc signed and download-only: missing ${missing[*]}. Create them with config/scripts/swaplabs-mac-signing-setup.mjs to publish self-updating macOS builds."
+            echo "enabled=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "Signing material present; building signed, self-updating macOS bundles."
+            echo "enabled=true" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -447,6 +499,55 @@ jobs:
           restore-keys: |
             electron-builder-mac-
 
+      # Why a throwaway keychain, like the iOS release: the .p12 is imported into a
+      # keychain that exists only for this job, unlocked with a random password
+      # that is never persisted, and the decoded file is removed as soon as it is
+      # imported. Why the trust step: `security find-identity -v`, which
+      # electron-builder and osx-sign consult, lists an identity only when its
+      # certificate chain is trusted, and a self-signed certificate is its own
+      # root. Trust is scoped to code signing, in the admin domain (headless: the
+      # user domain would prompt), on a VM that is discarded after the job.
+      - name: Import the SwapLabs signing certificate into a temporary keychain
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SWAPLABS_MAC_CERT_P12: ${{ secrets.SWAPLABS_MAC_CERT_P12 }}
+          SWAPLABS_MAC_CERT_PASSWORD: ${{ secrets.SWAPLABS_MAC_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/swaplabs-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24)"
+          cert_p12="$RUNNER_TEMP/swaplabs-mac-cert.p12"
+          cert_pem="$RUNNER_TEMP/swaplabs-mac-cert.pem"
+          printf '%s' "$SWAPLABS_MAC_CERT_P12" | base64 --decode >"$cert_p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert_p12" -P "$SWAPLABS_MAC_CERT_PASSWORD" -t cert -f pkcs12 -k "$keychain" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$cert_p12"
+          # Let codesign use the key without an interactive prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          # In the search list, because the config's helper signing calls codesign by identity name alone.
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          security find-certificate -a -p "$keychain" >"$cert_pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$cert_pem"
+          identities="$(security find-identity -v -p codesigning "$keychain")"
+          echo "$identities"
+          if [[ "$(grep -c "\"$SWAPLABS_MAC_SIGN_IDENTITY\"" <<<"$identities")" != "1" ]]; then
+            echo "::error::Expected exactly one valid code-signing identity named \"$SWAPLABS_MAC_SIGN_IDENTITY\" from SWAPLABS_MAC_CERT_P12; regenerate it with config/scripts/swaplabs-mac-signing-setup.mjs."
+            exit 1
+          fi
+          # CSC_NAME/CSC_KEYCHAIN are what electron-builder's identity lookup and
+          # the config's ORCA_COMPUTER_MACOS_SIGN_IDENTITY ?? CSC_NAME paths read,
+          # so the outer app and every nested helper carry this one identity.
+          {
+            echo "CSC_NAME=$SWAPLABS_MAC_SIGN_IDENTITY"
+            echo "CSC_KEYCHAIN=$keychain"
+            echo "SWAPLABS_SIGNING_KEYCHAIN=$keychain"
+            echo "SWAPLABS_SIGNING_CERT_PEM=$cert_pem"
+          } >>"$GITHUB_ENV"
+
       # Why both CPUs: the mac config packages x64 and arm64 from this arm64
       # runner, so the install must carry both variants of the native optional deps.
       - name: Install dependencies
@@ -459,6 +560,9 @@ jobs:
 
       - uses: ./.github/actions/install-mobile-dependencies
 
+      # After the keychain step on purpose: the script also refuses any CSC_NAME
+      # other than the SwapLabs identity, and a compiled-in public key that
+      # would not parse.
       - name: Verify the fork packaging identity
         run: node config/scripts/verify-swaplabs-packaging.mjs
 
@@ -467,15 +571,54 @@ jobs:
 
       # Why electron-builder directly rather than `pnpm build:mac`: that script
       # computes its own `-local.<ts>.<sha>` version and overwrites
-      # ORCA_LOCAL_BUILD_VERSION. No ORCA_MAC_* switch and no CSC_* secret: the
-      # config then signs ad-hoc exactly as a developer's local build does.
-      - name: Package macOS artifacts (ad-hoc)
+      # ORCA_LOCAL_BUILD_VERSION. No ORCA_MAC_* switch: the config keeps hardened
+      # runtime, notarization and forced signing off, and signs with CSC_NAME when
+      # the keychain step set it, ad-hoc otherwise — exactly as a developer's
+      # local build does. Why `dmg` only: the update zip is produced below with
+      # ditto from the same signed bundle, and electron-builder's zip target
+      # would also write latest-mac.yml, which must never reach the release.
+      - name: Package macOS artifacts
         uses: nick-fields/retry@v4
         with:
           timeout_minutes: 30
           max_attempts: 2
           retry_wait_seconds: 30
-          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac --publish never
+          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac dmg --x64 --arm64 --publish never
+
+      # Per arch: zip the signed bundle the DMG was built from, then write the
+      # manifest (size, sha512, designated-requirement hash) and sign it. The
+      # manifest script refuses an ad-hoc bundle, so a silently unsigned build can
+      # never ship as installable. The local verify runs with the public key the
+      # app was compiled with, before anything is uploaded: a key pair mismatch
+      # fails this run rather than every user's update check.
+      - name: Produce the update zips and signed manifests
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SWAPLABS_UPDATE_SIGNING_KEY: ${{ secrets.SWAPLABS_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          for arch in x64 arm64; do
+            app="dist/mac/Orca.app"
+            [[ "$arch" == "arm64" ]] && app="dist/mac-arm64/Orca.app"
+            if [[ ! -d "$app" ]]; then
+              echo "::error::electron-builder left no $app; the $arch bundle was not packaged."
+              exit 1
+            fi
+            zip="dist/orca-macos-$arch.zip"
+            rm -f "$zip"
+            # Why ditto: the updater extracts with `ditto -x -k`, and the framework
+            # symlinks and the code signature must survive the round trip.
+            ditto -c -k --keepParent "$app" "$zip"
+            node config/scripts/swaplabs-mac-update-manifest.mjs emit \
+              --arch "$arch" --app "$app" --zip "$zip" \
+              --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT" --out-dir dist
+            node config/scripts/swaplabs-mac-update-manifest.mjs verify \
+              --arch "$arch" --zip "$zip" \
+              --manifest "dist/swaplabs-update-mac-$arch.json" \
+              --signature "dist/swaplabs-update-mac-$arch.json.sig" \
+              --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT"
+          done
 
       - name: Confirm the release still exists
         shell: bash
@@ -489,24 +632,61 @@ jobs:
             exit 1
           fi
 
+      # Why DMG only here: it is the manual install path in both modes, and
+      # latest-mac.yml never exists (see the packaging step) so a late upload
+      # advertises nothing to electron-updater.
       - name: Upload macOS artifacts
         uses: nick-fields/retry@v4
         with:
           timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 30
-          # Why DMG only: an ad-hoc build cannot replace an installed app in-app, and latest-mac.yml
-          # would advertise it as installable; without a manifest a late upload offers nothing.
           command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.dmg
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
 
+      # Why the zips land before any manifest: the release may already be live
+      # (the Linux legs flip it), and a manifest is the updater's promise that
+      # its zip is there. The manifests follow in a separate step, and the
+      # signature after its manifest, so the app never sees a manifest whose
+      # payload is still uploading.
+      - name: Upload the macOS update zips
+        if: steps.signing.outputs.enabled == 'true'
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/orca-macos-x64.zip dist/orca-macos-arm64.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+
+      - name: Upload the macOS update manifests
+        if: steps.signing.outputs.enabled == 'true'
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          # One file per call, in order: gh uploads several files concurrently.
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json.sig
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+
+      # Why download again: the check must cover the bytes GitHub serves, not the
+      # local files. A manifest that does not verify is removed from the release
+      # before this step fails, so the updater can never be offered it.
       - name: Verify the macOS assets published
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
         run: |
           set -euo pipefail
           assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
@@ -518,8 +698,63 @@ jobs:
             exit 1
           fi
           if grep -qx 'latest-mac.yml' <<<"$assets"; then
-            echo "::error::Fork release $TAG carries latest-mac.yml; macOS fork builds are download-only."
+            echo "::error::Fork release $TAG carries latest-mac.yml; macOS fork builds never use electron-updater's Squirrel path."
             exit 1
+          fi
+          if [[ "$SIGNING_ENABLED" != "true" ]]; then
+            if grep -qE '^swaplabs-update-mac-.*\.json(\.sig)?$' <<<"$assets"; then
+              echo "::error::Fork release $TAG carries an update manifest although this build is ad-hoc signed and download-only."
+              exit 1
+            fi
+            echo "Download-only macOS assets verified."
+            exit 0
+          fi
+          failed=0
+          for arch in x64 arm64; do
+            for required in "orca-macos-$arch.zip" "swaplabs-update-mac-$arch.json" "swaplabs-update-mac-$arch.json.sig"; do
+              if ! grep -qx "$required" <<<"$assets"; then
+                echo "::error::Fork release $TAG is missing $required."
+                failed=1
+              fi
+            done
+          done
+          downloads="$RUNNER_TEMP/swaplabs-mac-verify"
+          if (( failed == 0 )); then
+            mkdir -p "$downloads"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'orca-macos-*.zip' --pattern 'swaplabs-update-mac-*' --dir "$downloads" --clobber
+            for arch in x64 arm64; do
+              node config/scripts/swaplabs-mac-update-manifest.mjs verify \
+                --arch "$arch" --zip "$downloads/orca-macos-$arch.zip" \
+                --manifest "$downloads/swaplabs-update-mac-$arch.json" \
+                --signature "$downloads/swaplabs-update-mac-$arch.json.sig" \
+                --version "$VERSION" --commit "$COMMIT" || failed=1
+            done
+          fi
+          if (( failed )); then
+            for arch in x64 arm64; do
+              for name in "swaplabs-update-mac-$arch.json" "swaplabs-update-mac-$arch.json.sig"; do
+                gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+              done
+            done
+            echo "::error::Fork release $TAG: the macOS update manifests did not verify and were removed; the DMGs stay as download-only assets."
+            exit 1
+          fi
+          echo "Signed macOS update assets verified for $VERSION."
+
+      # The VM is discarded anyway; this keeps the key and the trust setting from
+      # outliving the step that needed them if that ever changes.
+      - name: Remove the temporary keychain
+        if: always() && steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [[ -n "${SWAPLABS_SIGNING_KEYCHAIN:-}" && -f "$SWAPLABS_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$SWAPLABS_SIGNING_KEYCHAIN" || echo "::warning::Could not delete the temporary keychain."
+          fi
+          if [[ -n "${SWAPLABS_SIGNING_CERT_PEM:-}" && -f "$SWAPLABS_SIGNING_CERT_PEM" ]]; then
+            sudo security remove-trusted-cert -d "$SWAPLABS_SIGNING_CERT_PEM" || echo "::warning::Could not remove the certificate trust setting."
+            sudo security delete-certificate -c "$SWAPLABS_MAC_SIGN_IDENTITY" /Library/Keychains/System.keychain || true
+            rm -f "$SWAPLABS_SIGNING_CERT_PEM"
           fi
 
   # Why a separate job: the flip must wait for both Linux legs and nothing else,

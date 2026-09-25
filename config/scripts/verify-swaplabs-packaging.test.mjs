@@ -84,6 +84,33 @@ describe('collectSwaplabsPackagingProblems', () => {
     ])
   })
 
+  // The signed path: only the fork's own identity, and only from the temporary
+  // keychain the workflow imports it into.
+  it('accepts the SwapLabs identity from a keychain and refuses any other CSC_NAME', () => {
+    const signed = { CSC_NAME: 'SwapLabs Orca', CSC_KEYCHAIN: '/tmp/swaplabs.keychain-db' }
+    expect(problems({ platform: 'darwin', env: signed })).toEqual([])
+    expect(problems({ platform: 'darwin', env: { CSC_NAME: 'SwapLabs Orca' } })).toEqual([
+      expect.stringContaining('CSC_KEYCHAIN is unset')
+    ])
+    expect(
+      problems({ platform: 'darwin', env: { ...signed, CSC_NAME: 'Developer ID Application: X' } })
+    ).toEqual([expect.stringContaining('CSC_NAME is "Developer ID Application: X"')])
+    expect(problems({ platform: 'darwin', env: { ...signed, CSC_NAME: '' } })).toEqual([
+      expect.stringContaining('CSC_NAME is ""')
+    ])
+    // Linux legs never sign; a stray CSC_NAME there is not their problem.
+    expect(problems({ platform: 'linux', env: { CSC_NAME: 'anything' } })).toEqual([])
+  })
+
+  it('checks the compiled-in update public key before the build starts', () => {
+    const publicKey = Buffer.alloc(32, 7).toString('base64')
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: publicKey } })).toEqual([])
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: '' } })).toEqual([])
+    expect(problems({ env: { ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: 'not-a-key' } })).toEqual([
+      expect.stringContaining('ORCA_SWAPLABS_UPDATE_PUBLIC_KEY is unusable')
+    ])
+  })
+
   it('ties the publish env to the fork repository', () => {
     expect(problems({ env: { ORCA_PUBLISH_OWNER: 'stablyai' } })).toEqual([
       expect.stringContaining('ORCA_PUBLISH_OWNER/ORCA_PUBLISH_REPO')
