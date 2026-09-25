@@ -68,6 +68,31 @@ describe('terminal mode reset profiles', () => {
     term.dispose()
   })
 
+  // Why both profiles: after a host restart the daemon appends PROCESS_BOUNDARY_GROUND to the
+  // cold-restore payload and its seed, and the renderer writes POST_REPLAY_MODE_RESET after
+  // replaying that payload. Each on its own must leave the fresh shell's xterm with no mouse
+  // tracking, or every pointer move types `35;x;yM` into the prompt.
+  it.each([
+    ['PROCESS_BOUNDARY_GROUND', PROCESS_BOUNDARY_GROUND],
+    ['POST_REPLAY_MODE_RESET', POST_REPLAY_MODE_RESET]
+  ])('%s disarms the input modes a dead normal-screen program left on', async (_name, reset) => {
+    const term = new Terminal({ allowProposedApi: true })
+    const write = (data: string): Promise<void> =>
+      new Promise((resolve) => term.write(data, resolve))
+    await write('$ claude\r\n\x1b[?1003h\x1b[?1006h\x1b[?1004h\x1b[?2004h\x1b[?1hthinking…')
+    expect(term.modes.mouseTrackingMode).toBe('any')
+    expect(term.modes.sendFocusMode).toBe(true)
+
+    await write(reset)
+    await write('$ ')
+
+    expect(term.modes.mouseTrackingMode).toBe('none')
+    expect(term.modes.sendFocusMode).toBe(false)
+    expect(term.modes.bracketedPasteMode).toBe(false)
+    expect(term.buffer.active.type).toBe('normal')
+    term.dispose()
+  })
+
   // Why: the recovery barrier scans it for ownership, so it may only disable modes.
   it('keeps the process boundary ground free of mode enables and lifecycle markers', () => {
     const privateModes = PROCESS_BOUNDARY_GROUND.split('\x1b[?').slice(1)

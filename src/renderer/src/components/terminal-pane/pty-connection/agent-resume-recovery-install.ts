@@ -197,8 +197,14 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
           return {
             paneHasOwnRecord: Boolean(session.getSleepingRecordForPane(state)),
             paneIsVisible: session.deps.isVisibleRef.current,
-            // The same reading `isUntouchedFreshSpawnPty` uses: any input makes the shell theirs.
-            paneHasReceivedInput: Number.isFinite(session.lastTerminalInputAt)
+            // Keystrokes, IME and paste only: a mouse report, a focus report or an xterm query reply
+            // reaches the shell without the user claiming it (`isUntouchedFreshSpawnPty` still
+            // counts those). Without xterm's provenance signal every accepted write counts.
+            paneHasReceivedInput: Number.isFinite(
+              session.userInputActivityDisposable === null
+                ? session.lastTerminalInputAt
+                : session.lastRealUserInputAt
+            )
           }
         },
         // The pane's own row, from the host-owned status store — never the tab's.

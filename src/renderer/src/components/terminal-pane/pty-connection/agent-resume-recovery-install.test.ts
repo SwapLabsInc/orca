@@ -109,6 +109,9 @@ function buildSession(
     executionHostPlatform: null,
     spawnedFreshPtyId: 'pty-1',
     lastTerminalInputAt: Number.NaN,
+    lastRealUserInputAt: Number.NaN,
+    // xterm's provenance signal is available; `null` is the fallback the gate must read conservatively.
+    userInputActivityDisposable: { dispose: vi.fn() },
     // The tab-wide value the guard must NOT read; the pane-scoped one is what authorizes a resume.
     resolveExpectedLaunchTuiAgent: () => 'claude',
     resolvePaneScopedTuiAgent: () => 'claude',
@@ -421,6 +424,57 @@ describe('visibility lost mid-scan', () => {
     session.deps.isVisibleRef.current = true
     await session.attemptAgentResumeRecovery()
     expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+  })
+})
+
+describe('input that is not the user typing', () => {
+  // The restart this feature exists for leaves the dead agent's mouse tracking armed until the
+  // ground lands, so the first thing a fresh shell receives is often SGR mouse reports. Those,
+  // focus reports and xterm's query replies all make `lastTerminalInputAt` finite; none of them
+  // are the user claiming the shell.
+  it('stays eligible after mouse and focus reports alone, and keeps the attempt unspent', async () => {
+    const session = buildSession('tab-1:leaf-mouse', { lastTerminalInputAt: 12 })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).toHaveBeenCalledOnce()
+    expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()
+  })
+
+  it('still refuses a pane the user typed into, and the refusal stays spent', async () => {
+    const session = buildSession('tab-1:leaf-typed', {
+      lastTerminalInputAt: 12,
+      lastRealUserInputAt: 12
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(session.agentResumeRecoveryAttempted).toBe(true)
+
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+  })
+
+  it('refuses a keystroke that lands while the host is answering', async () => {
+    const session = buildSession('tab-1:leaf-typed-midscan')
+    fetchCandidates.mockImplementationOnce(async () => {
+      session.lastRealUserInputAt = 40
+      return { kind: 'complete', candidates: [makeCandidate()] }
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
+    expect(session.agentResumeRecoveryAttempted).toBe(true)
+  })
+
+  // Without xterm's provenance signal the pane cannot tell a keystroke from a mouse report, so
+  // any accepted write counts: replacing a shell someone is typing in is the one outcome this
+  // path must never produce.
+  it('counts every accepted write when xterm cannot say what was typed', async () => {
+    const session = buildSession('tab-1:leaf-no-provenance', {
+      userInputActivityDisposable: null,
+      lastTerminalInputAt: 12
+    })
+    await session.attemptAgentResumeRecovery()
+    expect(fetchCandidates).not.toHaveBeenCalled()
+    expect(session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
   })
 })
 
