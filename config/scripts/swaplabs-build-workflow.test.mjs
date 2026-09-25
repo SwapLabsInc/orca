@@ -152,6 +152,16 @@ describe('swaplabs fork build identity', () => {
     expect(jobs['build-linux'].env.ORCA_LINUX_ARM64_RELEASE).toContain("matrix.arch == 'arm64'")
   })
 
+  // Why: pnpm's bundled gyp_main.py is not executable on fresh Linux runners, so node-pty's
+  // postinstall fails unless the install already sees an external node-gyp.
+  it('points the Linux install at an external node-gyp before installing', () => {
+    const job = jobs['build-linux']
+    const nodeGyp = stepIndex(job, 'Use external node-gyp')
+    expect(nodeGyp).toBeGreaterThanOrEqual(0)
+    expect(nodeGyp).toBeLessThan(stepIndex(job, 'Install dependencies'))
+    expect(job.steps[nodeGyp].run).toContain('npm_config_node_gyp=')
+  })
+
   // Why --publish never everywhere: the orca-fork-ops tag is not `v<version>`,
   // which is the only tag electron-builder's publisher can upload into.
   it('packages with --publish never and uploads into the draft with gh', () => {
