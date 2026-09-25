@@ -2723,10 +2723,13 @@
     "terminalPane": {
       "AgentResumeChooser": {
         "age": {
+          "days": "{{count}}d older",
           "days_one": "{{count}}d older",
           "days_other": "{{count}}d older",
+          "hours": "{{count}}h older",
           "hours_one": "{{count}}h older",
           "hours_other": "{{count}}h older",
+          "minutes": "{{count}}m older",
           "minutes_one": "{{count}}m older",
           "minutes_other": "{{count}}m older",
           "newest": "newest",
