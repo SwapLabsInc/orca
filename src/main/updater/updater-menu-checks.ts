@@ -2,7 +2,19 @@ import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import type { UpdateCheckOptions } from '../../shared/update-status-types'
 import type { ReleaseChannel } from '../../shared/release-channel'
+import type { ReleaseSourceId } from '../../shared/release-sources'
 import { UpdaterScheduling } from './updater-scheduling'
+
+/** An exact build to pin: a tag in a channel, and for a cross-source jump the source and its listed version. */
+export type PinnedBuildTarget = {
+  channel: ReleaseChannel
+  tag: string
+  /** Null means the running build's own source. */
+  source: ReleaseSourceId | null
+  /** Null means "read it from the tag", which only primary-source tags allow. */
+  version: string | null
+  autoDownload: boolean
+}
 
 /** Handles checks initiated from the desktop menu and modifier-key variants. */
 export abstract class UpdaterMenuChecks extends UpdaterScheduling {
@@ -16,7 +28,13 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
       return
     }
     if (options?.targetTag && options.channel) {
-      void this.checkForPinnedBuild(options.channel, options.targetTag)
+      void this.checkForPinnedBuild({
+        channel: options.channel,
+        tag: options.targetTag,
+        source: options.source ?? null,
+        version: options.targetVersion ?? null,
+        autoDownload: options.autoDownload === true
+      })
       return
     }
     if (this.localBuildSelectionInProgress || this.pinnedBuildSelectionInProgress) {
@@ -66,7 +84,10 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
       this.markUpdateCheckLaunched(attemptId)
       return autoUpdater.checkForUpdates()
     }
-    const run = this.pinDefaultReleaseFeed(checkVariant).then((preflightResult) => {
+    const run = this.pinDefaultReleaseFeed(checkVariant, attemptId).then((preflightResult) => {
+      if (preflightResult === 'superseded') {
+        return false
+      }
       if (preflightResult === 'not-available') {
         if (!this.isActiveUpdateCheckAttempt(attemptId)) {
           return false
@@ -96,5 +117,5 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
   }
 
   protected abstract checkForLocalBuildFromMenu(): Promise<void>
-  protected abstract checkForPinnedBuild(channel: ReleaseChannel, tag: string): Promise<void>
+  protected abstract checkForPinnedBuild(target: PinnedBuildTarget): Promise<void>
 }

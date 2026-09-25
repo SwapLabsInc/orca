@@ -11892,7 +11892,9 @@
           "devChannelUnsupportedAria": "{{value0}} ({{value1}} only)",
           "devChannelUnsupported": "{{value0}} builds are produced only for {{value1}}. Linux stays on Stable or RC.",
           "downloadInstaller": "Download installer",
-          "manualInstallHint": "{{value0}} builds are unsigned on Windows, so the in-app updater cannot install one over a signed build. Run the downloaded installer once — Windows will warn about an unknown publisher — and every later switch, including back to Stable, works from here."
+          "manualInstallHint": "{{value0}} builds are unsigned on Windows, so the in-app updater cannot install one over a signed build. Run the downloaded installer once — Windows will warn about an unknown publisher — and every later switch, including back to Stable, works from here.",
+          "crossSourceInstallHint": "Orca on macOS only installs updates carrying the same code signature as the running app, and {{value0}} builds are signed differently. Download the build and install it by hand — in-app updates work from there on.",
+          "crossSourceInstallHintWindows": "Orca on Windows only installs updates signed by the running build's publisher, and {{value0}} builds are signed differently. Download the installer and run it by hand — in-app updates work from there on."
         },
         "VoiceMicrophoneSetting": {
           "systemDefault": "System default",

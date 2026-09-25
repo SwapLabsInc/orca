@@ -1,6 +1,12 @@
+import { app } from 'electron'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from '../electron-updater-loader'
 import { statusesEqual } from '../updater-fallback'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
+import {
+  getVersionReleaseSource,
+  isMultiSourceBuild,
+  type ReleaseSourceId
+} from '../../shared/release-sources'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterState as BaseUpdaterState } from './updater-state'
 
@@ -25,10 +31,43 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
     }
   }
 
+  /**
+   * The source the running build was published from, derived from its version. Null when no
+   * configured source owns it: the wire then says nothing rather than "upstream", and the
+   * manual-install gate treats it as different from every target.
+   */
+  protected getRunningReleaseSource(): ReleaseSourceId | null {
+    return getVersionReleaseSource(app.getVersion())
+  }
+
+  /**
+   * The source a status refers to, or null when the wire should say nothing:
+   * single-source builds never set it, and a routine result only carries it on
+   * the states a card acts on, so absence always means "the running source".
+   */
+  protected getStatusReleaseSource(state: UpdateStatus['state']): ReleaseSourceId | null {
+    if (!isMultiSourceBuild()) {
+      return null
+    }
+    const running = this.getRunningReleaseSource()
+    const active = this.activeReleaseSource ?? running
+    if (active !== running) {
+      return active
+    }
+    return state === 'available' ||
+      state === 'downloading' ||
+      state === 'downloaded' ||
+      state === 'error'
+      ? active
+      : null
+  }
+
   protected restoreReleaseUpdateSource(): void {
     this.closeLocalBuildFeed()
     this.activeUpdateSource = 'release'
     this.isPinnedBuildActive = false
+    this.activeReleaseSource = null
+    this.pinnedAutoDownloadPending = false
     if (this.autoUpdater) {
       this.autoUpdater.allowDowngrade = false
       this.autoUpdater.disableDifferentialDownload = false
@@ -134,10 +173,12 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
       }
     }
 
-    const sourcedStatus: UpdateStatus =
-      this.activeUpdateSource === 'release'
-        ? status
-        : { ...status, source: this.activeUpdateSource }
+    const releaseSource = status.releaseSource ?? this.getStatusReleaseSource(status.state)
+    const sourcedStatus: UpdateStatus = {
+      ...status,
+      ...(this.activeUpdateSource === 'release' ? {} : { source: this.activeUpdateSource }),
+      ...(releaseSource ? { releaseSource } : {})
+    }
     const decoratedStatus = this.decorateStatusWithActiveNudge(sourcedStatus)
 
     if (this.isUpdateCheckResultState(status.state)) {
@@ -175,10 +216,31 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
     }
     this.currentStatus = decoratedStatus
     this.mainWindowRef?.webContents.send('updater:status', decoratedStatus)
+    this.startPinnedAutoDownloadIfRequested(decoratedStatus)
+  }
+
+  /**
+   * A cross-source install asked to download as soon as its pinned check found the
+   * build. Left pending while the selection is still in progress, since
+   * downloadUpdate() refuses to run then; the selection's finally block retries.
+   */
+  protected startPinnedAutoDownloadIfRequested(status: UpdateStatus): void {
+    if (
+      status.state !== 'available' ||
+      !this.pinnedAutoDownloadPending ||
+      this.pinnedBuildSelectionInProgress
+    ) {
+      return
+    }
+    this.pinnedAutoDownloadPending = false
+    if (this.isPinnedBuildActive) {
+      this.downloadUpdate()
+    }
   }
 
   protected abstract finishActiveUpdateCheckAttempt(): void
   protected abstract isUpdateCheckResultState(state: UpdateStatus['state']): boolean
   protected abstract launchPendingUserInitiatedCheckAfterInFlight(variant: UpdateCheckVariant): void
   protected abstract checkForUpdatesFromMenu(options?: UpdateCheckOptions): void
+  protected abstract downloadUpdate(): void
 }

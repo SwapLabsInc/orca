@@ -10,9 +10,17 @@ import {
   type ReleaseChannel
 } from '../shared/release-channel'
 import { parseRelayRetryAfterMs } from '../shared/relay-retry-after-header'
+import {
+  PRIMARY_RELEASE_SOURCE,
+  getVersionReleaseSource,
+  type ReleaseSource
+} from '../shared/release-sources'
 import { getGhRateLimitBlockedUntilMs, recordGhPrimaryRateLimit } from './git/gh-rate-limit-breaker'
 import { isValidVersion } from './updater-fallback'
 import { rejectReleaseApiToken, resolveReleaseApiToken } from './updater-release-api-token'
+import { getReleaseDownloadUrlForRepo } from './updater-release-urls'
+
+export { getReleaseDownloadUrlForRepo }
 
 const FETCH_TIMEOUT_MS = 8000
 const MAX_LISTED_BUILDS = 100
@@ -98,10 +106,6 @@ function releaseListError(
   return new Error(`Could not list ${channel} builds (HTTP ${res.status}).`)
 }
 
-export function getReleaseDownloadUrlForRepo(repo: string, tag: string): string {
-  return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}`
-}
-
 type GitHubReleaseEntry = {
   tag_name?: unknown
   name?: unknown
@@ -120,18 +124,44 @@ function readAssetNames(assets: unknown): string[] {
     .filter((name): name is string => typeof name === 'string')
 }
 
+/**
+ * The version a release publishes for `source`. Primary tags are `v<version>`;
+ * other sources tag by git label, so the version is read from the title instead.
+ * A version that belongs to a different source is not this source's build.
+ */
+function resolveReleaseVersion(tag: string, name: string, source: ReleaseSource): string | null {
+  const isSourceVersion = (candidate: string): boolean =>
+    isValidVersion(candidate) && getVersionReleaseSource(candidate) === source.id
+  const tagVersion = normalizeTagToVersion(tag)
+  if (isSourceVersion(tagVersion)) {
+    return tagVersion
+  }
+  if (source.prereleaseIdentifier === null) {
+    return null
+  }
+  return (
+    name
+      .split(/[\s•]+/)
+      .map(normalizeTagToVersion)
+      .find(isSourceVersion) ?? null
+  )
+}
+
 function parseReleaseEntry(
   entry: GitHubReleaseEntry,
   repo: string,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture,
+  source: ReleaseSource
 ): ReleaseBuild | null {
   if (typeof entry.tag_name !== 'string' || entry.draft === true) {
     return null
   }
   const tag = entry.tag_name
-  const version = normalizeTagToVersion(tag)
-  const channel = getVersionChannel(version)
-  if (!isValidVersion(version) || !channel) {
+  const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+  const version = resolveReleaseVersion(tag, name, source)
+  const channel = version ? getVersionChannel(version) : null
+  if (!version || !channel) {
     return null
   }
   // Why filter on assets rather than on a per-channel platform table: a release
@@ -142,11 +172,11 @@ function parseReleaseEntry(
   if (!hasInstallableArtifactForPlatform(platform, assetNames)) {
     return null
   }
-  const installerAsset = findInstallerAssetName(platform, assetNames)
+  // Why by arch: the picker's download is installed by hand, so it must be the running slice.
+  const installerAsset = findInstallerAssetName(platform, assetNames, arch)
   // Why null when it merely repeats the tag: GitHub titles an untitled release
   // with its tag name, and hourlies predating the naming change were created that
   // way too. Neither says anything the version beside it does not.
-  const name = typeof entry.name === 'string' ? entry.name.trim() : ''
   return {
     tag,
     version,
@@ -176,9 +206,11 @@ function parseReleaseEntry(
  */
 export async function listReleaseBuilds(
   channel: ReleaseChannel,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
+  arch: NodeJS.Architecture = process.arch
 ): Promise<ReleaseBuild[]> {
-  const repo = getReleaseRepoForChannel(channel)
+  const repo = getReleaseRepoForChannel(channel, source.id)
   // Why: while the gh breaker has the token's core bucket marked spent, an
   // authenticated request is a guaranteed 403 — go straight to the per-IP bucket.
   const credential = await resolveReleaseApiToken()
@@ -211,7 +243,7 @@ export async function listReleaseBuilds(
     throw new Error(`Could not read the ${channel} release list.`)
   }
   const builds = payload
-    .map((entry) => parseReleaseEntry(entry as GitHubReleaseEntry, repo, platform))
+    .map((entry: GitHubReleaseEntry) => parseReleaseEntry(entry, repo, platform, arch, source))
     .filter((build): build is ReleaseBuild => build !== null)
     // Why: the main repo serves both stable and rc, so filter to the asked-for channel.
     .filter((build) => build.channel === channel)
@@ -221,15 +253,28 @@ export async function listReleaseBuilds(
 export type ResolvedTargetBuild = {
   tag: string
   version: string
+  /** The repo the feed reads: a dev channel's own, not the source's main one. */
+  repo: string
   feedUrl: string
 }
 
-/** Resolves a tag the user picked into a pinned generic feed URL. */
-export function resolveTargetBuild(channel: ReleaseChannel, tag: string): ResolvedTargetBuild {
-  const version = normalizeTagToVersion(tag)
-  if (!isValidVersion(version)) {
-    throw new Error(`"${tag}" is not a valid release tag.`)
+/**
+ * Resolves a tag the user picked into a pinned generic feed URL. Non-primary
+ * sources tag by git label, so the picker passes the version it listed; the
+ * primary's tags carry it.
+ */
+export function resolveTargetBuild(
+  channel: ReleaseChannel,
+  tag: string,
+  source: ReleaseSource = PRIMARY_RELEASE_SOURCE,
+  knownVersion: string | null = null
+): ResolvedTargetBuild {
+  const version = knownVersion ?? normalizeTagToVersion(tag)
+  if (!isValidVersion(version) || getVersionReleaseSource(version) !== source.id) {
+    throw new Error(
+      `"${tag}" is not a valid release tag${source.prereleaseIdentifier === null ? '' : ` for ${source.label}`}.`
+    )
   }
-  const repo = getReleaseRepoForChannel(channel)
-  return { tag, version, feedUrl: getReleaseDownloadUrlForRepo(repo, tag) }
+  const repo = getReleaseRepoForChannel(channel, source.id)
+  return { tag, version, repo, feedUrl: getReleaseDownloadUrlForRepo(repo, tag) }
 }

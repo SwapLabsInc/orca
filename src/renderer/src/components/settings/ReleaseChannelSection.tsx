@@ -17,11 +17,12 @@ import {
   hasDedicatedReleaseRepo,
   isChannelSupportedOnPlatform,
   parseDevBuildStamp,
-  requiresManualDevChannelInstall,
+  requiresManualInstall,
   type DedicatedRepoChannel,
   type ReleaseBuild,
   type ReleaseChannel
 } from '../../../../shared/release-channel'
+import { PRIMARY_RELEASE_SOURCE, getVersionReleaseSource } from '../../../../shared/release-sources'
 
 const CHANNEL_DESCRIPTIONS: Record<ReleaseChannel, string> = {
   stable: 'Shipped releases. What everyone else is running.',
@@ -185,15 +186,18 @@ export function ReleaseChannelSection(): React.JSX.Element {
   }
 
   const isRunningBuild = selectedBuild?.version === appVersion
-  // Why a download instead of an update: Windows dev builds are unsigned, and a
-  // signed build verifies every installer it downloads against its own baked-in
-  // publisher name. It is the one jump the in-app updater cannot make — and only
-  // the way in, so once someone is on a dev build every route back works.
-  const needsManualInstall = requiresManualDevChannelInstall({
+  const runningSource = appVersion === null ? null : getVersionReleaseSource(appVersion)
+  // Why a download instead of an update: the same rule the main process refuses by.
+  // Windows dev builds are unsigned, and a signed build verifies every installer it
+  // downloads against its own baked-in publisher name; macOS and Windows install only
+  // a build signed like the running app, so a fork build cannot reach the primary
+  // source's builds — which are the ones this picker lists — through the updater.
+  const needsManualInstall = requiresManualInstall({
     platform,
-    runningChannel,
-    targetChannel: activeChannel
+    running: { source: runningSource, channel: runningChannel },
+    target: { source: PRIMARY_RELEASE_SOURCE.id, channel: activeChannel }
   })
+  const isCrossSourceJump = runningSource !== PRIMARY_RELEASE_SOURCE.id
 
   const handleDownloadInstaller = (build: ReleaseBuild): void => {
     // Falls back to the release page: better to land somewhere with the assets
@@ -369,11 +373,23 @@ export function ReleaseChannelSection(): React.JSX.Element {
           <p className="text-xs text-destructive">{loadError}</p>
         ) : needsManualInstall && selectedBuild ? (
           <p className="text-xs text-muted-foreground">
-            {translate(
-              'auto.components.settings.ReleaseChannelSection.manualInstallHint',
-              '{{value0}} builds are unsigned on Windows, so the in-app updater cannot install one over a signed build. Run the downloaded installer once — Windows will warn about an unknown publisher — and every later switch, including back to Stable, works from here.',
-              { value0: RELEASE_CHANNEL_LABELS[activeChannel] }
-            )}
+            {!isCrossSourceJump
+              ? translate(
+                  'auto.components.settings.ReleaseChannelSection.manualInstallHint',
+                  '{{value0}} builds are unsigned on Windows, so the in-app updater cannot install one over a signed build. Run the downloaded installer once — Windows will warn about an unknown publisher — and every later switch, including back to Stable, works from here.',
+                  { value0: RELEASE_CHANNEL_LABELS[activeChannel] }
+                )
+              : platform === 'darwin'
+                ? translate(
+                    'auto.components.settings.ReleaseChannelSection.crossSourceInstallHint',
+                    'Orca on macOS only installs updates carrying the same code signature as the running app, and {{value0}} builds are signed differently. Download the build and install it by hand — in-app updates work from there on.',
+                    { value0: PRIMARY_RELEASE_SOURCE.label }
+                  )
+                : translate(
+                    'auto.components.settings.ReleaseChannelSection.crossSourceInstallHintWindows',
+                    "Orca on Windows only installs updates signed by the running build's publisher, and {{value0}} builds are signed differently. Download the installer and run it by hand — in-app updates work from there on.",
+                    { value0: PRIMARY_RELEASE_SOURCE.label }
+                  )}
           </p>
         ) : isRunningBuild ? (
           <p className="text-xs text-muted-foreground">

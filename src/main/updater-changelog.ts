@@ -1,5 +1,6 @@
 import { net } from 'electron'
 import type { ChangelogData } from '../shared/update-status-types'
+import { PRIMARY_RELEASE_SOURCE, getVersionReleaseSource } from '../shared/release-sources'
 import { compareVersions } from './updater-fallback'
 
 type ChangelogEntry = {
@@ -42,6 +43,11 @@ export async function fetchChangelog(
   incomingVersion: string,
   localVersion: string
 ): Promise<ChangelogData | null> {
+  // Why: the changelog describes the primary source's releases; a fork build's
+  // highlight would be upstream's, for a version that is not the one on offer.
+  if (getVersionReleaseSource(incomingVersion) !== PRIMARY_RELEASE_SOURCE.id) {
+    return null
+  }
   const res = await net.fetch('https://onorca.dev/whats-new/changelog.json', {
     signal: AbortSignal.timeout(5000)
   })

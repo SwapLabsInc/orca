@@ -65,7 +65,23 @@ describe('ReleaseBuildListCache', () => {
     await cache.list('daily')
     await cache.list('hourly')
 
-    expect(load.mock.calls).toEqual([['hourly'], ['daily']])
+    expect(load.mock.calls).toEqual([
+      ['hourly', 'upstream'],
+      ['daily', 'upstream']
+    ])
+  })
+
+  it('keys by source as well as channel', async () => {
+    const { cache, load } = createCache()
+
+    await cache.list('stable')
+    await cache.list('stable', { source: 'swaplabs' })
+    await cache.list('stable', { source: 'swaplabs' })
+
+    expect(load.mock.calls).toEqual([
+      ['stable', 'upstream'],
+      ['stable', 'swaplabs']
+    ])
   })
 
   it('does not cache a failed load', async () => {

@@ -5,6 +5,7 @@ import type {
   UpdateStatus
 } from '../../shared/update-status-types'
 import type { ReleaseChannel } from '../../shared/release-channel'
+import type { ReleaseSourceId } from '../../shared/release-sources'
 
 export type UpdaterApi = {
   getVersion: () => Promise<string>
@@ -18,10 +19,11 @@ export type UpdaterApi = {
   getLinuxPackageInstallInstructions: () => Promise<LinuxPackageInstallInstructions>
   /** Desktop-only. Reveals the revalidated cached package in the native file manager. */
   showLinuxPackage: () => Promise<void>
-  /** `force` bypasses the main-process list cache — the refresh button, not mount or channel switches. */
+  /** `force` bypasses the main-process list cache — the refresh button, not mount or channel switches.
+   *  `source` lists another configured release source; absent means the primary. */
   listBuilds: (
     channel: ReleaseChannel,
-    options?: { force?: boolean }
+    options?: { force?: boolean; source?: ReleaseSourceId }
   ) => Promise<ReleaseBuildListResult>
 
   onStatus: (callback: (status: UpdateStatus) => void) => () => void

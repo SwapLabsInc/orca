@@ -1,4 +1,11 @@
 import { compareAppVersions, isValidAppVersion } from './app-version'
+import {
+  PRIMARY_RELEASE_SOURCE,
+  getReleaseSourceOrPrimary,
+  getReleaseSourceVersionPattern,
+  getVersionReleaseSource,
+  type ReleaseSourceId
+} from './release-sources'
 
 export type ReleaseChannel = 'stable' | 'rc' | 'hourly' | 'daily' | 'adhoc'
 
@@ -24,7 +31,8 @@ export const RELEASE_CHANNEL_LABELS: Readonly<Record<ReleaseChannel, string>> = 
 export const HOURLY_RELEASE_REPO = 'stablyai/orca-hourly'
 export const DAILY_RELEASE_REPO = 'stablyai/orca-daily'
 export const ADHOC_RELEASE_REPO = 'stablyai/orca-adhoc'
-export const MAIN_RELEASE_REPO = 'stablyai/orca'
+/** The primary release source's repo; a fork build's own source is looked up per version instead. */
+export const MAIN_RELEASE_REPO = PRIMARY_RELEASE_SOURCE.repo
 
 export const HOURLY_PRERELEASE_IDENTIFIER = 'hourly'
 export const DAILY_PRERELEASE_IDENTIFIER = 'daily'
@@ -114,8 +122,46 @@ export function requiresManualDevChannelInstall(options: {
   return runningChannel === null || !hasDedicatedReleaseRepo(runningChannel)
 }
 
-export function getReleaseRepoForChannel(channel: ReleaseChannel): string {
-  return CHANNEL_RELEASE_REPOS[channel]
+/**
+ * The repo that publishes `channel` for `source`. Dev channels hang off the
+ * primary source only; every other source is one series in one repo.
+ */
+export function getReleaseRepoForChannel(
+  channel: ReleaseChannel,
+  sourceId: ReleaseSourceId | null = null
+): string {
+  const source = getReleaseSourceOrPrimary(sourceId)
+  if (source.id === PRIMARY_RELEASE_SOURCE.id) {
+    return CHANNEL_RELEASE_REPOS[channel]
+  }
+  return source.repo
+}
+
+/**
+ * Whether a jump has to go through a downloaded installer rather than the
+ * in-app updater. macOS and Windows refuse every cross-source jump: Squirrel.Mac
+ * only installs a bundle carrying the running app's code signature, and on
+ * Windows electron-updater Authenticode-verifies each installer against the
+ * publisherName baked into the installed app — and each source signs (or ad-hoc
+ * signs) with its own identity. Windows also keeps the dev-channel signing rule
+ * above. Linux never needs one; deb/rpm are refused later as externally managed.
+ * A null running source (unparseable version) counts as a different one, which
+ * sends the user to a download that works.
+ */
+export function requiresManualInstall(options: {
+  platform: NodeJS.Platform
+  running: { source: ReleaseSourceId | null; channel: ReleaseChannel | null }
+  target: { source: ReleaseSourceId; channel: ReleaseChannel }
+}): boolean {
+  const { platform, running, target } = options
+  if ((platform === 'darwin' || platform === 'win32') && running.source !== target.source) {
+    return true
+  }
+  return requiresManualDevChannelInstall({
+    platform,
+    runningChannel: running.channel,
+    targetChannel: target.channel
+  })
 }
 
 export function normalizeTagToVersion(tag: string): string {
@@ -217,10 +263,30 @@ export function parseDevBuildStamp(version: string): Date | null {
   )
 }
 
+/** The minute stamp of a non-primary source build (`1.4.197-swaplabs.202609241530`), else null. */
+export function parseSourceBuildStamp(version: string): Date | null {
+  const sourceId = getVersionReleaseSource(version)
+  const pattern = sourceId
+    ? getReleaseSourceVersionPattern(getReleaseSourceOrPrimary(sourceId))
+    : null
+  return pattern ? parseStampedVersion(version, pattern) : null
+}
+
+/** Cut time of any stamped build — dev channel or source series — for ordering. */
+export function parseReleaseBuildStamp(version: string): Date | null {
+  return parseDevBuildStamp(version) ?? parseSourceBuildStamp(version)
+}
+
 export function getVersionChannel(version: string): ReleaseChannel | null {
   const normalized = normalizeTagToVersion(version)
   if (!isValidAppVersion(normalized)) {
     return null
+  }
+  // Why: a non-primary source is one series with no rc/stable split, and its
+  // versions are prereleases that the catch-all below would otherwise file under rc.
+  const sourceId = getVersionReleaseSource(normalized)
+  if (sourceId !== null && sourceId !== PRIMARY_RELEASE_SOURCE.id) {
+    return 'stable'
   }
   if (isHourlyVersion(normalized)) {
     return 'hourly'
@@ -243,12 +309,17 @@ export function getVersionChannel(version: string): ReleaseChannel | null {
  * — /latest also breaks when GitHub's API is degraded).
  */
 export function getReleaseNotesUrlForVersion(version: string | null): string {
+  const sourceId = version ? getVersionReleaseSource(version) : null
   const channel = version ? getVersionChannel(version) : null
-  const repo = channel ? getReleaseRepoForChannel(channel) : MAIN_RELEASE_REPO
-  return version
+  const repo = channel ? getReleaseRepoForChannel(channel, sourceId) : MAIN_RELEASE_REPO
+  // Why the listing for other sources: their tags are not `v<version>`, so a tag URL cannot be derived.
+  return version && (sourceId === null || sourceId === PRIMARY_RELEASE_SOURCE.id)
     ? `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}`
     : `https://github.com/${repo}/releases`
 }
+
+/** The slices the Linux release legs build; each publishes its own manifest and AppImage. */
+const LINUX_RELEASE_ARCHITECTURES: readonly NodeJS.Architecture[] = ['x64', 'arm64']
 
 /**
  * The electron-updater manifest each platform's updater fetches before it can
@@ -261,7 +332,25 @@ const PLATFORM_UPDATE_MANIFESTS: Partial<Record<NodeJS.Platform, readonly string
   darwin: ['latest-mac.yml'],
   win32: ['latest.yml'],
   // Both, because one release carries x64 and arm64 and either makes it installable.
-  linux: ['latest-linux.yml', 'latest-linux-arm64.yml']
+  linux: LINUX_RELEASE_ARCHITECTURES.map((arch) => getUpdateManifestName('linux', arch))
+}
+
+/**
+ * The manifest the updater running on one slice fetches. electron-builder suffixes
+ * only Linux manifests by architecture, and only off x64 (`latest-linux-arm64.yml`);
+ * macOS and Windows list every slice in one file.
+ */
+export function getUpdateManifestName(
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture
+): string {
+  if (platform === 'darwin') {
+    return 'latest-mac.yml'
+  }
+  if (platform === 'linux') {
+    return arch === 'x64' ? 'latest-linux.yml' : `latest-linux-${arch}.yml`
+  }
+  return 'latest.yml'
 }
 
 export function getUpdateManifestNamesForPlatform(platform: NodeJS.Platform): readonly string[] {
@@ -284,18 +373,28 @@ export function hasInstallableArtifactForPlatform(
 
 /** Matches the electron-builder `artifactName` for each platform's directly
  *  runnable installer — the file someone downloads when the in-app updater
- *  cannot make the jump. */
+ *  cannot make the jump. macOS and Linux publish one per slice
+ *  (`orca-macos-<arch>.dmg`; `orca-linux.AppImage` and `orca-linux-arm64.AppImage`),
+ *  so theirs are picked by architecture. */
 const PLATFORM_INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
-  darwin: /\.dmg$/i,
-  win32: /windows-setup\.exe$/i,
-  linux: /\.AppImage$/i
+  win32: /windows-setup\.exe$/i
+}
+
+const SLICE_INSTALLER_PATTERNS: Partial<
+  Record<NodeJS.Platform, Partial<Record<NodeJS.Architecture, RegExp>>>
+> = {
+  darwin: { arm64: /-arm64\.dmg$/i, x64: /-x64\.dmg$/i },
+  // Why the lookbehind: the x64 AppImage carries no arch suffix, so it is any AppImage but the arm64 one.
+  linux: { arm64: /-arm64\.AppImage$/i, x64: /(?<!-arm64)\.AppImage$/i }
 }
 
 export function findInstallerAssetName(
   platform: NodeJS.Platform,
-  assetNames: readonly string[]
+  assetNames: readonly string[],
+  arch: NodeJS.Architecture
 ): string | null {
-  const pattern = PLATFORM_INSTALLER_PATTERNS[platform]
+  const slicePatterns = SLICE_INSTALLER_PATTERNS[platform]
+  const pattern = slicePatterns ? slicePatterns[arch] : PLATFORM_INSTALLER_PATTERNS[platform]
   if (!pattern) {
     return null
   }
@@ -323,8 +422,8 @@ export function sortReleaseBuildsNewestFirst(builds: ReleaseBuild[]): ReleaseBui
     // Dev build base versions can move backwards when a branch was cut before
     // the latest main build. Their stamped build time, not semver, is the
     // meaningful "newest" signal for the picker.
-    const leftStamp = parseDevBuildStamp(left.version)?.getTime() ?? null
-    const rightStamp = parseDevBuildStamp(right.version)?.getTime() ?? null
+    const leftStamp = parseReleaseBuildStamp(left.version)?.getTime() ?? null
+    const rightStamp = parseReleaseBuildStamp(right.version)?.getTime() ?? null
     if (leftStamp !== null && rightStamp !== null && leftStamp !== rightStamp) {
       return rightStamp - leftStamp
     }

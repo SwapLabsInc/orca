@@ -6,6 +6,7 @@ import {
   isValidAppVersion
 } from '../../../shared/app-version'
 import { REMOTE_SERVER_UPDATE_CAPABILITY } from '../../../shared/remote-server-update'
+import { getVersionReleaseSource } from '../../../shared/release-sources'
 import type {
   RemoteServerUpdateInstallResult,
   RemoteServerUpdaterSnapshot,
@@ -118,8 +119,20 @@ export async function inspectRemoteServerUpdate(
   const currentVersion = status.appVersion?.trim() || null
   const supportsRemoteUpdate = status.capabilities?.includes(REMOTE_SERVER_UPDATE_CAPABILITY)
   const support = status.remoteUpdateSupport ?? null
+  // Why: versions only order within one release source. A host that names its source is
+  // believed; one that does not is placed by its version string, so an older host still
+  // compares — and a fork build is never called "outdated" against upstream's semver.
+  const serverSource =
+    status.releaseSource ??
+    (currentVersion === null ? null : getVersionReleaseSource(currentVersion))
+  // Why: an unknown source on either side is not comparable, so the host stays manual.
+  const sameReleaseSource =
+    serverSource !== null && serverSource === getVersionReleaseSource(clientVersion)
   const versionComparable =
-    currentVersion !== null && isValidAppVersion(currentVersion) && isValidAppVersion(clientVersion)
+    currentVersion !== null &&
+    isValidAppVersion(currentVersion) &&
+    isValidAppVersion(clientVersion) &&
+    sameReleaseSource
   const outdated = versionComparable && compareAppVersions(currentVersion, clientVersion) < 0
   const statusFields = {
     currentVersion,
@@ -177,6 +190,11 @@ export async function inspectRemoteServerUpdate(
     }
   }
 
+  // Why: without asking the host, the only offer the client can make is its own version,
+  // which means nothing across sources — a fork server is updated from its own releases.
+  if (!sameReleaseSource) {
+    return { ...base, ...statusFields, phase: 'manual', targetVersion: null }
+  }
   return {
     ...base,
     ...statusFields,

@@ -88,6 +88,11 @@ export type RuntimeStatus = {
   degradations?: RuntimeDegradation[]
   appVersion?: string
   remoteUpdateSupport?: RemoteServerUpdateSupport
+  /**
+   * The release source the host's build came from. Only multi-source hosts publish
+   * it; a client must read absence as unknown, never as its own source.
+   */
+  releaseSource?: string
   remoteControl?: RemoteRuntimeSharedConnectionDiagnostics | null
   hostPlatform?: NodeJS.Platform
   /** Optional display name reported by the answering runtime. */

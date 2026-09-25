@@ -32,9 +32,15 @@ export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
     }
     if (this.isPinnedBuildActive) {
       // Why: a failed pinned jump must hand the feed back before surfacing the error, or the pin blocks background checks for the process lifetime.
+      const releaseSource = this.getPinnedReleaseSourceForStatus()
       this.clearAvailableUpdateContext()
       this.restoreReleaseUpdateSource()
-      this.sendSettledCheckStatus({ state: 'error', message, userInitiated })
+      this.sendSettledCheckStatus({
+        state: 'error',
+        message,
+        userInitiated,
+        ...(releaseSource ? { releaseSource } : {})
+      })
       return
     }
     const failureKey = this.getCheckFailureKey(message, userInitiated)

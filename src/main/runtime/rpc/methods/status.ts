@@ -14,7 +14,8 @@ export const STATUS_METHODS = [
         ...runtime.getStatus(),
         ...(pairedDeviceId ? { pairedDeviceId } : {}),
         appVersion: snapshot.appVersion,
-        remoteUpdateSupport: snapshot.support
+        remoteUpdateSupport: snapshot.support,
+        ...(snapshot.releaseSource ? { releaseSource: snapshot.releaseSource } : {})
       }
     }
   })

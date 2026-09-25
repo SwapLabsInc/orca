@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const fetchMock = vi.fn()
 
@@ -208,6 +212,22 @@ describe('fetchChangelog', () => {
     const result = await fetchChangelog('1.1.26', '1.1.25')
 
     expect(result).toBeNull()
+  })
+
+  it('skips the changelog for a build from another release source without fetching', async () => {
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { fetchChangelog: forkFetchChangelog } = await import('./updater-changelog')
+
+      expect(
+        await forkFetchChangelog('1.4.197-swaplabs.202609241530', '1.4.197-swaplabs.202609241400')
+      ).toBeNull()
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+      vi.resetModules()
+    }
   })
 
   it('returns null on non-ok HTTP response', async () => {

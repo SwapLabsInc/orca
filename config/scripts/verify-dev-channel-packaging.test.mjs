@@ -43,6 +43,55 @@ describe('electron-builder dev-channel identity', () => {
     expect(config.publish.releaseType).toBe('draft')
   })
 
+  // A fork publishes from the same config into its own repository; the identity
+  // stays stablyai's whenever the overrides are unset.
+  it('takes the publish owner and repo from the environment, defaulting to stablyai/orca', () => {
+    const config = loadConfigWithEnv({
+      ORCA_PUBLISH_OWNER: 'SwapLabsInc',
+      ORCA_PUBLISH_REPO: 'orca',
+      ORCA_LOCAL_BUILD_VERSION: '1.4.197-swaplabs.202609241530'
+    })
+
+    expect(config.publish.owner).toBe('SwapLabsInc')
+    expect(config.publish.repo).toBe('orca')
+    expect(config.extraMetadata.version).toBe('1.4.197-swaplabs.202609241530')
+    expect(loadConfigWithEnv({}).publish.owner).toBe('stablyai')
+    expect(
+      loadConfigWithEnv({ ORCA_PUBLISH_OWNER: '', ORCA_PUBLISH_REPO: '' }).publish
+    ).toMatchObject({
+      owner: 'stablyai',
+      repo: 'orca'
+    })
+  })
+
+  it('reports a dev-channel build whose publish owner was overridden', () => {
+    const config = loadConfigWithEnv({ ...WIN_ADHOC_ENV, ORCA_PUBLISH_OWNER: 'SwapLabsInc' })
+
+    expect(config.publish.owner).toBe('SwapLabsInc')
+    expect(
+      collectDevChannelPackagingProblems({
+        channel: 'adhoc',
+        platform: 'win32',
+        config,
+        env: WIN_ADHOC_ENV
+      })
+    ).toEqual([expect.stringContaining('publish.owner is "SwapLabsInc"')])
+  })
+
+  it('reports a dev-channel build whose publish repo was overridden', () => {
+    const config = loadConfigWithEnv({ ...WIN_ADHOC_ENV, ORCA_PUBLISH_REPO: 'orca' })
+
+    expect(config.publish.repo).toBe('orca')
+    expect(
+      collectDevChannelPackagingProblems({
+        channel: 'adhoc',
+        platform: 'win32',
+        config,
+        env: WIN_ADHOC_ENV
+      })
+    ).toEqual([expect.stringContaining('publish.repo is "orca"')])
+  })
+
   // The whole point of the change: an unsigned build that advertised a
   // publisherName would Authenticode-verify — and reject — every installer it
   // ever downloaded, including its own way back to stable.
@@ -101,7 +150,7 @@ describe('electron-builder dev-channel identity', () => {
 
 describe('collectDevChannelPackagingProblems', () => {
   const goodWinConfig = {
-    publish: { repo: 'orca-adhoc', releaseType: 'prerelease' },
+    publish: { owner: 'stablyai', repo: 'orca-adhoc', releaseType: 'prerelease' },
     extraMetadata: { version: '1.4.178-adhoc.20260819010203' },
     win: { verifyUpdateCodeSignature: false }
   }
@@ -120,11 +169,28 @@ describe('collectDevChannelPackagingProblems', () => {
 
   // The failure this script exists for: a branch predating Windows dev builds
   // resolves publish.repo to the main repo.
+  it('rejects a config whose publish owner is not stablyai', () => {
+    const problems = collectDevChannelPackagingProblems({
+      channel: 'adhoc',
+      platform: 'win32',
+      config: {
+        ...goodWinConfig,
+        publish: { owner: 'SwapLabsInc', repo: 'orca-adhoc', releaseType: 'prerelease' }
+      },
+      env
+    })
+
+    expect(problems).toEqual([expect.stringContaining('must publish to "stablyai/orca-adhoc"')])
+  })
+
   it('rejects a config that resolved the main repo', () => {
     const problems = collectDevChannelPackagingProblems({
       channel: 'adhoc',
       platform: 'win32',
-      config: { ...goodWinConfig, publish: { repo: 'orca', releaseType: 'release' } },
+      config: {
+        ...goodWinConfig,
+        publish: { owner: 'stablyai', repo: 'orca', releaseType: 'release' }
+      },
       env
     })
 
@@ -165,7 +231,7 @@ describe('collectDevChannelPackagingProblems', () => {
         channel: 'adhoc',
         platform: 'darwin',
         config: {
-          publish: { repo: 'orca-adhoc', releaseType: 'prerelease' },
+          publish: { owner: 'stablyai', repo: 'orca-adhoc', releaseType: 'prerelease' },
           extraMetadata: { version: '1.4.178-adhoc.20260819010203' },
           win: { signtoolOptions: { publisherName: 'SignPath Foundation' } }
         },

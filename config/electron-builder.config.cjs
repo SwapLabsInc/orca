@@ -670,8 +670,11 @@ module.exports = {
   npmRebuild: true,
   publish: {
     provider: 'github',
-    owner: 'stablyai',
-    repo: devChannelRepo ?? 'orca',
+    // Why env overrides: a fork publishes into its own repo with the same config.
+    // They win over the dev-channel repo, and verify-dev-channel-packaging fails a
+    // dev-channel build that sets them by mistake.
+    owner: process.env.ORCA_PUBLISH_OWNER || 'stablyai',
+    repo: process.env.ORCA_PUBLISH_REPO || devChannelRepo || 'orca',
     // Why draft on the main repo: `--publish always` otherwise creates a
     // public GitHub release as soon as the first platform uploads, and
     // /releases/latest serves a missing Windows exe. release-cut undrafts

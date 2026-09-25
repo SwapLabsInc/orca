@@ -1,4 +1,5 @@
 import type { DedicatedRepoChannel, ReleaseBuild, ReleaseChannel } from './release-channel'
+import type { ReleaseSourceId } from './release-sources'
 
 // ─── Updater ─────────────────────────────────────────────────────────
 
@@ -23,6 +24,15 @@ export type UpdateCheckOptions = {
   /** Dev channel switching; `targetTag` pins an exact build, including older ones. */
   channel?: ReleaseChannel
   targetTag?: string
+  /**
+   * Cross-source install: the release source `targetTag` lives in. Absent means the
+   * running build's own source. Non-primary tags do not carry the version, so the
+   * caller passes the one it listed in `targetVersion`.
+   */
+  source?: ReleaseSourceId
+  targetVersion?: string
+  /** Start the download as soon as the pinned build reports available. */
+  autoDownload?: boolean
 }
 
 /** Non-release origins for an update. Derived from the dev-channel list so a new
@@ -91,8 +101,18 @@ export type UpdateStatus = (
       userInitiated?: boolean
       activeNudgeId?: string
       recovery?: LinuxPackageInstallRecovery
+      /** Where to fetch the refused build by hand: a cross-source jump the in-app updater cannot make. */
+      manualInstallUrl?: string
     }
-) & { source?: UpdateSource }
+) & {
+  source?: UpdateSource
+  /**
+   * The release source the status refers to. Only multi-source builds set it, and
+   * only for actionable states or a check against another source; absent means the
+   * running build's own source — never a specific one (remote wire rule 1).
+   */
+  releaseSource?: ReleaseSourceId
+}
 
 export type ReleaseBuildListResult =
   | { ok: true; channel: ReleaseChannel; builds: ReleaseBuild[] }

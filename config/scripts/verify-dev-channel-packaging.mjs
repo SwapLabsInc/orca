@@ -15,6 +15,10 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+// Why the owner too: it is env-overridable so a fork can publish from the same config,
+// and an override left set on a dev-channel job would upload into that fork's org.
+const EXPECTED_OWNER = 'stablyai'
+
 const CHANNEL_REPOS = {
   hourly: 'orca-hourly',
   daily: 'orca-daily',
@@ -34,6 +38,13 @@ export function collectDevChannelPackagingProblems({ channel, platform, config, 
     return [
       `Unknown dev channel "${channel}"; expected one of ${Object.keys(CHANNEL_REPOS).join(', ')}.`
     ]
+  }
+
+  if (config.publish?.owner !== EXPECTED_OWNER) {
+    problems.push(
+      `publish.owner is "${config.publish?.owner}" but this ${channel} build must publish to "${EXPECTED_OWNER}/${expectedRepo}". ` +
+        'Unset ORCA_PUBLISH_OWNER for dev-channel builds.'
+    )
   }
 
   if (config.publish?.repo !== expectedRepo) {
@@ -113,7 +124,7 @@ function main() {
     process.exit(1)
   }
   console.log(
-    `Dev-channel packaging verified: ${channel} on ${platform} → stablyai/${CHANNEL_REPOS[channel]} @ ${config.extraMetadata?.version}`
+    `Dev-channel packaging verified: ${channel} on ${platform} → ${EXPECTED_OWNER}/${CHANNEL_REPOS[channel]} @ ${config.extraMetadata?.version}`
   )
 }
 

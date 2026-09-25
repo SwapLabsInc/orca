@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const fetchMock = vi.fn()
 vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
@@ -225,6 +230,64 @@ describe('listReleaseBuilds', () => {
     expect(build.installerUrl).toBe(
       'https://github.com/stablyai/orca-hourly/releases/download/v1.4.163-hourly.202607312054/orca-windows-setup.exe'
     )
+  })
+
+  // Why: a macOS release carries a DMG per slice; the first one listed used to win whatever
+  // the running architecture, and the wrong slice is installed by hand, not by the updater.
+  it('resolves the macOS installer for the running architecture, or none without that slice', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('v1.4.198', {
+          assets: [
+            { name: 'latest-mac.yml' },
+            { name: 'orca-macos-x64.dmg' },
+            { name: 'orca-macos-arm64.dmg' }
+          ]
+        }),
+        release('v1.4.197', {
+          assets: [{ name: 'latest-mac.yml' }, { name: 'orca-macos-x64.dmg' }]
+        })
+      ])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'darwin', PRIMARY_RELEASE_SOURCE, 'arm64')
+
+    expect(builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-macos-arm64.dmg',
+      null
+    ])
+  })
+
+  // Why: Linux publishes `orca-linux.AppImage` and `orca-linux-arm64.AppImage` side by side, and
+  // any AppImage used to match — so an arm64 host was handed the x64 one to run by hand.
+  it('resolves the Linux installer for the running architecture, or none without that slice', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('v1.4.198', {
+          assets: [
+            { name: 'latest-linux.yml' },
+            { name: 'orca-linux.AppImage' },
+            { name: 'latest-linux-arm64.yml' },
+            { name: 'orca-linux-arm64.AppImage' }
+          ]
+        }),
+        release('v1.4.197', {
+          assets: [{ name: 'latest-linux.yml' }, { name: 'orca-linux.AppImage' }]
+        })
+      ])
+    )
+
+    const arm64Builds = await listReleaseBuilds('stable', 'linux', PRIMARY_RELEASE_SOURCE, 'arm64')
+    expect(arm64Builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-linux-arm64.AppImage',
+      null
+    ])
+
+    const x64Builds = await listReleaseBuilds('stable', 'linux', PRIMARY_RELEASE_SOURCE, 'x64')
+    expect(x64Builds.map((build) => build.installerUrl)).toEqual([
+      'https://github.com/stablyai/orca/releases/download/v1.4.198/orca-linux.AppImage',
+      'https://github.com/stablyai/orca/releases/download/v1.4.197/orca-linux.AppImage'
+    ])
   })
 
   it('leaves the installer url null when the release published no installer', async () => {
@@ -462,6 +525,98 @@ describe('listReleaseBuilds', () => {
   })
 })
 
+describe('listReleaseBuilds for another release source', () => {
+  /** Re-evaluates the module graph under a two-source registry, as a fork build would run it. */
+  async function loadForkModule() {
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    vi.resetModules()
+    const module = await import('./updater-release-builds')
+    const { getReleaseSource } = await import('../shared/release-sources')
+    return { ...module, swaplabs: getReleaseSource('swaplabs')! }
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    tokenMock.mockReset()
+    tokenMock.mockResolvedValue(null)
+    blockedUntilMock.mockReset()
+    blockedUntilMock.mockReturnValue(null)
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+    vi.resetModules()
+  })
+
+  // Why the title: fork tags are git labels (`swaplabs-v1.4.197+resume.1`), so the
+  // version has to come from somewhere else, and the manifest is not in the REST reply.
+  it('lists a source repo, reading versions from titles, newest stamp first', async () => {
+    const { listReleaseBuilds, swaplabs } = await loadForkModule()
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        release('swaplabs-v1.4.197+resume.1', {
+          name: '1.4.197-swaplabs.202609241530.resume.1 • 01 • Sep 24, 3:30PM • abc1234',
+          html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197+resume.1'
+        }),
+        release('swaplabs-v1.4.198-rc.1+resume.2', {
+          name: '1.4.198-rc.1.swaplabs.202609251200.resume.2 • 02',
+          html_url:
+            'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.198-rc.1+resume.2'
+        }),
+        release('swaplabs-untitled', { name: 'SwapLabs build without a version' }),
+        release('v1.4.197', { name: '1.4.197' })
+      ])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'linux', swaplabs)
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.github.com/repos/SwapLabsInc/orca/releases?per_page=100'
+    )
+    expect(builds.map((build) => [build.tag, build.version, build.channel])).toEqual([
+      ['swaplabs-v1.4.198-rc.1+resume.2', '1.4.198-rc.1.swaplabs.202609251200.resume.2', 'stable'],
+      ['swaplabs-v1.4.197+resume.1', '1.4.197-swaplabs.202609241530.resume.1', 'stable']
+    ])
+    expect(builds[1].installerUrl).toBe(
+      'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2Bresume.1/orca-linux.AppImage'
+    )
+  })
+
+  it('keeps a stray fork build out of the primary stable list', async () => {
+    const { listReleaseBuilds } = await loadForkModule()
+    fetchMock.mockResolvedValue(
+      jsonResponse([release('v1.4.197-swaplabs.202609241530'), release('v1.4.196')])
+    )
+
+    const builds = await listReleaseBuilds('stable', 'linux')
+
+    expect(builds.map((build) => build.version)).toEqual(['1.4.196'])
+  })
+
+  it('resolves a fork target from the version the picker listed', async () => {
+    const { resolveTargetBuild, swaplabs } = await loadForkModule()
+
+    expect(
+      resolveTargetBuild(
+        'stable',
+        'swaplabs-v1.4.197+resume.1',
+        swaplabs,
+        '1.4.197-swaplabs.202609241530.resume.1'
+      )
+    ).toEqual({
+      tag: 'swaplabs-v1.4.197+resume.1',
+      version: '1.4.197-swaplabs.202609241530.resume.1',
+      repo: 'SwapLabsInc/orca',
+      feedUrl: 'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2Bresume.1'
+    })
+    expect(() => resolveTargetBuild('stable', 'swaplabs-v1.4.197+resume.1', swaplabs)).toThrow(
+      /not a valid release tag for SwapLabs/
+    )
+    // A primary version handed to the fork source is not one of its builds.
+    expect(() => resolveTargetBuild('stable', 'v1.4.197', swaplabs)).toThrow(/for SwapLabs/)
+  })
+})
+
 describe('rateLimitResetAtMs', () => {
   const nowMs = 1_800_000_000_000
 
@@ -516,6 +671,7 @@ describe('resolveTargetBuild', () => {
     expect(resolveTargetBuild('hourly', 'v1.4.160-hourly.202607281400')).toEqual({
       tag: 'v1.4.160-hourly.202607281400',
       version: '1.4.160-hourly.202607281400',
+      repo: 'stablyai/orca-hourly',
       feedUrl:
         'https://github.com/stablyai/orca-hourly/releases/download/v1.4.160-hourly.202607281400'
     })
@@ -525,6 +681,7 @@ describe('resolveTargetBuild', () => {
     expect(resolveTargetBuild('daily', 'v1.4.160-daily.202607281300')).toEqual({
       tag: 'v1.4.160-daily.202607281300',
       version: '1.4.160-daily.202607281300',
+      repo: 'stablyai/orca-daily',
       feedUrl:
         'https://github.com/stablyai/orca-daily/releases/download/v1.4.160-daily.202607281300'
     })

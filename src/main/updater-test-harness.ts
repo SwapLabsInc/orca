@@ -59,7 +59,8 @@ type UpdaterModuleFactories = {
   }
   updaterPrereleaseFeed: () => {
     fetchNewerReleaseTagsWithReadiness: (...args: unknown[]) => Promise<unknown>
-    getReleaseDownloadUrl: (tag: string) => string
+    getReleaseDownloadUrl: (tag: string, source?: { repo: string }) => string
+    verifyReleaseTagManifest: UpdaterSpy
   }
   localBuildSwitch: () => { chooseLocalBuild: UpdaterSpy }
   localBuildFeedServer: () => { startLocalBuildFeed: UpdaterSpy }
@@ -83,6 +84,8 @@ export type UpdaterMocks = {
   armExitWatchdogMock: UpdaterSpy
   disarmExitWatchdogMock: UpdaterSpy
   fetchNewerReleaseTagsMock: UpdaterSpy
+  /** Resolves `{ kind: 'ready' }` unless a test says the pinned tag's manifest disagrees. */
+  verifyReleaseTagManifestMock: UpdaterSpy
   chooseLocalBuildMock: UpdaterSpy
   startLocalBuildFeedMock: UpdaterSpy
   closeLocalBuildFeedMock: UpdaterSpy
@@ -96,40 +99,29 @@ export const PRE_COMMIT_INSTALL_FAILURE =
     ? 'Could not restart to install the update. Quit and reopen Orca, then try again.'
     : 'Could not start the update installer. Orca remains open.'
 
+/** An `on`/`emit` pair over a handler map; `owner` is what `on` returns for chaining. */
+function createEventRegistry<T>(owner: () => T) {
+  const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+  const on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+    handlers.set(event, [...(handlers.get(event) ?? []), handler])
+    return owner()
+  })
+  const emit = (event: string, ...args: unknown[]): void => {
+    for (const handler of handlers.get(event) ?? []) {
+      handler(...args)
+    }
+  }
+  return { handlers, on, emit }
+}
+
 /**
  * Builds the electron/electron-updater mock graph `updater.ts` runs against, plus the module
  * factories each test file feeds to its own hoisted `vi.mock` calls. Call it from an awaited
  * `vi.hoisted` block so the mocks exist before the mock factories run.
  */
 export function createUpdaterMocks(): UpdaterMocks {
-  const appEventHandlers = new Map<string, ((...args: unknown[]) => void)[]>()
-  const eventHandlers = new Map<string, ((...args: unknown[]) => void)[]>()
-
-  const appOn = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-    const handlers = appEventHandlers.get(event) ?? []
-    handlers.push(handler)
-    appEventHandlers.set(event, handlers)
-    return appMock
-  })
-
-  const appEmit = (event: string, ...args: unknown[]) => {
-    for (const handler of appEventHandlers.get(event) ?? []) {
-      handler(...args)
-    }
-  }
-
-  const on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-    const handlers = eventHandlers.get(event) ?? []
-    handlers.push(handler)
-    eventHandlers.set(event, handlers)
-    return autoUpdaterMock
-  })
-
-  const emit = (event: string, ...args: unknown[]) => {
-    for (const handler of eventHandlers.get(event) ?? []) {
-      handler(...args)
-    }
-  }
+  const appEvents = createEventRegistry(() => appMock)
+  const updaterEvents = createEventRegistry(() => autoUpdaterMock)
 
   // Why: `vi.resetModules()` abandons the previous test's `updater` module instance but cannot cancel
   // the real timers it armed (1s silent-settle, 45s stall, 24h auto-check). Those fire during a later
@@ -161,10 +153,10 @@ export function createUpdaterMocks(): UpdaterMocks {
 
   const reset = () => {
     currentGeneration += 1
-    appEventHandlers.clear()
-    appOn.mockClear()
-    eventHandlers.clear()
-    on.mockClear()
+    appEvents.handlers.clear()
+    appEvents.on.mockClear()
+    updaterEvents.handlers.clear()
+    updaterEvents.on.mockClear()
     autoUpdaterMock.checkForUpdates.mockReset().mockResolvedValue(null)
     autoUpdaterMock.downloadUpdate.mockReset()
     autoUpdaterMock.quitAndInstall.mockReset()
@@ -187,21 +179,21 @@ export function createUpdaterMocks(): UpdaterMocks {
     disableDifferentialDownload: false,
     // Why: setup installs the diagnostic logger adapter here; tests drive child stderr through it.
     logger: undefined as { error: (message: unknown) => void } | undefined,
-    on,
+    on: updaterEvents.on,
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
     quitAndInstall: vi.fn(),
     setFeedURL: vi.fn(),
     updateConfigPath: undefined as string | undefined,
-    emit,
+    emit: updaterEvents.emit,
     reset
   }
 
   const appMock: AppMock = {
     isPackaged: true,
     getVersion: vi.fn(() => '1.0.51'),
-    on: appOn,
-    emit: appEmit,
+    on: appEvents.on,
+    emit: appEvents.emit,
     quit: vi.fn()
   }
   const browserWindowMock = {
@@ -225,6 +217,7 @@ export function createUpdaterMocks(): UpdaterMocks {
   const armExitWatchdogMock = vi.fn()
   const disarmExitWatchdogMock = vi.fn()
   const fetchNewerReleaseTagsMock = vi.fn()
+  const verifyReleaseTagManifestMock = vi.fn()
   const chooseLocalBuildMock = vi.fn()
   const startLocalBuildFeedMock = vi.fn()
   const closeLocalBuildFeedMock = vi.fn()
@@ -263,8 +256,9 @@ export function createUpdaterMocks(): UpdaterMocks {
           ? { tags: result, state: result.length > 0 ? 'ready' : 'no-newer' }
           : result
       },
-      getReleaseDownloadUrl: (tag: string) =>
-        `https://github.com/stablyai/orca/releases/download/${tag}`
+      getReleaseDownloadUrl: (tag: string, source?: { repo: string }) =>
+        `https://github.com/${source?.repo ?? 'stablyai/orca'}/releases/download/${tag}`,
+      verifyReleaseTagManifest: verifyReleaseTagManifestMock
     }),
     localBuildSwitch: () => ({ chooseLocalBuild: chooseLocalBuildMock }),
     localBuildFeedServer: () => ({ startLocalBuildFeed: startLocalBuildFeedMock })
@@ -301,6 +295,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     shouldApplyNudgeMock.mockReset().mockReturnValue(false)
     fetchChangelogMock.mockReset().mockResolvedValue(null)
     fetchNewerReleaseTagsMock.mockReset().mockResolvedValue([])
+    verifyReleaseTagManifestMock.mockReset().mockResolvedValue({ kind: 'ready' })
     chooseLocalBuildMock.mockReset()
     closeLocalBuildFeedMock.mockReset()
     startLocalBuildFeedMock.mockReset().mockResolvedValue({
@@ -336,6 +331,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     armExitWatchdogMock,
     disarmExitWatchdogMock,
     fetchNewerReleaseTagsMock,
+    verifyReleaseTagManifestMock,
     chooseLocalBuildMock,
     startLocalBuildFeedMock,
     closeLocalBuildFeedMock,

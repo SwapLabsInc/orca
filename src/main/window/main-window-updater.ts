@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { ReleaseBuildListResult, UpdateCheckOptions } from '../../shared/update-status-types'
 import { RELEASE_CHANNELS, type ReleaseChannel } from '../../shared/release-channel'
+import { getReleaseSource } from '../../shared/release-sources'
 import { isTrustedUIRenderer } from '../ipc/ui'
 import type { Store } from '../persistence'
 import { logStartupMilestone } from '../startup/startup-diagnostics'
@@ -116,16 +117,23 @@ export function registerUpdaterHandlers(_store: Store): void {
     async (
       _event,
       channel: ReleaseChannel,
-      options?: { force?: boolean }
+      options?: { force?: boolean; source?: string }
     ): Promise<ReleaseBuildListResult> => {
       if (!RELEASE_CHANNELS.includes(channel)) {
         return { ok: false, channel, message: `Unknown release channel "${channel}".` }
+      }
+      const source = options?.source
+      if (source !== undefined && getReleaseSource(source) === null) {
+        return { ok: false, channel, message: `Unknown release source "${source}".` }
       }
       try {
         return {
           ok: true,
           channel,
-          builds: await listAvailableReleaseBuilds(channel, { force: options?.force === true })
+          builds: await listAvailableReleaseBuilds(channel, {
+            force: options?.force === true,
+            ...(source !== undefined ? { source } : {})
+          })
         }
       } catch (error) {
         // Why: a network/rate-limit failure is expected here; return it as data so
