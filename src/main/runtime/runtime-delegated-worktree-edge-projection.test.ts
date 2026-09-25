@@ -13,14 +13,20 @@ function projection(args: {
   placements?: Placement[]
   worktreeByHandle?: Record<string, string>
   handleByPaneKey?: Record<string, string>
-  db?: 'missing' | 'without-query'
+  db?: 'missing' | 'without-query' | 'throws'
 }): RuntimeDelegatedWorktreeEdgeProjection {
   const db =
     args.db === 'missing'
       ? null
       : args.db === 'without-query'
         ? {}
-        : { listDelegatedWorktreePlacements: () => args.placements ?? [] }
+        : args.db === 'throws'
+          ? {
+              listDelegatedWorktreePlacements: (): Placement[] => {
+                throw new Error('SQLITE_BUSY: database is locked')
+              }
+            }
+          : { listDelegatedWorktreePlacements: () => args.placements ?? [] }
   return new RuntimeDelegatedWorktreeEdgeProjection({
     getDb: () => db,
     getWorktreeId: (handle) => args.worktreeByHandle?.[handle] ?? null,
@@ -37,6 +43,11 @@ const placement: Placement = {
 }
 
 describe('RuntimeDelegatedWorktreeEdgeProjection', () => {
+  // Runs inside every graph sync: a failing query must read as unknown, not fail the sync.
+  it('reports a query that throws as unknown', () => {
+    expect(projection({ db: 'throws' }).build()).toEqual({ known: false })
+  })
+
   it('pairs the remote worktree with the coordinator terminal that dispatched it', () => {
     const edges = projection({
       placements: [placement],

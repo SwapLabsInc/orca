@@ -45,8 +45,16 @@ export class RuntimeDelegatedWorktreeEdgeProjection {
     if (!db?.listDelegatedWorktreePlacements) {
       return { known: false }
     }
+    let placements: DelegatedWorktreePlacementRow[]
+    try {
+      placements = db.listDelegatedWorktreePlacements(MAX_DELEGATED_EDGES)
+    } catch {
+      // Why: this runs inside every graph sync; a locked or older db must not fail the sync,
+      // and an unanswered query is unknown, not empty.
+      return { known: false }
+    }
     const edges: DelegatedWorktreeEdge[] = []
-    for (const placement of db.listDelegatedWorktreePlacements(MAX_DELEGATED_EDGES)) {
+    for (const placement of placements) {
       // No bare-id comparison here: ids collide across hosts, and a genuine
       // self-reference is only decidable once both ends are host-qualified,
       // which resolveDelegatedWorktreeNesting already does.
