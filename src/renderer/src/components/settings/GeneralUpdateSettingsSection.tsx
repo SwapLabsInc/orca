@@ -28,11 +28,15 @@ import type { UpdateStatus } from '../../../../shared/update-status-types'
 
 function CheckForUpdatesButton({
   updateStatus,
-  onCheck
+  onCheck,
+  holdWhileStaged = false
 }: {
   updateStatus: UpdateStatus
   onCheck: (event: React.MouseEvent<HTMLButtonElement>) => void
+  /** Multi-source rows: a staged cross-source build must be restarted into, not checked past. */
+  holdWhileStaged?: boolean
 }): React.JSX.Element {
+  const staged = holdWhileStaged && updateStatus.state === 'downloaded'
   return (
     <Button
       variant="outline"
@@ -40,8 +44,15 @@ function CheckForUpdatesButton({
       // Why: modifier-click channels are power-user update affordances, not
       // persistent settings toggles.
       onClick={onCheck}
-      title={getUpdateCheckHint()}
-      disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
+      title={
+        staged
+          ? translate(
+              'auto.components.settings.GeneralUpdateSettingsSection.stagedHold',
+              'Restart to install the downloaded update first.'
+            )
+          : getUpdateCheckHint()
+      }
+      disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading' || staged}
     >
       {updateStatus.state === 'checking' ? (
         <Loader2 className="size-3.5 animate-spin" />
@@ -176,7 +187,11 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
       >
         {multiSource ? (
           <div className="flex flex-wrap items-center gap-3">
-            <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
+            <CheckForUpdatesButton
+              updateStatus={updateStatus}
+              onCheck={handleCheck}
+              holdWhileStaged
+            />
             {updateStatus.state === 'downloaded' ? (
               <RestartToUpdateButton
                 version={updateStatus.version}

@@ -206,6 +206,11 @@ it('disables every source button while checking and downloading', async () => {
   )
   expect(screen.getByText(/1\.4\.198 \(Orca upstream\) is ready to install\./)).toBeTruthy()
   expect(upstreamButton().disabled).toBe(true)
+  // Why: a routine check would unpin the staged build while its file still installs on quit.
+  expect(checkButton().disabled).toBe(true)
+  expect(checkButton().getAttribute('title')).toBe(
+    'Restart to install the downloaded update first.'
+  )
 })
 
 // Why: a staged in-app download occupies the updater, but a download page is only a browser

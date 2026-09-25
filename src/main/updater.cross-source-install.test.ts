@@ -302,6 +302,55 @@ describe('updater cross-source install', () => {
     }
   })
 
+  // Why: the staged AppImage stays registered with electron-updater's quit handler; a routine check
+  // that unpinned it would say "latest" while quitting still installs the other source's build.
+  it('keeps a staged cross-source build pinned when a routine check is requested', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      asMultiSourceBuild('1.4.197')
+      autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+        autoUpdaterMock.emit('checking-for-update')
+        autoUpdaterMock.emit('update-available', { version: FORK_VERSION })
+        return Promise.resolve(undefined)
+      })
+      autoUpdaterMock.downloadUpdate.mockResolvedValue(undefined)
+      const { mainWindow, send } = createUpdaterMainWindowFake()
+      const { setupAutoUpdater, checkForUpdatesFromMenu, getUpdateStatus } =
+        await loadUpdaterModule()
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+
+      checkForUpdatesFromMenu({ ...toSwapLabs, autoDownload: true })
+      await vi.waitFor(() => {
+        expect(send).toHaveBeenCalledWith(
+          'updater:status',
+          expect.objectContaining({ state: 'downloading', version: FORK_VERSION })
+        )
+      })
+      autoUpdaterMock.emit('update-downloaded', { version: FORK_VERSION })
+      expect(getUpdateStatus()).toMatchObject({ state: 'downloaded', version: FORK_VERSION })
+      send.mockClear()
+
+      checkForUpdatesFromMenu()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(getUpdateStatus()).toMatchObject({
+        state: 'downloaded',
+        version: FORK_VERSION,
+        releaseSource: 'swaplabs'
+      })
+      expect(send).not.toHaveBeenCalledWith(
+        'updater:status',
+        expect.objectContaining({ state: 'checking' })
+      )
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+      expect(autoUpdaterMock.allowDowngrade).toBe(true)
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
   // Why: Squirrel.Mac only installs a bundle carrying the running app's signature, and Windows
   // Authenticode-checks an installer against the installed app's publisher; each source signs
   // with its own identity, so the download must never start.

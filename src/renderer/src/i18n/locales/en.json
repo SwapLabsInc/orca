@@ -7399,7 +7399,8 @@
           "isAvailable": "is available.",
           "downloadingFromSource": "Downloading v{{value0}} ({{value1}})... {{value2}}%",
           "openReleasePage": "Open download page",
-          "newerThanListed": "You are running a newer build than the newest listed {{value0}} build ({{value1}})."
+          "newerThanListed": "You are running a newer build than the newest listed {{value0}} build ({{value1}}).",
+          "stagedHold": "Restart to install the downloaded update first."
         },
         "GeneralWorkspaceSettingsSection": {
           "3d538a98f7": "Choose apps available from a workspace's Open in menu.",
