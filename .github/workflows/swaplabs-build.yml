@@ -912,6 +912,37 @@ jobs:
               echo "::warning::Could not prune $tag"
           done <<<"$stale"
 
+  # Why: SwapLabsInc/SwapLabs's `Orca fork pin` workflow re-pins the minidev
+  # fork hosts to the newest fork release, and only checks hourly. This wakes it
+  # the moment a build goes live. GITHUB_TOKEN cannot reach another repository,
+  # so it takes a token scoped to that one repository; with none set, or a
+  # dispatch that fails, the hourly check still picks the release up, so neither
+  # fails the build.
+  notify-devvms:
+    needs: [draft, publish]
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Ask the devvms pin workflow to re-pin now
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SWAPLABS_DEVVMS_DISPATCH_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::notice::SWAPLABS_DEVVMS_DISPATCH_TOKEN is not set; the devvms pin workflow picks up $TAG on its hourly check."
+            exit 0
+          fi
+          if gh api repos/SwapLabsInc/SwapLabs/dispatches -f event_type=orca-fork-release \
+              -f "client_payload[tag]=$TAG" --silent; then
+            echo "Asked SwapLabsInc/SwapLabs to re-pin to $TAG."
+          else
+            echo "::warning::Could not dispatch to SwapLabsInc/SwapLabs; its hourly check still picks up $TAG."
+          fi
+
   # Why: a draft left behind by a failed or cancelled run is invisible to users
   # but still holds its tag name, so a rerun landing on the same minute would
   # collide. Runs last, after every leg, and never touches a release that went
