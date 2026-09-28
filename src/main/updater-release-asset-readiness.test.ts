@@ -263,6 +263,47 @@ describe('probeReleaseManifest', () => {
     }
   })
 
+  // LOCAL: the manifest is unsigned as far as the probe knows, so an address it names must never
+  // be requested: a compromised release could point background checks at any host.
+  it.each([
+    ['an absolute URL', { file: 'http://127.0.0.1:8080/orca-macos-arm64.zip' }],
+    ['a path outside the release', { file: '../orca-macos-arm64.zip' }],
+    ['another slice', { file: 'orca-macos-x64.zip' }],
+    ['a files list', { file: 'orca-macos-arm64.zip', files: [{ url: 'http://169.254.169.254/' }] }]
+  ])(
+    'refuses a fork manifest naming %s as not ready without requesting it',
+    async (_label, fields) => {
+      const restoreSlice = setHostSliceForTest({ arch: 'arm64' })
+      const heads: string[] = []
+      const manifest = JSON.stringify({
+        schema: 1,
+        version: '1.4.197-swaplabs.202609251200',
+        ...fields
+      })
+      netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+        if (init?.method === 'HEAD') {
+          heads.push(url)
+          return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
+        }
+        return Promise.resolve(streamedResponse([new TextEncoder().encode(manifest)]))
+      })
+      try {
+        const { probeReleaseManifest } = await import('./updater-release-asset-readiness')
+        await expect(
+          probeReleaseManifest(
+            'swaplabs-v1.4.197+202609251200',
+            SWAPLABS_SOURCE.repo,
+            undefined,
+            SWAPLABS_SOURCE
+          )
+        ).resolves.toEqual({ readiness: 'not-ready', version: '1.4.197-swaplabs.202609251200' })
+        expect(heads).toEqual([])
+      } finally {
+        restoreSlice()
+      }
+    }
+  )
+
   // LOCAL: the probe reads a fork manifest before anything about it is verified, so a release
   // serving an oversized one must be cut off at the installer's own cap, never buffered whole.
   it('cuts off a fork manifest past the installer size cap without buffering or probing it', async () => {

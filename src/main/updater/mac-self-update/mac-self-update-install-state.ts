@@ -100,7 +100,7 @@ function isKnownHelperOutcome(outcome: string): outcome is MacSelfUpdateHelperOu
   return Object.hasOwn(HELPER_OUTCOME_MESSAGES, outcome)
 }
 
-function describeHelperOutcome(outcome: string | null): string {
+export function describeHelperOutcome(outcome: string | null): string {
   if (outcome === null) {
     return 'the update helper left no record'
   }

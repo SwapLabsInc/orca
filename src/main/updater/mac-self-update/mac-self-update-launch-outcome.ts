@@ -8,6 +8,7 @@ import {
 import { MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS } from './mac-self-update-helper'
 import {
   clearMacSelfUpdateInstallRecords,
+  describeHelperOutcome,
   pruneMacSelfUpdateRollback,
   pruneMacSelfUpdateWorkDirs,
   readMacSelfUpdateHelperOutcome,
@@ -124,11 +125,21 @@ export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
     if (outcome.kind === 'completed') {
       // Why first: the helper's 90 s clock is running; everything else here can wait.
       writeHealthMarkerUntilItSticks(paths, outcome.targetVersion)
-      recordUpdaterLifecycle('mac_self_update_completed', {
+      const completed = {
         from: outcome.fromVersion,
         to: outcome.targetVersion,
         helperOutcome: outcome.helperOutcome
-      })
+      }
+      // Why the warning: the helper relaunches the new build when it cannot restore the previous
+      // one, so the build reporting here may be one that missed the helper's health deadline.
+      if (outcome.helperOutcome === null || outcome.helperOutcome === 'healthy') {
+        recordUpdaterLifecycle('mac_self_update_completed', completed)
+      } else {
+        recordUpdaterLifecycle('mac_self_update_completed', completed, {
+          level: 'warn',
+          message: `Orca ${outcome.targetVersion} came up after the update helper gave up on it: ${describeHelperOutcome(outcome.helperOutcome)}.`
+        })
+      }
       schedulePruneRollback(paths)
     } else if (outcome.kind === 'failed') {
       recordUpdaterLifecycle(

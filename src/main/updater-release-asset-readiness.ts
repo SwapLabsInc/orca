@@ -8,7 +8,8 @@ import { PrioritySemaphore } from '../shared/priority-semaphore'
 import {
   MAC_SELF_UPDATE_MAX_MANIFEST_BYTES,
   getMacSelfUpdateManifestName,
-  getMacSelfUpdateSignatureName
+  getMacSelfUpdateSignatureName,
+  getMacSelfUpdateZipName
 } from '../shared/mac-self-update-assets'
 import { getUpdateManifestName } from '../shared/release-channel'
 import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
@@ -211,8 +212,12 @@ export async function probeReleaseManifest(
       return { readiness: 'not-ready', version }
     }
     if (macSelfUpdateSource) {
-      // Why: the installer fetches the signature beside the manifest, so a release without it is
-      // not installable whatever else is attached.
+      // Why only the fixed names: nothing in this manifest is verified yet, so the probe requests
+      // the slice's own zip and signature under the release and nothing the manifest points at;
+      // a manifest naming any other file is a publishing error the installer refuses.
+      if (assetNames.length !== 1 || assetNames[0] !== getMacSelfUpdateZipName(process.arch)) {
+        return { readiness: 'not-ready', version }
+      }
       assetNames.push(getMacSelfUpdateSignatureName(manifestName))
     }
     const assetResults = await Promise.all(

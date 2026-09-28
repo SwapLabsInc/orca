@@ -111,6 +111,44 @@ describe('mac self-update launch outcome', () => {
     )
   })
 
+  // Why: when the helper cannot restore the previous build it relaunches the new one, so the
+  // build that missed its health deadline can be the one reporting. The update did apply, so it
+  // is not a failure to show; the helper's verdict is kept in the record, at warning level.
+  it('records a build the helper gave up on as completed, with the verdict, not as a failure', async () => {
+    vi.useFakeTimers()
+    launch.runningVersion = TARGET_VERSION
+    writeFileSync(launch.paths!.helperOutcomePath, 'rollback-blocked\n')
+    mkdirSync(launch.paths!.rollbackAppPath, { recursive: true })
+    const {
+      ROLLBACK_PRUNE_DELAY_MS,
+      getMacSelfUpdateLaunchFailure,
+      reportMacSelfUpdateLaunchOutcome
+    } = await loadModule()
+
+    expect(reportMacSelfUpdateLaunchOutcome()).toMatchObject({
+      kind: 'completed',
+      helperOutcome: 'rollback-blocked'
+    })
+    expect(getMacSelfUpdateLaunchFailure()).toBeNull()
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+      'mac_self_update_completed',
+      expect.objectContaining({ to: TARGET_VERSION, helperOutcome: 'rollback-blocked' }),
+      {
+        level: 'warn',
+        message: expect.stringContaining('the app folder was still occupied')
+      }
+    )
+    expect(recordUpdaterLifecycleMock).not.toHaveBeenCalledWith(
+      'mac_self_update_failed',
+      expect.anything(),
+      expect.anything()
+    )
+    expect(existsSync(launch.paths!.healthMarkerPath)).toBe(true)
+    // The rollback copy has no watcher once the helper has exited; it goes like any other.
+    vi.advanceTimersByTime(ROLLBACK_PRUNE_DELAY_MS + 1)
+    expect(existsSync(launch.paths!.rollbackAppPath)).toBe(false)
+  })
+
   it('shows the same failure before and after the launch is reported', async () => {
     launch.runningVersion = FROM_VERSION
     writeFileSync(launch.paths!.helperOutcomePath, 'rolled-back\n')
