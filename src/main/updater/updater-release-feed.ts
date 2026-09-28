@@ -115,13 +115,14 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
   }
 
   /**
-   * `attemptId` is the check this preflight serves. A pinned or local-build jump that starts while
-   * the feed is still being read takes the attempt over; the preflight then reports `superseded`
-   * without touching the feed or the fallback context, so the jump's own pin stays in place.
+   * `attemptId` is the check this preflight serves, by default the one active when it starts. A
+   * pinned or local-build jump that starts while the feed is still being read takes the attempt
+   * over; the preflight then reports `superseded` without touching the feed or the fallback
+   * context, so the jump's own pin stays in place.
    */
   protected async pinDefaultReleaseFeed(
     variant: UpdateCheckVariant = 'default',
-    attemptId?: number
+    attemptId: number | null = this.activeUpdateCheckAttemptId
   ): Promise<ReleaseFeedPreflightResult> {
     const autoUpdater = this.getAutoUpdater()
     // Why: the latest/download redirect can move between check and download, so pin the concrete tag (prerelease users resolve any channel, stable only stable).
@@ -161,7 +162,8 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
         ...(isPrimarySource ? {} : { source })
       }
     )
-    if (attemptId !== undefined && !this.isActiveUpdateCheckAttempt(attemptId)) {
+    // A timed-out preflight must not overwrite a newer check's feed.
+    if (attemptId === null || !this.isActiveUpdateCheckAttempt(attemptId)) {
       console.info(`[updater] release feed preflight superseded: current=${currentVersion}`)
       return 'superseded'
     }

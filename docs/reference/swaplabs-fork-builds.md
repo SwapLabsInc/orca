@@ -123,6 +123,20 @@ fails if the config does not honour it, which is what happens on a checkout that
 predates the release-sources change. On macOS it also refuses any `CSC_NAME` other
 than the SwapLabs identity and a public key that does not parse.
 
+## Waking the devvms pin
+
+Once a release goes live, the `notify-devvms` job sends an `orca-fork-release`
+repository dispatch to SwapLabsInc/SwapLabs. That starts its `Orca fork pin`
+workflow at once, rather than at its next hourly check. The workflow then
+smoke-tests the build and re-pins the minidev fork hosts to it.
+
+`GITHUB_TOKEN` cannot reach another repository, so the job reads the Actions
+secret `SWAPLABS_DEVVMS_DISPATCH_TOKEN`. Use a fine-grained token limited to
+SwapLabsInc/SwapLabs with **Contents: read and write**, which is what the dispatches
+API requires. Nothing else in this workflow reads that secret. Without it, or
+when the dispatch fails, the job prints a notice or warning and the build stays
+green, because the hourly check still picks the release up.
+
 ## macOS signing material
 
 The mac leg signs and publishes update manifests only when three Actions secrets

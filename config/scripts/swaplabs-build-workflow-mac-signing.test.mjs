@@ -33,6 +33,8 @@ import {
 const SIGNING_GATE = "steps.signing.outputs.enabled == 'true'"
 const MAC_ARCHES = ['x64', 'arm64']
 
+const DEVVMS_DISPATCH_SECRET = 'SWAPLABS_DEVVMS_DISPATCH_TOKEN'
+
 describe('swaplabs fork build macOS signing', () => {
   const mac = jobs['build-mac']
   const index = (name) => stepIndex(mac, name)
@@ -58,14 +60,22 @@ describe('swaplabs fork build macOS signing', () => {
     const secretNames = [...WORKFLOW_CODE.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(
       (match) => match[1]
     )
-    expect(new Set(secretNames)).toEqual(new Set(Object.values(SWAPLABS_SIGNING_SECRETS)))
+    // The one non-signing secret, read only by notify-devvms (checked below).
+    expect(new Set(secretNames)).toEqual(
+      new Set([...Object.values(SWAPLABS_SIGNING_SECRETS), DEVVMS_DISPATCH_SECRET])
+    )
     const variableNames = [...WORKFLOW_CODE.matchAll(/vars\.([A-Z0-9_]+)/g)].map(
       (match) => match[1]
     )
     expect(new Set(variableNames)).toEqual(new Set([SWAPLABS_SIGNING_VARIABLE]))
     for (const [name, job] of Object.entries(jobs)) {
       const text = JSON.stringify(job)
-      if (name !== 'build-mac') {
+      if (name === 'notify-devvms') {
+        expect([...text.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1])).toEqual([
+          DEVVMS_DISPATCH_SECRET
+        ])
+        expect(text, `${name} must not sign`).not.toMatch(/CSC_|keychain/)
+      } else if (name !== 'build-mac') {
         expect(text, `${name} must not read a secret`).not.toMatch(/secrets\./)
         expect(text, `${name} must not sign`).not.toMatch(/CSC_|keychain/)
       }

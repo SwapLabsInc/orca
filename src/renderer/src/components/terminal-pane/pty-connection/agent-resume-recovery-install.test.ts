@@ -255,7 +255,7 @@ describe('recovery triggers', () => {
     expect(session.transport.disconnect).toHaveBeenCalled()
     expect(session.clearExitedPanePtyLayoutBinding).toHaveBeenCalledWith('pty-1')
     expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalled()
-    const disconnectOrder = session.transport.disconnect.mock.invocationCallOrder[0]
+    const disconnectOrder = vi.mocked(session.transport.disconnect).mock.invocationCallOrder[0]
     const spawnOrder = session.startFreshColdRestoreAgentResume.mock.invocationCallOrder[0]
     expect(disconnectOrder).toBeLessThan(spawnOrder)
   })
