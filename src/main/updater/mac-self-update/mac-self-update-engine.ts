@@ -21,7 +21,7 @@ import {
   fetchSmallReleaseAsset,
   type ReleaseAssetFetch
 } from './mac-self-update-download'
-import { MacSelfUpdateError } from './mac-self-update-failure'
+import { MacSelfUpdateError, isSupersededOfferFailure } from './mac-self-update-failure'
 import type { HelperSpawner } from './mac-self-update-helper'
 import { requestMacSelfUpdateInstall } from './mac-self-update-install-request'
 import { verifyMacSelfUpdateManifest, type MacSelfUpdateManifest } from './mac-self-update-manifest'
@@ -315,6 +315,12 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
               ...error.presentation
             })
           : error
+      // Why no error event: the state machine's download handler answers this rejection with a
+      // fresh check that re-offers the newer build; an error event would put a failure card in front of it.
+      if (isSupersededOfferFailure(presented)) {
+        recordUpdaterLifecycle('mac_self_update_download_superseded', { version: manifest.version })
+        throw presented
+      }
       this.fail('download_refused', presented)
     }
   }

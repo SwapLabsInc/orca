@@ -47,28 +47,40 @@ function schedulePruneRollback(paths: MacSelfUpdatePaths): void {
  * install request ended, and clears its records so the next launch starts clean. Idempotent,
  * so the updater and the startup path may both ask for it in either order.
  */
+/** What the previous launch's install request came to, read from disk and nothing written. */
+function peekMacSelfUpdateLaunchOutcome(): {
+  paths: MacSelfUpdatePaths
+  outcome: MacSelfUpdateLaunchOutcome
+} | null {
+  if (process.platform !== 'darwin' || !app.isPackaged) {
+    return null
+  }
+  try {
+    const paths = resolveRunningMacSelfUpdatePaths()
+    return {
+      paths,
+      outcome: resolveMacSelfUpdateLaunchOutcome(
+        readMacSelfUpdateInstallState(paths.installStatePath),
+        app.getVersion(),
+        readMacSelfUpdateHelperOutcome(paths.helperOutcomePath)
+      )
+    }
+  } catch {
+    // Why silent: no state means no pending install; the launch itself must not depend on this.
+    return null
+  }
+}
+
 export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
   if (reported) {
     return reported
   }
-  if (process.platform !== 'darwin' || !app.isPackaged) {
+  const peeked = peekMacSelfUpdateLaunchOutcome()
+  if (!peeked) {
     reported = { kind: 'none' }
     return reported
   }
-  let paths: MacSelfUpdatePaths
-  let outcome: MacSelfUpdateLaunchOutcome
-  try {
-    paths = resolveRunningMacSelfUpdatePaths()
-    outcome = resolveMacSelfUpdateLaunchOutcome(
-      readMacSelfUpdateInstallState(paths.installStatePath),
-      app.getVersion(),
-      readMacSelfUpdateHelperOutcome(paths.helperOutcomePath)
-    )
-  } catch {
-    // Why silent: no state means no pending install; the launch itself must not depend on this.
-    reported = { kind: 'none' }
-    return reported
-  }
+  const { paths, outcome } = peeked
   try {
     if (outcome.kind === 'completed') {
       // Why first: the helper's 90 s clock is running; everything else here can wait.
@@ -111,8 +123,12 @@ export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
   return outcome
 }
 
-/** The failure to show the user this session, if the previous launch's install did not take. */
+/**
+ * The failure to show the user this session, if the previous launch's install did not take.
+ * Why read-only: the updater can set up from a crash-loop fallback before any window has shown,
+ * and the health marker must stay the first window's (or the headless timer's) to write.
+ */
 export function getMacSelfUpdateLaunchFailure(): string | null {
-  const outcome = reportMacSelfUpdateLaunchOutcome()
+  const outcome = reported ?? peekMacSelfUpdateLaunchOutcome()?.outcome ?? { kind: 'none' }
   return outcome.kind === 'failed' ? outcome.message : null
 }

@@ -5,7 +5,7 @@ import {
   type ProcessResult,
   type ProcessSpec
 } from '../../../shared/child-process/run-process'
-import { compareAppVersions } from '../../../shared/app-version'
+import { compareAppVersions, isValidAppVersion } from '../../../shared/app-version'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 
 /** `runProcess`'s shape, injected so every macOS tool call is testable elsewhere. */
@@ -133,7 +133,8 @@ export async function verifyStagedBundle(
     )
   }
   const version = await readInfoPlistString(stagedAppPath, 'CFBundleShortVersionString', run)
-  if (compareAppVersions(version, expected.version) !== 0) {
+  // Why the parse check: compareAppVersions answers 0 for anything it cannot parse, which would pass.
+  if (!isValidAppVersion(version) || compareAppVersions(version, expected.version) !== 0) {
     throw new MacSelfUpdateError(
       'bundle-version-mismatch',
       `The downloaded bundle is version ${version}, not the ${expected.version} its manifest promised. Nothing was installed.`,

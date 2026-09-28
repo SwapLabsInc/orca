@@ -17,6 +17,8 @@ export type MacSelfUpdateHelperOutcome =
   | 'rename-staged-failed'
   | 'rename-current-failed'
   | 'rollback-dir-failed'
+  | 'rollback-blocked'
+  | 'rollback-failed'
   | 'staged-missing'
   | 'app-still-running'
 
@@ -31,11 +33,14 @@ export type MacSelfUpdateHelperOutcome =
  *    onto a surviving directory would nest the bundle inside it);
  * 3. move the staged, verified bundle into place;
  * 4. relaunch (unless a serve supervisor owns the relaunch);
- * 5. wait for the new app's health marker; without one, restore the rollback and relaunch it.
+ * 5. wait for the new app's health marker; without one, stop the new app and wait for it to be
+ *    gone (it holds the single-instance lock), then restore the rollback and relaunch it.
  *
  * The app has already quit by step 2, so every failure that leaves or restores the previous
  * bundle relaunches it too (when the helper owns relaunching): a failed update must never
- * leave Orca closed with a runnable app still on disk.
+ * leave Orca closed with a runnable app still on disk. Every `mv` of a bundle is guarded the
+ * same way: `mv` onto a directory that still exists moves the bundle *inside* it, so a restore
+ * only runs into an empty slot and otherwise relaunches whatever occupies it.
  */
 export const MAC_SELF_UPDATE_HELPER_SCRIPT = `set -u
 pid=$1
@@ -61,11 +66,25 @@ launch() {
   done
   return 1
 }
-stop_new_app() {
+new_app_pids() {
   ps -axo pid=,args= | while read -r p a; do
     case "$a" in
-      "$app/$exe"|"$app/$exe -psn"*) kill "$p" 2>/dev/null ;;
+      "$app/$exe"|"$app/$exe -psn"*) printf '%s ' "$p" ;;
     esac
+  done
+}
+stop_new_app() {
+  for sig in TERM KILL; do
+    pids=$(new_app_pids)
+    if [ -z "$pids" ]; then
+      return 0
+    fi
+    kill -s "$sig" $pids 2>/dev/null
+    n=0
+    while [ "$n" -lt 100 ] && [ -n "$(new_app_pids)" ]; do
+      n=$((n + 1))
+      sleep 0.1
+    done
   done
 }
 give_up() {
@@ -73,6 +92,23 @@ give_up() {
   if [ -n "$relaunch" ]; then
     launch "$app"
   fi
+  exit 1
+}
+restore_previous() {
+  if [ -e "$app" ]; then
+    give_up rollback-blocked
+  fi
+  if ! mv "$rollback" "$app"; then
+    report rollback-failed
+    exit 1
+  fi
+}
+roll_back() {
+  mkdir -p "$(dirname "$staged")"
+  mv "$app" "$staged"
+  restore_previous
+  report "$1"
+  launch "$app"
   exit 1
 }
 n=0
@@ -96,8 +132,8 @@ fi
 if ! mv "$app" "$rollback"; then
   give_up rename-current-failed
 fi
-if ! mv "$staged" "$app"; then
-  mv "$rollback" "$app"
+if [ -e "$app" ] || ! mv "$staged" "$app"; then
+  restore_previous
   give_up rename-staged-failed
 fi
 rm -f "$marker"
@@ -106,23 +142,14 @@ if [ -z "$relaunch" ]; then
   exit 0
 fi
 if ! launch "$app"; then
-  mv "$app" "$staged"
-  mv "$rollback" "$app"
-  launch "$app"
-  report relaunch-failed
-  exit 1
+  roll_back relaunch-failed
 fi
 n=0
 while [ ! -e "$marker" ]; do
   n=$((n + 1))
   if [ "$n" -gt "$timeout" ]; then
     stop_new_app
-    sleep 2
-    mv "$app" "$staged"
-    mv "$rollback" "$app"
-    launch "$app"
-    report rolled-back
-    exit 1
+    roll_back rolled-back
   fi
   sleep 1
 done

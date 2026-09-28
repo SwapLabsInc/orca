@@ -70,3 +70,8 @@ export function readUpdateErrorPresentation(error: unknown): UpdateErrorPresenta
       : { retryable: error.presentation.retryable })
   }
 }
+
+/** A download the engine refused because a check replaced its offer mid-flight: the card needs a fresh offer, not a retry of this one. */
+export function isSupersededOfferFailure(error: unknown): boolean {
+  return isMacSelfUpdateError(error) && error.reason === 'offer-superseded'
+}

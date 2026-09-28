@@ -118,6 +118,28 @@ describe('verifyStagedBundle', () => {
       ],
       'bundle-identity-mismatch'
     ],
+    // Why the unparseable cases: compareAppVersions answers 0 for what it cannot parse, and the
+    // version guard used to accept a bundle whose CFBundleShortVersionString was garbage or empty.
+    [
+      'unparseable version',
+      [
+        {
+          match: isTool('PlistBuddy', 'Print :CFBundleShortVersionString'),
+          result: { stdout: 'not-a-version\n' }
+        }
+      ],
+      'bundle-version-mismatch'
+    ],
+    [
+      'empty version',
+      [
+        {
+          match: isTool('PlistBuddy', 'Print :CFBundleShortVersionString'),
+          result: { stdout: '\n' }
+        }
+      ],
+      'bundle-version-mismatch'
+    ],
     [
       'version',
       [

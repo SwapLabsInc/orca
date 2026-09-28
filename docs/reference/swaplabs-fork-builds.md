@@ -186,7 +186,7 @@ page"):
   Ed25519 public key, base64; validated by `electron.vite.config.ts` like the
   source registry);
 - the running bundle's designated requirement is identity-bound (`certificate
-  leaf = …`), read once with `codesign -d -r-`. An ad-hoc signature is
+leaf = …`), read once with `codesign -d -r-`. An ad-hoc signature is
   `cdhash`-bound, so no later build could ever match it; the installer then
   refuses up front and the buttons say manual.
 

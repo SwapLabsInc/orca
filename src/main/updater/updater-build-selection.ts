@@ -31,6 +31,7 @@ import {
   getMacSelfUpdateSupport,
   isMacSelfUpdateActive
 } from './mac-self-update/mac-self-update-activation'
+import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
 
@@ -313,13 +314,16 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       this.handleSettledUpdateCheckPromise(attemptId)
     } catch (error) {
       this.userInitiatedCheck = false
-      const releaseSource = this.getPinnedReleaseSourceForStatus()
+      // Why not getPinnedReleaseSourceForStatus: the engine's error event settles this same failure
+      // first and hands the feed back, and this status must repeat that one, not strip its source.
+      const releaseSource = source.id !== runningSource ? source.id : undefined
       this.clearAvailableUpdateContext()
       this.restoreReleaseUpdateSource()
       this.sendSettledCheckStatus({
         state: 'error',
         message: String((error as Error)?.message ?? error),
         userInitiated: true,
+        ...readUpdateErrorPresentation(error),
         ...(releaseSource ? { releaseSource } : {})
       })
     } finally {

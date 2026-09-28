@@ -260,7 +260,10 @@ describe('MacSelfUpdateEngine', () => {
         message: expect.stringContaining(NEWER_VERSION),
         presentation: { manualInstallUrl: NEWER_RELEASE_PAGE_URL }
       })
+      // Only the rejection: the state machine answers it with a fresh check, and an error event
+      // would put a failure card in front of the build that check re-offers.
       expect(emitted.map((entry) => entry.event)).not.toContain('update-downloaded')
+      expect(emitted.map((entry) => entry.event)).not.toContain('error')
       expect(existsSync(fixture.paths.stagingDir)).toBe(false)
       fixture.engine.quitAndInstall()
       expect(emitted.at(-1)).toMatchObject({
