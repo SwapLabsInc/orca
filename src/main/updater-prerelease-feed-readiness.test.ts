@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setHostSliceForTest } from './updater-host-slice.fixture'
 import { installNetRequestFetchAdapter } from './updater-net-request.fixture'
 import { publishingIncident } from './updater-prerelease-feed-reproduction.fixture'
 
-const ORIGINAL_PLATFORM = process.platform
+// Why x64: every manifest and asset the cases name is the x64 slice's.
+let restoreHostSlice = (): void => {}
 
 const { netFetchMock, netRequestMock } = vi.hoisted(() => ({
   netFetchMock: vi.fn(),
@@ -35,10 +37,6 @@ function buildManifest(tag: string): string {
 
 function isPlatformManifestRequest(url: string): boolean {
   return /\/latest(?:-[a-z]+)?\.yml$/.test(url)
-}
-
-function setPlatformForTest(platform: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: platform })
 }
 
 function buildWindowsManifest(version: string): string {
@@ -106,16 +104,17 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
     netFetchMock.mockReset()
     netRequestMock.mockReset()
     installNetRequestFetchAdapter(netRequestMock, netFetchMock)
+    restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
-    setPlatformForTest(ORIGINAL_PLATFORM)
+    restoreHostSlice()
   })
 
   it("offers a Windows release from GitHub's asset redirect without probing Azure", async () => {
-    setPlatformForTest('win32')
+    setHostSliceForTest({ platform: 'win32' })
     const assetRequestInits: { method?: string; redirect?: string }[] = []
 
     netFetchMock.mockImplementation(
@@ -152,7 +151,7 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
   })
 
   it.each([301, 307, 308])('accepts a GitHub %s asset redirect as ready', async (status) => {
-    setPlatformForTest('win32')
+    setHostSliceForTest({ platform: 'win32' })
     netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
       if (url === 'https://github.com/stablyai/orca/releases.atom') {
         return Promise.resolve({
@@ -183,7 +182,7 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
   })
 
   it('reports a GitHub asset request error as unavailable', async () => {
-    setPlatformForTest('win32')
+    setHostSliceForTest({ platform: 'win32' })
     netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
       if (url === 'https://github.com/stablyai/orca/releases.atom') {
         return Promise.resolve({
@@ -216,7 +215,7 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
 
   it('aborts a GitHub asset request that exceeds the timeout', async () => {
     vi.useFakeTimers()
-    setPlatformForTest('win32')
+    setHostSliceForTest({ platform: 'win32' })
     let resolveAsset: (() => void) | undefined
     const pendingAsset = new Promise<{ ok: boolean; status: number }>((resolve) => {
       resolveAsset = () => resolve({ ok: false, status: 503 })

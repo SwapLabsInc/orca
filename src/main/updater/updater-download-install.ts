@@ -2,6 +2,10 @@ import { beginMacUpdateDownload, deferMacQuitUntilInstallerReady } from '../upda
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { isExternallyManagedLinuxInstall } from '../linux-update-package-type'
 import { LINUX_PACKAGE_EXTERNALLY_MANAGED_MESSAGE } from '../linux-package-downloaded-status'
+import {
+  isSupersededOfferFailure,
+  readUpdateErrorPresentation
+} from './mac-self-update/mac-self-update-failure'
 import { QUIT_AND_INSTALL_DELAY_MS } from './updater-state'
 import { UpdaterRemoteStatus } from './updater-remote-status'
 
@@ -88,11 +92,18 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
       .downloadUpdate()
       .catch((err) => {
         this.downloadInFlight = false
+        // LOCAL: a check that finished mid-download replaced the offer, and that check may have
+        // cleared the version Retry needs (its 'available' is dropped while a download is under
+        // way), so only a fresh check can put the newer build back on the card.
+        if (isSupersededOfferFailure(err)) {
+          this.checkForUpdatesFromMenu()
+          return
+        }
         const message = String(err?.message ?? err)
         if (localBuildDownload) {
           this.sendLocalBuildErrorAndRestore(message)
         } else {
-          this.sendErrorStatus(message)
+          this.sendErrorStatus(message, undefined, undefined, readUpdateErrorPresentation(err))
         }
       })
   }

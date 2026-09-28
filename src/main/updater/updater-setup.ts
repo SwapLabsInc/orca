@@ -18,6 +18,8 @@ import { getLinuxPackageType } from '../linux-update-package-type'
 import { createUpdaterDiagnosticLogger } from '../linux-package-install-diagnostic'
 import { registerAutoUpdaterHandlers } from '../updater-events'
 import { getServeUpdateHandoffFailure } from '../serve-update-handoff'
+import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
+import { getMacSelfUpdateLaunchFailure } from './mac-self-update/mac-self-update-launch-outcome'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
 import { getReleaseSourceOrPrimary } from '../../shared/release-sources'
@@ -143,6 +145,11 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
       )
       this.sendErrorStatus(`The server update did not complete: ${serveHandoffFailure}`, true)
     }
+    // LOCAL: a self-update that the helper rolled back is only visible from the build that came back.
+    const macSelfUpdateFailure = getMacSelfUpdateLaunchFailure()
+    if (macSelfUpdateFailure) {
+      this.sendErrorStatus(macSelfUpdateFailure, true)
+    }
 
     if (!app.isPackaged && !is.dev) {
       return
@@ -214,7 +221,8 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
       restoreReleaseUpdateSource: () => this.restoreReleaseUpdateSource(),
       sendCheckFailureStatus: (message, userInitiated, source, sourceError) =>
         this.sendCheckFailureStatus(message, userInitiated, source, sourceError),
-      sendErrorStatus: (message, userInitiated) => this.sendErrorStatus(message, userInitiated),
+      sendErrorStatus: (message, userInitiated, error) =>
+        this.sendErrorStatus(message, userInitiated, undefined, readUpdateErrorPresentation(error)),
       sendStatus: (status) => this.sendStatus(status),
       scheduleAutomaticUpdateCheck: (delayMs) => this.scheduleAutomaticUpdateCheck(delayMs),
       shouldSuppressMissingManifestPrereleaseFallbackEvent: (message, error) =>

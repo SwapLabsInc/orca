@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setHostSliceForTest } from './updater-host-slice.fixture'
 import { installNetRequestFetchAdapter } from './updater-net-request.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
 } from '../shared/release-sources.fixture'
 
-const ORIGINAL_PLATFORM = process.platform
+// Why x64: every manifest and asset the cases name is the x64 slice's.
+let restoreHostSlice = (): void => {}
 
 const { netFetchMock, netRequestMock } = vi.hoisted(() => ({
   netFetchMock: vi.fn(),
@@ -89,20 +91,17 @@ function respondWithAtom(
   })
 }
 
-function setPlatformForTest(platform: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: platform })
-}
-
 describe('fetchNewerReleaseTag', () => {
   beforeEach(() => {
     vi.resetModules()
     netFetchMock.mockReset()
     netRequestMock.mockReset()
     installNetRequestFetchAdapter(netRequestMock, netFetchMock)
+    restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
   })
 
   afterEach(() => {
-    setPlatformForTest(ORIGINAL_PLATFORM)
+    restoreHostSlice()
   })
 
   it('returns the newest stable tag when the user is on an RC and a newer stable exists', async () => {
@@ -130,7 +129,7 @@ describe('fetchNewerReleaseTag', () => {
   ] satisfies [NodeJS.Platform, string][])(
     'probes the %s platform manifest',
     async (platform, manifestName) => {
-      setPlatformForTest(platform)
+      setHostSliceForTest({ platform })
       const manifestUrls: string[] = []
       const assetUrls: string[] = []
 
@@ -508,11 +507,12 @@ describe('fetchNewerReleaseTag across release sources', () => {
     netRequestMock.mockReset()
     installNetRequestFetchAdapter(netRequestMock, netFetchMock)
     setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
   })
 
   afterEach(() => {
     setReleaseSourcesLiteralForTest(null)
-    setPlatformForTest(ORIGINAL_PLATFORM)
+    restoreHostSlice()
   })
 
   async function loadFeed() {
@@ -730,7 +730,7 @@ describe('fetchNewerReleaseTag across release sources', () => {
   // Why: hourly, daily and adhoc tags exist only in their own repos, and the source's main repo
   // 404s them — every dev-channel pin used to be refused as having no installable build.
   it("verifies a dev-channel tag in the repo its pin reads, not the source's main one", async () => {
-    setPlatformForTest('darwin')
+    setHostSliceForTest({ platform: 'darwin' })
     const tag = 'v1.4.160-hourly.202607281400'
     const manifestUrls: string[] = []
     netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {

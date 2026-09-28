@@ -265,7 +265,11 @@ describe('swaplabs update verification', () => {
         expect.stringContaining('named orca-macos-x64.zip')
       ])
       writeFileSync(context.zipPath, ZIP_BYTES)
-      expect(await verify({ signature: signature.replace(/^./, 'B') })).toEqual([
+      // Why not a fixed letter: the key pair is fresh per run, and about one signature in 64
+      // already starts with any given base64 character, which left the signature untouched.
+      const tampered = signature.replace(/^./, (first) => (first === 'B' ? 'C' : 'B'))
+      expect(tampered).not.toBe(signature)
+      expect(await verify({ signature: tampered })).toEqual([
         'signature does not verify against the public key'
       ])
       expect(await verify({ manifestBytes: Buffer.from('{}') })).toEqual([

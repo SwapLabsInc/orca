@@ -4,6 +4,8 @@ import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getRetainedLinuxPackageManualInstallStatus } from '../linux-package-downloaded-status'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseSourceId } from '../../shared/release-sources'
+import { pickUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
+import type { UpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterStatus } from './updater-status'
 import {
@@ -275,13 +277,18 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
   protected sendErrorStatus(
     message: string,
     userInitiated?: boolean,
-    releaseSource?: ReleaseSourceId
+    releaseSource?: ReleaseSourceId,
+    /** A manual-install page or a retry verdict for the card, when the failure carries one. */
+    presentation: UpdateErrorPresentation = {}
   ): void {
+    const shown = pickUpdateErrorPresentation(presentation)
     if (
       this.currentStatus.state === 'error' &&
       this.currentStatus.message === message &&
       this.currentStatus.userInitiated === userInitiated &&
-      this.currentStatus.releaseSource === releaseSource
+      this.currentStatus.releaseSource === releaseSource &&
+      this.currentStatus.manualInstallUrl === shown.manualInstallUrl &&
+      this.currentStatus.retryable === shown.retryable
     ) {
       return
     }
@@ -296,6 +303,7 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
       state: 'error',
       message,
       userInitiated,
+      ...shown,
       ...(releaseSource ? { releaseSource } : {})
     })
   }
@@ -317,7 +325,8 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     if (retainedStatus) {
       this.sendStatus(retainedStatus)
     } else if (status.state === 'error') {
-      this.sendErrorStatus(status.message, status.userInitiated, status.releaseSource)
+      // Why the status itself: its manual-install page and retry verdict must reach the card intact.
+      this.sendErrorStatus(status.message, status.userInitiated, status.releaseSource, status)
     } else {
       this.sendStatus(status)
     }

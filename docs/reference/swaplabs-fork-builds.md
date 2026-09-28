@@ -177,6 +177,129 @@ certificate's designated requirement and only manifests signed by the key it was
 compiled with. Treat the output directory as the only copy and back it up
 privately.
 
+## macOS self-updates (SwapLabs → SwapLabs)
+
+`LOCAL:` upstream's macOS updater hands the downloaded zip to Squirrel.Mac, which
+only installs a bundle that satisfies the running app's Developer ID designated
+requirement. A fork build cannot meet that, so a SwapLabs build on macOS updates
+itself through Orca's own installer in `src/main/updater/mac-self-update/`. It is
+shaped like electron-updater (same events, same `checkForUpdates` /
+`downloadUpdate` / `quitAndInstall` surface), so the updater state machine, the
+Updates buttons, the update card, nudges, the quit-and-install sequence and the
+exit watchdog run unchanged. Everything else (Linux, upstream builds, cross-source
+jumps) still goes through electron-updater or a manual download.
+
+### When it is active
+
+All of these must hold, or the Mac assets stay download-only ("Open download
+page"):
+
+- macOS, packaged build;
+- the process is not a supervised `orca serve` (one started by the serve
+  supervisor, which hands it `ORCA_SERVE_UPDATE_HANDOFF_PATH`);
+- the running version belongs to a non-primary source (`…-swaplabs.<stamp>`);
+- the build was compiled with `ORCA_SWAPLABS_UPDATE_PUBLIC_KEY` (the raw 32-byte
+  Ed25519 public key, base64; validated by `electron.vite.config.ts` like the
+  source registry);
+- the running bundle's designated requirement is identity-bound (`certificate
+leaf = …`), read once with `codesign -d -r-`. An ad-hoc signature is
+  `cdhash`-bound, so no later build could ever match it; the installer then
+  refuses up front and the buttons say manual.
+
+`requiresManualInstall` says manual for a fork build's own next macOS build unless
+the installer is active; cross-source jumps stay manual on macOS and Windows.
+
+A supervised `orca serve` keeps the manual path a fork build had before: the
+updater lists the DMG, the buttons say "Open download page", and a lifecycle
+diagnostic (`updater_mac_self_update_inactive`, reason `supervised-serve`) says
+why, once per process. The helper's swap, relaunch and health watch are written
+for the desktop app (a window is the health signal) while the supervisor restarts
+a serve from the bundle on its own terms; teaching the two to cooperate is a
+possible follow-up, not part of this installer. An unsupervised headless `orca
+serve` defers downloads and installs as it always has.
+
+While the installer is active, "Check for local build" is refused before its file
+dialog opens: the loopback feed serves `latest-mac.yml`, which the installer cannot
+verify, and a local build is never signed with the SwapLabs release identity, so it
+could not be installed anyway. The message says to install a local build by hand.
+
+### Release assets the app consumes
+
+Per macOS slice (`arm64`, `x64`), uploaded in this order, manifest last:
+
+1. `orca-macos-<arch>.zip` — the `.app`, `ditto -c -k --keepParent`.
+2. `swaplabs-update-mac-<arch>.json` — canonical JSON, no trailing newline:
+   `schema` (1), `source` (`swaplabs`), `version`, `arch`, `file`, `size`,
+   `sha512` (base64), `bundleId` (`com.stablyai.orca`), `commit`,
+   `designatedRequirementSha256` (hex sha256 of the text after `designated => `
+   in `codesign -d -r- <app>`, trimmed), `releasedAt` (ISO-8601). The name is
+   `<source id>-update-mac-<arch>.json`, so another source would publish its own.
+3. `swaplabs-update-mac-<arch>.json.sig` — base64 Ed25519 signature over the
+   exact bytes of (2).
+
+`latest-mac.yml` stays absent so electron-updater never tries Squirrel. The
+atom-feed readiness probe, the pinned-tag verification and the Updates-section
+listing all read the JSON manifest in place of `latest-mac.yml` on a build where
+the installer is supported, and treat the `.sig` as a required asset. There the
+listing offers a release only when the slice's zip, manifest and signature are all
+attached; a DMG or a stray `latest-mac.yml` does not make it installable.
+
+### What a check, a download and a restart do
+
+- **Check**: the existing atom-feed preflight pins the newest fork tag, then the
+  engine fetches the manifest and its signature through Electron's `net` (64 KiB /
+  1 KiB caps, enforced while the body streams so an oversized response is cut off
+  rather than buffered) and refuses
+  unless, in this order, the signature verifies, the manifest parses, `source`,
+  `arch` and `bundleId` match, the version belongs to the source and is newer
+  (routine) or exactly the pinned target, and `designatedRequirementSha256`
+  equals the running bundle's. Nothing is read from the manifest before the
+  signature check.
+- **Download**: the zip streams into `<userData>/mac-self-update/downloads/`
+  through a stream pipeline, under the size and sha512 the signed manifest fixed
+  (a transfer past the size is abandoned; a full or unwritable disk is a retryable
+  error, not a crash), then `ditto -x -k` unpacks it into `.<App>-update-staging/`
+  beside the bundle, on the same volume so the swap is a rename. The staged
+  bundle must pass `codesign --verify --deep --strict`, carry the expected
+  `CFBundleIdentifier` and `CFBundleShortVersionString`, and have the same
+  designated requirement as the running app. Only then is
+  `com.apple.quarantine` stripped and `update-downloaded` emitted, which is also
+  the installer-ready signal Squirrel would have given. Any failure removes the
+  staging directory and the zip, and the error status carries the tag's release
+  page as `manualInstallUrl`. An app that cannot be written, or whose parent
+  folder cannot (probed with a real directory, since the swap renames there), is
+  refused before anything is staged or downloaded, as a non-retryable error.
+  Nothing from the download is executed at any point; the only
+  programs run are `codesign`, `PlistBuddy`, `ditto` and `xattr` under `/usr`.
+- **Restart to update**: the existing quit-and-install sequence runs (session
+  save, terminal daemon handling, exit watchdog), then the engine records
+  `install-state.json` and starts a detached `/bin/sh -c` helper. The script is a
+  fixed string in `mac-self-update-helper.ts`; every path and number is an argv
+  entry. It waits for the app pid to exit, moves the bundle to
+  `.<App>-update-rollback/`, moves the staged bundle into place, relaunches with
+  `/usr/bin/open`, and waits up to 90 s for the health marker the new app writes
+  once its first window can paint (`ready-to-show`), and on no other signal: a
+  renderer that hangs or crashes before that is never certified, so the helper
+  rolls it back. Without the marker, the helper stops the new build (SIGTERM,
+  then SIGKILL), restores the rollback and relaunches the previous build. A new
+  build still on the process table after SIGKILL holds the single-instance lock,
+  so the helper then leaves both bundles where they are, relaunches nothing and
+  records `new-app-still-running`. Every earlier failure that leaves the previous
+  bundle in place (staged bundle missing, no rollback folder, either rename
+  refused) relaunches it as well, so a failed update never leaves Orca closed.
+- **Next launch**: `reportMacSelfUpdateLaunchOutcome` writes the health marker,
+  records `updater_mac_self_update_completed` or `…_failed` with the helper's
+  one-word outcome, shows a rollback as an error in the update card, discards a
+  bundle that never installed, and prunes the rollback a few minutes after a
+  healthy launch.
+
+### Not verified on a real Mac
+
+- TCC grants surviving the swap with the self-signed identity.
+- Gatekeeper on relaunch after the quarantine strip, for a non-notarized bundle.
+- Renaming the bundle under a still-running terminal daemon.
+- `open` relaunching promptly after the previous instance's exit.
+
 ## How to force a build
 
 From the Actions tab pick **SwapLabs Fork Build**, **Run workflow**, tick

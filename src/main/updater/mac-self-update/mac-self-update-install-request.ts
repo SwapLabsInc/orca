@@ -1,0 +1,80 @@
+import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
+import { MacSelfUpdateError } from './mac-self-update-failure'
+import {
+  MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS,
+  MAC_SELF_UPDATE_RELAUNCH_PROGRAM,
+  spawnMacSelfUpdateHelper,
+  type HelperSpawner
+} from './mac-self-update-helper'
+import {
+  clearMacSelfUpdateInstallRecords,
+  writeMacSelfUpdateInstallState
+} from './mac-self-update-install-state'
+import type { MacSelfUpdatePaths } from './mac-self-update-paths'
+
+export type MacSelfUpdateInstallRequest = {
+  paths: MacSelfUpdatePaths
+  appPid: number
+  currentVersion: string
+  staged: { appPath: string; version: string }
+  relaunchProgram?: string
+  spawnHelper?: HelperSpawner
+}
+
+/**
+ * Records the install request for the next launch to report on, then starts the detached
+ * helper that swaps the bundles once this process has exited. Returns the helper's pid; a
+ * failure before the helper runs leaves no request behind, so nothing is reported later.
+ */
+export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest): number {
+  const { paths, staged } = request
+  try {
+    clearMacSelfUpdateInstallRecords(paths)
+    writeMacSelfUpdateInstallState(paths.installStatePath, {
+      schemaVersion: 1,
+      phase: 'install-requested',
+      fromVersion: request.currentVersion,
+      targetVersion: staged.version,
+      stagedAppPath: staged.appPath,
+      requestedAt: new Date().toISOString()
+    })
+  } catch (error) {
+    throw new MacSelfUpdateError(
+      'install-state-unwritable',
+      `Could not record the update install: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+  let helperPid: number
+  try {
+    helperPid = spawnMacSelfUpdateHelper(
+      {
+        appPid: request.appPid,
+        appPath: paths.appPath,
+        stagedAppPath: staged.appPath,
+        rollbackAppPath: paths.rollbackAppPath,
+        healthMarkerPath: paths.healthMarkerPath,
+        outcomePath: paths.helperOutcomePath,
+        executableRelativePath: paths.executableRelativePath,
+        relaunchProgram: request.relaunchProgram ?? MAC_SELF_UPDATE_RELAUNCH_PROGRAM,
+        healthTimeoutSeconds: MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS
+      },
+      request.spawnHelper,
+      (error) =>
+        recordUpdaterLifecycle(
+          'mac_self_update_helper_spawn_error',
+          {
+            errorCode: 'code' in error && typeof error.code === 'string' ? error.code : error.name
+          },
+          { level: 'warn', message: error.message }
+        )
+    )
+  } catch (error) {
+    clearMacSelfUpdateInstallRecords(paths)
+    throw error
+  }
+  recordUpdaterLifecycle('mac_self_update_helper_started', {
+    version: staged.version,
+    helperPid
+  })
+  return helperPid
+}

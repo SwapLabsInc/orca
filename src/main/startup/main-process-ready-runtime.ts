@@ -32,8 +32,9 @@ import {
 import { initializeMainProcessAutomations } from './main-process-automations'
 import { initializeMainProcessPlugins } from './main-process-plugins'
 import { collectWorktreeTrashSweepRoots, sweepStaleWorktreeTrash } from '../worktree-trash'
-import { runAfterFirstWindowShown } from './first-window-deferral'
+import { runAfterFirstWindowShown, runOnlyAfterFirstWindowShown } from './first-window-deferral'
 import { logStartupMilestone } from './startup-diagnostics'
+import { reportMacSelfUpdateLaunchOutcome } from '../updater/mac-self-update/mac-self-update-launch-outcome'
 
 // Headless serve never opens a window, so the sweep still has to run off a timer there.
 const WORKTREE_TRASH_SWEEP_FALLBACK_MS = 15_000
@@ -88,6 +89,15 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
       console.warn('[worktrees] Failed to sweep leftover worktree directories:', error)
     })
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
+  // LOCAL: a window that can paint is the health signal the self-update helper waits for (a
+  // fallback timer would certify a renderer that hung before it); the report also says how the
+  // previous launch's install went and prunes what it left behind. Headless serve opens no
+  // window and never certifies: the self-updater is inactive under a supervised serve.
+  if (!state.isServeMode) {
+    runOnlyAfterFirstWindowShown(() => {
+      reportMacSelfUpdateLaunchOutcome()
+    })
+  }
   nativeTheme.themeSource = store.getSettings().theme ?? 'system'
   // Why (#16441): the real-home grant runs a codex app-server session. It stays
   // ordered before managed-hook reconciliation — an incapable host must re-arm

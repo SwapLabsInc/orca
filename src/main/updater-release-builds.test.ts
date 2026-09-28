@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
+import { setHostSliceForTest } from './updater-host-slice.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
@@ -7,6 +8,12 @@ import {
 
 const fetchMock = vi.fn()
 vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
+
+/** LOCAL: what the running build's installer applies to, as the activation module would answer. */
+const installerSource = vi.hoisted((): { value: unknown } => ({ value: null }))
+vi.mock('./updater/mac-self-update/mac-self-update-activation', () => ({
+  getMacSelfUpdateInstallerSourceFor: async () => installerSource.value
+}))
 
 const tokenMock = vi.fn<() => Promise<string | null>>()
 let tokenScope = 'native:github.com'
@@ -29,6 +36,15 @@ vi.mock('./git/gh-rate-limit-breaker', () => ({
 
 const { describeRateLimitReset, listReleaseBuilds, rateLimitResetAtMs, resolveTargetBuild } =
   await import('./updater-release-builds')
+
+// Why x64: the assets every case lists are the x64 slice's, whatever host runs the file.
+let restoreHostSlice = (): void => {}
+beforeEach(() => {
+  restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
+})
+afterEach(() => {
+  restoreHostSlice()
+})
 
 function jsonResponse(
   body: unknown,
@@ -222,6 +238,236 @@ describe('listReleaseBuilds', () => {
 
   // Why: on Windows a signed stable cannot reach a dev channel through the
   // updater, so the picker needs a direct download to hand the user instead.
+  // LOCAL: a SwapLabs macOS release carries no latest-mac.yml; Orca's own installer reads the
+  // per-slice signed manifest, so that is what makes the row installable on macOS.
+  it('lists a fork macOS release by its self-update manifest for the running slice', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const forkRelease = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [
+        { name: 'orca-macos-arm64.zip' },
+        { name: 'swaplabs-update-mac-arm64.json' },
+        { name: 'swaplabs-update-mac-arm64.json.sig' },
+        { name: 'latest-linux.yml' }
+      ]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([forkRelease]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      const withSelfUpdate = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+      expect(withSelfUpdate.map((build) => build.version)).toEqual([
+        '1.4.197-swaplabs.202609251200'
+      ])
+      // The other slice has no manifest of its own, and without the installer nothing on macOS does.
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'x64', swaplabs)).resolves.toEqual(
+        []
+      )
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'arm64', null)).resolves.toEqual([])
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  // LOCAL: a build Orca's own installer cannot act for (ad-hoc signed, or the identity probe
+  // failed) installs by hand, as does any other source's build; what a hand install needs is the
+  // DMG, and the slice's self-update assets say nothing about it.
+  it('lists a fork macOS release by its DMG when the installer does not apply to it', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const dmgOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [{ name: 'orca-macos-arm64.dmg' }, { name: 'orca-macos-x64.dmg' }]
+    }
+    const sliceOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609261200',
+      name: '1.4.197-swaplabs.202609261200 • Sep 26 • def5678',
+      draft: false,
+      published_at: '2026-09-26T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609261200',
+      assets: [
+        { name: 'orca-macos-arm64.zip' },
+        { name: 'swaplabs-update-mac-arm64.json' },
+        { name: 'swaplabs-update-mac-arm64.json.sig' }
+      ]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([sliceOnly, dmgOnly]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      const byHand = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', null)
+      expect(byHand.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609251200'])
+      expect(byHand[0].installerUrl).toBe(
+        'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2B202609251200/orca-macos-arm64.dmg'
+      )
+      // With the installer active the same list is the slice's, which the DMG-only release lacks.
+      const inApp = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+      expect(inApp.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609261200'])
+      // The primary source keeps the platform rule either way: no DMG requirement, no slice.
+      await expect(
+        listForkBuilds('stable', 'darwin', PRIMARY_RELEASE_SOURCE, 'arm64', null)
+      ).resolves.toEqual([])
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  it('keys the default listing on what the running build can install', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const dmgOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [{ name: 'orca-macos-arm64.dmg' }]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([dmgOnly]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      installerSource.value = null
+      await expect(
+        listForkBuilds('stable', 'darwin', swaplabs, 'arm64').then((builds) =>
+          builds.map((build) => build.version)
+        )
+      ).resolves.toEqual(['1.4.197-swaplabs.202609251200'])
+      installerSource.value = swaplabs
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'arm64')).resolves.toEqual([])
+    } finally {
+      installerSource.value = null
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  // LOCAL: the installer fetches the zip, the manifest and its signature; a release caught
+  // between those uploads listed as installable would 404 the moment it was selected.
+  it('hides a fork macOS release until its zip, manifest and signature are all attached', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const sliceAssets = [
+      'orca-macos-arm64.zip',
+      'swaplabs-update-mac-arm64.json',
+      'swaplabs-update-mac-arm64.json.sig'
+    ]
+    const forkRelease = (assetNames: string[]) => ({
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: assetNames.map((name) => ({ name }))
+    })
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      for (const missing of sliceAssets) {
+        fetchMock.mockResolvedValue(
+          jsonResponse([forkRelease(sliceAssets.filter((name) => name !== missing))])
+        )
+        await expect(
+          listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs),
+          `without ${missing}`
+        ).resolves.toEqual([])
+      }
+      fetchMock.mockResolvedValue(jsonResponse([forkRelease(sliceAssets)]))
+      const complete = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+      expect(complete.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609251200'])
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  // LOCAL: on a build Orca's own installer updates, nothing else attached installs in-app, so
+  // neither the DMG nor a stray latest-mac.yml may list a release whose slice is incomplete.
+  it.each([
+    ['its DMG', ['orca-macos-arm64.dmg']],
+    ['a stray latest-mac.yml', ['latest-mac.yml', 'orca-macos-arm64.dmg']]
+  ])(
+    'hides a fork macOS release with an incomplete slice even when it carries %s',
+    async (_label, otherAssets) => {
+      const swaplabs = {
+        id: 'swaplabs',
+        label: 'SwapLabs',
+        repo: 'SwapLabsInc/orca',
+        prereleaseIdentifier: 'swaplabs'
+      }
+      const sliceAssets = [
+        'orca-macos-arm64.zip',
+        'swaplabs-update-mac-arm64.json',
+        'swaplabs-update-mac-arm64.json.sig'
+      ]
+      const forkRelease = (assetNames: string[]) => ({
+        tag_name: 'swaplabs-v1.4.197+202609251200',
+        name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+        draft: false,
+        published_at: '2026-09-25T12:00:00Z',
+        html_url:
+          'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+        assets: assetNames.map((name) => ({ name }))
+      })
+      setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+      try {
+        vi.resetModules()
+        const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+        for (const missing of sliceAssets) {
+          fetchMock.mockResolvedValue(
+            jsonResponse([
+              forkRelease([...otherAssets, ...sliceAssets.filter((name) => name !== missing)])
+            ])
+          )
+          await expect(
+            listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs),
+            `without ${missing}`
+          ).resolves.toEqual([])
+        }
+        fetchMock.mockResolvedValue(jsonResponse([forkRelease([...otherAssets, ...sliceAssets])]))
+        const complete = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+        expect(complete.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609251200'])
+      } finally {
+        setReleaseSourcesLiteralForTest(null)
+      }
+    }
+  )
+
   it('resolves the platform installer download url', async () => {
     fetchMock.mockResolvedValue(jsonResponse([release('v1.4.163-hourly.202607312054')]))
 

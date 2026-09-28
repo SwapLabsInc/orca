@@ -27,6 +27,7 @@ type AutoUpdaterMock = {
 type AppMock = {
   isPackaged: boolean
   getVersion: Mock<() => string>
+  getPath: Mock<(name: string) => string>
   on: Mock<(event: string, handler: (...args: unknown[]) => void) => AppMock>
   emit: (event: string, ...args: unknown[]) => void
   quit: UpdaterSpy
@@ -192,6 +193,7 @@ export function createUpdaterMocks(): UpdaterMocks {
   const appMock: AppMock = {
     isPackaged: true,
     getVersion: vi.fn(() => '1.0.51'),
+    getPath: vi.fn(() => '/Applications/Orca.app/Contents/MacOS/Orca'),
     on: appEvents.on,
     emit: appEvents.emit,
     quit: vi.fn()
