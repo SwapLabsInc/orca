@@ -102,6 +102,8 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
       session.clearPendingTerminalInputIntent()
       return
     }
+    // Why xterm's provenance: its own focus reports reach onData too, and no person typed them.
+    const inputKind = wasUserInput ? 'driving' : 'query-reply'
     const intent = session.pendingTerminalInputIntent
     // Why: real xterm can deliver the terminal byte even when our DOM keydown
     // listener missed the press. Exact Ctrl+C/Escape bytes are still safe to
@@ -125,7 +127,7 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
       }
       session.clearPendingTerminalInputIntent()
       const writePromise = session.transport
-        .sendInputAccepted(data)
+        .sendInputAccepted(data, inputKind)
         .then((accepted): boolean | Promise<boolean> | null => {
           if (accepted) {
             // Why: rejected writes use transport recovery and must not arm a parser probe.
@@ -154,7 +156,7 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     }
     if (intent) {
       session.claimViewportForUserActivity()
-      if (session.transport.sendInput(data)) {
+      if (session.transport.sendInput(data, inputKind)) {
         session.markAcceptedTerminalInputSent()
         session.observeAcceptedShellCommandInput(data)
         session.observeAcceptedTerminalInput(data, intent)
@@ -165,7 +167,7 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
       return
     }
     session.claimViewportForUserActivity()
-    if (session.transport.sendInput(data)) {
+    if (session.transport.sendInput(data, inputKind)) {
       session.markAcceptedTerminalInputSent()
       session.observeAcceptedShellCommandInput(data)
       session.observeAcceptedTerminalInput(data)
@@ -207,14 +209,9 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     )
   }
 
-  session.isRendererPtyResizeAuthoritative = (): boolean => {
-    if (session.deps.isVisibleRef.current) {
-      return true
-    }
-    // Why: hidden-tab layout churn is not authoritative; visible resume
-    // owns correction, and hidden SIGWINCH can reset full-screen TUIs.
-    return false
-  }
+  // Why: hidden-tab layout churn is not authoritative; visible resume
+  // owns correction, and hidden SIGWINCH can reset full-screen TUIs.
+  session.isRendererPtyResizeAuthoritative = (): boolean => session.deps.isVisibleRef.current
 
   session.forwardPtyResize = (cols: number, rows: number): void => {
     if (!session.isRendererPtyResizeAuthoritative()) {
