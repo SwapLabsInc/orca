@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { generateKeyPairSync } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -11,13 +12,14 @@ import {
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { runProcess } from '../../src/shared/child-process/run-process'
 import {
   SWAPLABS_MAC_SIGN_IDENTITY,
   createSwaplabsUpdateManifest,
+  exportSwaplabsUpdatePublicKey,
   parseSwaplabsUpdatePublicKey,
   parseSwaplabsUpdateSigningKey,
   signSwaplabsUpdateManifest,
@@ -187,6 +189,75 @@ describe('swaplabs mac signing setup', () => {
     expect(text).toContain('--repo SwapLabsInc/orca <')
     expect(text).not.toMatch(/BEGIN PRIVATE KEY/)
   })
+
+  // The commands are printed to be pasted, so they must reach the right files
+  // whatever the output directory is called.
+  it.skipIf(process.platform === 'win32')(
+    'prints commands a shell runs as written when the output directory holds a space or a quote',
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'swaplabs-signing-'))
+      try {
+        const outDir = join(directory, "orca signing's keys")
+        mkdirSync(outDir)
+        const { privateKey } = generateKeyPairSync('ed25519')
+        const signingKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' })
+        const publicKey = exportSwaplabsUpdatePublicKey(privateKey)
+        writeFileSync(join(outDir, SWAPLABS_SIGNING_FILES.signingKey), signingKeyPem)
+        writeFileSync(join(outDir, SWAPLABS_SIGNING_FILES.certificate), 'pkcs12 bytes')
+        writeFileSync(join(outDir, SWAPLABS_SIGNING_FILES.certificatePassword), 'p12-password')
+        const text = formatSetupInstructions({
+          outDir,
+          publicKey,
+          fingerprint: 'AA:BB',
+          identity: SWAPLABS_MAC_SIGN_IDENTITY,
+          days: 3650
+        })
+
+        // A `gh` that records each call's arguments and stdin instead of reaching GitHub.
+        const bin = join(directory, 'bin')
+        mkdirSync(bin)
+        const log = join(directory, 'gh-calls')
+        writeFileSync(
+          join(bin, 'gh'),
+          `#!/bin/sh\n{ printf '%s\\n' "$*"; cat; printf '\\n--\\n'; } >> "$GH_LOG"\n`
+        )
+        chmodSync(join(bin, 'gh'), 0o755)
+        const commands = text
+          .split('\n')
+          .filter((line) => /^  (gh|base64) /.test(line))
+          .map((line) => line.trim())
+        expect(commands).toHaveLength(4)
+        const rederive = text.match(/^To re-derive the variable from the secret later: (.*)$/m)[1]
+        const result = await runProcess({
+          program: 'sh',
+          args: ['-e', '-c', [...commands, rederive].join('\n')],
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`,
+            GH_LOG: log
+          }
+        })
+        expect(result.code, result.stderr).toBe(0)
+        expect(result.stdout.trim()).toBe(publicKey)
+        const calls = readFileSync(log, 'utf8')
+        expect(calls).toContain(
+          `secret set ${SWAPLABS_SIGNING_SECRETS.signingKey} --repo SwapLabsInc/orca\n${signingKeyPem}\n--\n`
+        )
+        expect(calls).toContain(
+          `secret set ${SWAPLABS_SIGNING_SECRETS.certificate} --repo SwapLabsInc/orca\n${Buffer.from('pkcs12 bytes').toString('base64')}\n--\n`
+        )
+        expect(calls).toContain(
+          `secret set ${SWAPLABS_SIGNING_SECRETS.certificatePassword} --repo SwapLabsInc/orca\np12-password\n--\n`
+        )
+        expect(calls).toContain(
+          `variable set ${SWAPLABS_SIGNING_VARIABLE} --repo SwapLabsInc/orca --body ${publicKey}\n\n--\n`
+        )
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  )
 
   it.skipIf(!hasOpenssl)(
     'generates a code-signing certificate, a working Ed25519 pair and the variable value',

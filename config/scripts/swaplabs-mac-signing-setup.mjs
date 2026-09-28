@@ -247,9 +247,16 @@ export function generateSwaplabsSigningMaterial({
   return { outDir, publicKey, fingerprint, identity, days }
 }
 
+// Same as src/shared quotePosixShell; not imported because a .ts import makes
+// plain `node` print a module-type warning on every maintainer run.
+function quotePosixShell(value) {
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
 export function formatSetupInstructions({ outDir, publicKey, fingerprint, identity, days }) {
   const repo = SWAPLABS_RELEASE_SOURCE.repo
-  const file = (name) => join(outDir, name)
+  // The commands are printed to be pasted, so a path with a space or a quote must survive the shell.
+  const file = (name) => quotePosixShell(join(outDir, name))
   return `SwapLabs macOS signing material written to ${outDir}. Keep the directory private; nothing was written to the repository.
 
   ${SWAPLABS_SIGNING_FILES.signingKey}   Ed25519 private key (PKCS8 PEM) that signs update manifests
@@ -262,7 +269,7 @@ Create these on ${repo} (Settings → Secrets and variables → Actions), or run
   gh secret set ${SWAPLABS_SIGNING_SECRETS.signingKey} --repo ${repo} < ${file(SWAPLABS_SIGNING_FILES.signingKey)}
   base64 < ${file(SWAPLABS_SIGNING_FILES.certificate)} | tr -d '\\n' | gh secret set ${SWAPLABS_SIGNING_SECRETS.certificate} --repo ${repo}
   gh secret set ${SWAPLABS_SIGNING_SECRETS.certificatePassword} --repo ${repo} < ${file(SWAPLABS_SIGNING_FILES.certificatePassword)}
-  gh variable set ${SWAPLABS_SIGNING_VARIABLE} --repo ${repo} --body '${publicKey}'
+  gh variable set ${SWAPLABS_SIGNING_VARIABLE} --repo ${repo} --body ${quotePosixShell(publicKey)}
 
 ${SWAPLABS_SIGNING_VARIABLE} (public, compiled into every fork build as ${SWAPLABS_UPDATE_PUBLIC_KEY_ENV}):
 
