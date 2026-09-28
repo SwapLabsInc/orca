@@ -1,5 +1,9 @@
 import type { AppState } from '../types'
-import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
+import { mainAgentStatusEqual, type AgentStatusEntry } from '../../../../shared/agent-status-types'
+import {
+  agentTurnEndedUncleanly,
+  agentVerdictFields
+} from '../../../../shared/agent-main-agent-verdict'
 import {
   agentProviderSessionsEqual,
   getAgentResumeArgv,
@@ -85,7 +89,10 @@ export function sleepingRecordFromEntry(args: {
       ? { lastAssistantMessage: args.entry.lastAssistantMessage }
       : {}),
     ...(args.launchConfig ? { launchConfig: copyLaunchConfig(args.launchConfig) } : {}),
-    ...(resolveInterruptedMarker(args.entry, args.priorRecord) ? { interrupted: true } : {}),
+    ...agentVerdictFields({
+      interrupted: resolveInterruptedMarker(args.entry, args.priorRecord),
+      mainAgent: args.entry.mainAgent
+    }),
     ...(args.origin ? { origin: args.origin } : {})
   }
 }
@@ -136,7 +143,8 @@ export function refreshRetainedSleepingRecord(
     record.updatedAt === entry.updatedAt &&
     record.terminalTitle === terminalTitle &&
     record.lastAssistantMessage === lastAssistantMessage &&
-    (record.interrupted === true) === interrupted
+    (record.interrupted === true) === interrupted &&
+    mainAgentStatusEqual(record.mainAgent, entry.mainAgent)
   ) {
     return record
   }
@@ -161,6 +169,12 @@ export function refreshRetainedSleepingRecord(
   } else {
     delete next.interrupted
   }
+  // Both verdict forms move together (`agentVerdictFields`): a stale `mainAgent` outranks the flag.
+  if (entry.mainAgent) {
+    next.mainAgent = entry.mainAgent
+  } else {
+    delete next.mainAgent
+  }
   return next
 }
 
@@ -181,7 +195,7 @@ export function normalizeSleepingAgentSessionCollectOptions(
 }
 
 export function isValidCompletedAgentHibernationEntry(entry: AgentStatusEntry): boolean {
-  return entry.state === 'done' && entry.interrupted !== true
+  return entry.state === 'done' && !agentTurnEndedUncleanly(entry)
 }
 
 // Why: a finished pane is passive wake evidence, and a mobile wake background-mounts every passive
@@ -200,14 +214,18 @@ export function isDurableSleepingCapture(record: SleepingAgentSessionRecord): bo
 }
 
 // Why: manual sleep kills the pty either way, so the record carries resume identity, not the dead
-// turn's interrupt flag — and an explicitly slept workspace is never stale at wake, so a row the
+// turn's verdict — and an explicitly slept workspace is never stale at wake, so a row the
 // user is deliberately sleeping must not trip the wake-side staleness discard. `state` is preserved
 // so a done pane wakes lazily in place instead of spawning a new tab.
 export function manualSleepCaptureEntry(
   entry: AgentStatusEntry,
   capturedAt: number
 ): AgentStatusEntry {
-  return { ...entry, updatedAt: capturedAt, interrupted: false }
+  if (!entry.mainAgent) {
+    return { ...entry, updatedAt: capturedAt, interrupted: false }
+  }
+  const { outcome: _outcome, ...mainAgent } = entry.mainAgent
+  return { ...entry, updatedAt: capturedAt, interrupted: false, mainAgent }
 }
 
 export function removeSleepingRecordsReplacedByManualWorktreeSleep(

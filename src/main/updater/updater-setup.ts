@@ -23,7 +23,7 @@ import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
 import { getReleaseSourceOrPrimary } from '../../shared/release-sources'
 import { AUTO_UPDATE_CHECK_INTERVAL_MS } from './updater-state'
 import { UpdaterDownloadInstall } from './updater-download-install'
-import type { UpdateInstallMode } from './updater-state'
+import type { PreQuitCleanupFailureMode, UpdateInstallMode } from './updater-state'
 
 export type UpdaterSetupOptions = {
   getLastUpdateCheckAt?: () => number | null
@@ -35,6 +35,7 @@ export type UpdaterSetupOptions = {
   setDismissedUpdateNudgeId?: (id: string | null) => void
   getReleaseChannelOverride?: () => ReleaseChannel | null
   installMode?: UpdateInstallMode
+  onBeforeQuitFailure?: PreQuitCleanupFailureMode
 }
 
 /** Initializes electron-updater and attaches lifecycle/event bridges. */
@@ -122,6 +123,7 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
   setupAutoUpdater(mainWindow: BrowserWindow, opts?: UpdaterSetupOptions): void {
     this.mainWindowRef = mainWindow
     this.onBeforeQuitCleanup = opts?.onBeforeQuit ?? null
+    this.onBeforeQuitFailure = opts?.onBeforeQuitFailure ?? 'continue'
     this.persistLastUpdateCheckAt = opts?.setLastUpdateCheckAt ?? null
     this._getLastUpdateCheckAt = opts?.getLastUpdateCheckAt ?? null
     this._getPendingUpdateNudgeId = opts?.getPendingUpdateNudgeId ?? null

@@ -60,12 +60,10 @@ export function structuredClaudeLifecycleEvent(
       type: 'ended',
       sessionId: event.sessionId,
       reason: event.reason,
+      ...(event.failure ? { failure: event.failure } : {}),
       cause: event.cause,
       fence: event.fence,
       acquisitionGeneration: event.acquisitionGeneration,
-      ...(event.settlementRetryRequired
-        ? { settlementRetryRequired: event.settlementRetryRequired }
-        : {}),
       ...(event.startupUnproven ? { startupUnproven: event.startupUnproven } : {})
     }
   }
