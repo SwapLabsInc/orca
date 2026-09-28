@@ -192,9 +192,6 @@ export function createMacSelfUpdateEngineFixture(
             : `${options.stagedBundleVersion ?? unpackedVersion}\n`
       }
     }
-    if (spec.program.endsWith('xattr') && args[0] === '-p') {
-      return { ...result, code: 1, stderr: 'No such xattr: com.apple.quarantine' }
-    }
     return result
   }
 

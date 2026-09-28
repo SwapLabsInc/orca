@@ -165,22 +165,30 @@ describe('verifyStagedBundle', () => {
 })
 
 describe('extraction and quarantine', () => {
-  it('extracts with ditto and strips the quarantine flag, verifying by reading it back', async () => {
+  const app = '/Applications/.Orca-update-staging/Orca.app'
+  /** The recursive listing after the delete: `xattr -r <app>` without `-d`. */
+  const isQuarantineListing = (spec: ProcessSpec) =>
+    spec.program.endsWith('xattr') && spec.args?.[0] === '-r' && !spec.args.includes('-d')
+
+  it('extracts with ditto and strips the quarantine flag, verifying by the recursive listing', async () => {
     const { run, calls } = scriptedRunner([
-      { match: isTool('xattr', '-p'), result: { code: 1, stderr: 'No such xattr' } }
+      // A cleared tree still lists other attributes; the delete's own status is not consulted.
+      { match: isTool('xattr', '-d'), result: { code: 1, stderr: 'No such xattr' } },
+      {
+        match: isQuarantineListing,
+        result: {
+          stdout: `${app}: com.apple.provenance\n${app}/Contents/MacOS/Orca: com.apple.provenance\n`
+        }
+      }
     ])
     await extractBundleZip('/tmp/a.zip', '/Applications/.Orca-update-staging', run)
-    await stripQuarantine('/Applications/.Orca-update-staging/Orca.app', run)
+    await stripQuarantine(app, run)
     expect(calls[0]).toMatchObject({
       program: '/usr/bin/ditto',
       args: ['-x', '-k', '/tmp/a.zip', '/Applications/.Orca-update-staging']
     })
-    expect(calls[1].args).toEqual([
-      '-r',
-      '-d',
-      'com.apple.quarantine',
-      '/Applications/.Orca-update-staging/Orca.app'
-    ])
+    expect(calls[1].args).toEqual(['-r', '-d', 'com.apple.quarantine', app])
+    expect(calls[2]).toMatchObject({ program: '/usr/bin/xattr', args: ['-r', app] })
   })
 
   it('fails extraction on a non-zero ditto exit and quarantine removal when the flag survives', async () => {
@@ -191,10 +199,36 @@ describe('extraction and quarantine', () => {
       reason: 'extract-failed'
     })
     const sticky = scriptedRunner([
-      { match: isTool('xattr', '-p'), result: { code: 0, stdout: '0083;' } }
+      { match: isQuarantineListing, result: { stdout: `${app}: com.apple.quarantine\n` } }
     ])
-    await expect(stripQuarantine('/tmp/Orca.app', sticky.run)).rejects.toMatchObject({
+    await expect(stripQuarantine(app, sticky.run)).rejects.toMatchObject({
       reason: 'extract-failed'
+    })
+  })
+
+  // Why: a partial `xattr -r -d` can clear the bundle directory and leave the executable flagged,
+  // and Gatekeeper assesses the executable; a check of the bundle's own attribute passed that.
+  it('refuses a bundle whose nested executable kept the flag after the recursive delete', async () => {
+    const nested = scriptedRunner([
+      { match: isTool('xattr', '-p'), result: { code: 1, stderr: 'No such xattr' } },
+      {
+        match: isQuarantineListing,
+        result: { stdout: `${app}/Contents/MacOS/Orca: com.apple.quarantine\n` }
+      }
+    ])
+    await expect(stripQuarantine(app, nested.run)).rejects.toMatchObject({
+      reason: 'extract-failed',
+      message: expect.stringContaining(`1 file still flagged, first ${app}/Contents/MacOS/Orca`)
+    })
+  })
+
+  it('refuses a bundle whose quarantine listing could not be read', async () => {
+    const unreadable = scriptedRunner([
+      { match: isQuarantineListing, result: { code: 1, stderr: 'xattr: Permission denied' } }
+    ])
+    await expect(stripQuarantine(app, unreadable.run)).rejects.toMatchObject({
+      reason: 'extract-failed',
+      message: expect.stringContaining('Could not confirm')
     })
   })
 })

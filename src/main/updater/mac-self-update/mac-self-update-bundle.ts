@@ -180,11 +180,26 @@ export async function extractBundleZip(
   }
 }
 
+/** The paths an `xattr -r` listing (`path: attribute` per line) still shows as quarantined. */
+function parseQuarantinedPaths(listing: string, appPath: string): string[] {
+  const paths: string[] = []
+  for (const line of listing.split(/\r?\n/)) {
+    const entry = line.trimEnd()
+    if (entry === QUARANTINE_ATTRIBUTE) {
+      paths.push(appPath)
+    } else if (entry.endsWith(`: ${QUARANTINE_ATTRIBUTE}`)) {
+      paths.push(entry.slice(0, -QUARANTINE_ATTRIBUTE.length - 2))
+    }
+  }
+  return paths
+}
+
 /**
  * Removes the quarantine flag the bundle may carry so Gatekeeper does not block the relaunch
  * of a build that is not notarized. Runs only after every verification above has passed.
- * A tree without the attribute makes `xattr -d` exit non-zero, so the outcome is checked by
- * reading the bundle's own attribute back rather than by the exit code.
+ * `xattr -r -d` exits non-zero for every file that never had the flag, so its status cannot
+ * tell a tree it half-cleared from one that was never quarantined; the verdict is the
+ * recursive listing, which must name the flag on no file, not only on the bundle itself.
  */
 export async function stripQuarantine(
   appPath: string,
@@ -195,15 +210,22 @@ export async function stripQuarantine(
     args: ['-r', '-d', QUARANTINE_ATTRIBUTE, appPath],
     timeoutMs: VERIFY_TIMEOUT_MS
   })
-  const check = await run({
+  const listing = await run({
     program: XATTR,
-    args: ['-p', QUARANTINE_ATTRIBUTE, appPath],
-    timeoutMs: READ_TIMEOUT_MS
+    args: ['-r', appPath],
+    timeoutMs: VERIFY_TIMEOUT_MS
   })
-  if (check.code === 0) {
+  if (listing.code !== 0) {
     throw new MacSelfUpdateError(
       'extract-failed',
-      'Could not clear the quarantine flag on the downloaded update.'
+      `Could not confirm the quarantine flag was cleared from the downloaded update (xattr ${describeExit(listing)}).`
+    )
+  }
+  const quarantined = parseQuarantinedPaths(listing.stdout, appPath)
+  if (quarantined.length > 0) {
+    throw new MacSelfUpdateError(
+      'extract-failed',
+      `Could not clear the quarantine flag on the downloaded update (${quarantined.length} ${quarantined.length === 1 ? 'file' : 'files'} still flagged, first ${quarantined[0]}).`
     )
   }
 }

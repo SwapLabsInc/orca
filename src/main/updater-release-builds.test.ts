@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PRIMARY_RELEASE_SOURCE } from '../shared/release-sources'
+import { setHostSliceForTest } from './updater-host-slice.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
@@ -35,6 +36,15 @@ vi.mock('./git/gh-rate-limit-breaker', () => ({
 
 const { describeRateLimitReset, listReleaseBuilds, rateLimitResetAtMs, resolveTargetBuild } =
   await import('./updater-release-builds')
+
+// Why x64: the assets every case lists are the x64 slice's, whatever host runs the file.
+let restoreHostSlice = (): void => {}
+beforeEach(() => {
+  restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
+})
+afterEach(() => {
+  restoreHostSlice()
+})
 
 function jsonResponse(
   body: unknown,

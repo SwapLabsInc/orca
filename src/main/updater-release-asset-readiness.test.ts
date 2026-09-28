@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setHostSliceForTest } from './updater-host-slice.fixture'
 
 const { netFetchMock } = vi.hoisted(() => ({ netFetchMock: vi.fn() }))
 
@@ -36,10 +37,18 @@ const SWAPLABS_SOURCE = {
   prereleaseIdentifier: 'swaplabs'
 }
 
+// Why x64: the cases that name a manifest or asset model the x64 slice; arm64 ones pin their own.
+let restoreHostSlice = (): void => {}
+
 describe('probeReleaseManifest', () => {
   beforeEach(() => {
     vi.resetModules()
     netFetchMock.mockReset()
+    restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
+  })
+
+  afterEach(() => {
+    restoreHostSlice()
   })
 
   // Why: a check probes up to six manifests at once, and each names several assets; every HEAD
@@ -167,12 +176,7 @@ describe('probeReleaseManifest', () => {
     repo?: string,
     slice?: { platform: NodeJS.Platform; arch: NodeJS.Architecture }
   ): Promise<string> {
-    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
-    const arch = Object.getOwnPropertyDescriptor(process, 'arch')
-    if (slice) {
-      Object.defineProperty(process, 'platform', { value: slice.platform, configurable: true })
-      Object.defineProperty(process, 'arch', { value: slice.arch, configurable: true })
-    }
+    const restoreSlice = slice ? setHostSliceForTest(slice) : null
     const manifestUrls: string[] = []
     netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
       if (init?.method === 'HEAD') {
@@ -192,10 +196,7 @@ describe('probeReleaseManifest', () => {
         version: '1.0.0'
       })
     } finally {
-      if (platform && arch) {
-        Object.defineProperty(process, 'platform', platform)
-        Object.defineProperty(process, 'arch', arch)
-      }
+      restoreSlice?.()
     }
     expect(manifestUrls).toHaveLength(1)
     return manifestUrls[0]
@@ -221,8 +222,7 @@ describe('probeReleaseManifest', () => {
   // per-slice manifest: the zip it names and the detached signature must both be there.
   it('reads a fork macOS slice through its self-update manifest and requires the signature', async () => {
     const swaplabs = SWAPLABS_SOURCE
-    const arch = Object.getOwnPropertyDescriptor(process, 'arch')
-    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true })
+    const restoreSlice = setHostSliceForTest({ arch: 'arm64' })
     const probed: string[] = []
     const manifest = JSON.stringify({
       schema: 1,
@@ -259,17 +259,14 @@ describe('probeReleaseManifest', () => {
         version: '1.4.197-swaplabs.202609251200'
       })
     } finally {
-      if (arch) {
-        Object.defineProperty(process, 'arch', arch)
-      }
+      restoreSlice()
     }
   })
 
   // LOCAL: the probe reads a fork manifest before anything about it is verified, so a release
   // serving an oversized one must be cut off at the installer's own cap, never buffered whole.
   it('cuts off a fork manifest past the installer size cap without buffering or probing it', async () => {
-    const arch = Object.getOwnPropertyDescriptor(process, 'arch')
-    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true })
+    const restoreSlice = setHostSliceForTest({ arch: 'arm64' })
     const chunkBytes = 16 * 1024
     // Valid JSON in full, so reading it whole would have answered 'ready' after the asset probes.
     const oversized = JSON.stringify({
@@ -309,9 +306,7 @@ describe('probeReleaseManifest', () => {
       expect(cancelled).toBe(true)
       expect(heads).toEqual([])
     } finally {
-      if (arch) {
-        Object.defineProperty(process, 'arch', arch)
-      }
+      restoreSlice()
     }
   })
 
