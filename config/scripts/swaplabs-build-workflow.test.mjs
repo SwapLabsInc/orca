@@ -1,20 +1,18 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parse } from 'yaml'
-import { runProcess } from '../../src/shared/child-process/run-process'
+import {
+  WORKFLOW_CODE,
+  jobs,
+  runWorkflowShell,
+  stepIndex,
+  stepNamed,
+  workflow
+} from './swaplabs-build-workflow-shell.mjs'
 
 // LOCAL: contract for the fork build pipeline. Parses the workflow like the
 // upstream hourly/dev-channel contract tests so a careless edit fails here
-// rather than on the fork's first Actions run.
+// rather than on the fork's first Actions run. The macOS signing leg has its own
+// file, swaplabs-build-workflow-mac-signing.test.mjs.
 
-const workflow = parse(
-  readFileSync(new URL('../../.github/workflows/swaplabs-build.yml', import.meta.url), 'utf8')
-)
-const jobs = workflow.jobs
-const stepNamed = (job, name) => job.steps.find((step) => step.name === name)
-const stepIndex = (job, name) => job.steps.findIndex((step) => step.name === name)
 const runSteps = (job) => job.steps.filter((step) => typeof step.run === 'string')
 const commandsOf = (job) => job.steps.map((step) => step.run ?? step.with?.command ?? '').join('\n')
 const REPO_GUARD = "github.repository == 'SwapLabsInc/orca'"
@@ -72,15 +70,9 @@ describe('swaplabs fork build triggers and guards', () => {
     }
   })
 
-  it('publishes with GITHUB_TOKEN, minting no App token and using no signing secret', () => {
-    const text = readFileSync(
-      new URL('../../.github/workflows/swaplabs-build.yml', import.meta.url),
-      'utf8'
-    )
-    // Comments may name what is deliberately absent; only real references count.
-    const code = text.replace(/^\s*#.*$/gm, '')
-    expect(code).not.toMatch(/create-github-app-token|\$\{\{\s*secrets\./)
-    expect(code).not.toMatch(/CSC_LINK|APPLE_ID|APPLE_TEAM_ID|SIGNPATH|ORCA_MAC_RELEASE/)
+  it('publishes with GITHUB_TOKEN, minting no App token and using no Apple credential', () => {
+    expect(WORKFLOW_CODE).not.toMatch(/create-github-app-token/)
+    expect(WORKFLOW_CODE).not.toMatch(/CSC_LINK|APPLE_ID|APPLE_TEAM_ID|SIGNPATH|ORCA_MAC_RELEASE/)
     for (const name of ['draft', 'build-linux', 'build-mac', 'publish', 'cleanup']) {
       expect(jobs[name].permissions).toEqual({ contents: 'write' })
     }
@@ -170,8 +162,8 @@ describe('swaplabs fork build identity', () => {
     const linuxPackage = stepNamed(jobs['build-linux'], 'Package Linux artifacts').with.command
     expect(linuxPackage).toContain('--linux AppImage deb rpm --${{ matrix.arch }} --publish never')
     expect(linuxPackage).not.toContain('--publish always')
-    const macPackage = stepNamed(jobs['build-mac'], 'Package macOS artifacts (ad-hoc)').with.command
-    expect(macPackage).toContain('--mac --publish never')
+    const macPackage = stepNamed(jobs['build-mac'], 'Package macOS artifacts').with.command
+    expect(macPackage).toContain('--mac dmg --x64 --arm64 --publish never')
     for (const [name, upload] of [
       ['build-linux', 'Upload Linux artifacts'],
       ['build-mac', 'Upload macOS artifacts']
@@ -193,18 +185,6 @@ describe('swaplabs fork build identity', () => {
 })
 
 describe('swaplabs fork build publish policy', () => {
-  // Why: a manifest would advertise the ad-hoc build as installable in-app, and one uploaded after
-  // the flip would offer a payload that is still uploading.
-  it('keeps macOS assets download-only, with no update manifest', () => {
-    const upload = stepNamed(jobs['build-mac'], 'Upload macOS artifacts').with.command
-    expect(upload).toContain('dist/*.dmg')
-    expect(upload).not.toContain('latest-mac.yml')
-    expect(upload).not.toContain('.zip')
-    expect(stepNamed(jobs['build-mac'], 'Verify the macOS assets published').run).toContain(
-      'macOS fork builds are download-only'
-    )
-  })
-
   it('requires both Linux legs and verifies both manifests before flipping live', () => {
     expect(jobs.publish.needs).toEqual(['preflight', 'draft', 'build-linux'])
     expect(jobs.publish.needs).not.toContain('build-mac')
@@ -261,47 +241,6 @@ describe('swaplabs fork build publish policy', () => {
     }
   })
 })
-
-// The preflight and verification scripts are bash; run them against a mocked
-// `gh` the way the hourly preflight test does, so the decision logic is
-// exercised rather than eyeballed.
-async function runWorkflowShell(script, { env = {}, mock }) {
-  const directory = mkdtempSync(join(tmpdir(), 'swaplabs-workflow-'))
-  const output = join(directory, 'output')
-  const runnerTemp = join(directory, 'runner-temp')
-  mkdirSync(runnerTemp)
-  try {
-    const result = await runProcess({
-      program: 'bash',
-      args: ['-c', `${mock}\n${script}`],
-      env: {
-        ...process.env,
-        GITHUB_OUTPUT: output,
-        RUNNER_TEMP: runnerTemp,
-        GITHUB_REPOSITORY: 'SwapLabsInc/orca',
-        FORK_BRANCH: 'swaplabs/main',
-        UPSTREAM_REPO: 'stablyai/orca',
-        SWAPLABS_TAG_PREFIX: 'swaplabs-v',
-        SWAPLABS_RETAIN_COUNT: '30',
-        ...env
-      }
-    })
-    let outputText = ''
-    try {
-      outputText = readFileSync(output, 'utf8')
-    } catch {
-      outputText = ''
-    }
-    return {
-      exitCode: result.code,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      output: outputText
-    }
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
-}
 
 describe('swaplabs fork build preflight decision', () => {
   const head = 'abcdef0123'.repeat(4)
