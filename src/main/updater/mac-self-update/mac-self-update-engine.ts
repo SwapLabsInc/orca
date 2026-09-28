@@ -46,8 +46,6 @@ export type MacSelfUpdateEngineDependencies = {
   run: BundleToolRunner
   spawnHelper?: HelperSpawner
   relaunchProgram?: string
-  /** The serve supervisor's handoff record, when this process runs under one. */
-  getServeHandoffPath?: () => string | null
   requestQuit: () => void
   getPid: () => number
 }
@@ -97,7 +95,9 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
     this.emit('checking-for-update')
     try {
       this.offer = await this.readVerifiedOffer()
-      // Why: a later check must not leave an older staged bundle for Restart to install.
+      // Why: a later check must not leave an older staged bundle for Restart to install. Never
+      // under a download: `stageOffer` clears `staged` for as long as it runs and discards its own
+      // bundle when this offer supersedes it, so nothing here removes files an extract is writing.
       if (this.staged && !isSameBuild(this.staged.manifest, this.offer.manifest)) {
         this.staged = null
         await rm(this.deps.paths.stagingDir, { recursive: true, force: true }).catch(
@@ -126,7 +126,12 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
     return this.downloadInFlight
   }
 
-  quitAndInstall(_isSilent?: boolean, isForceRunAfter?: boolean): void {
+  /**
+   * Why the flags are ignored: MacUpdater ignores them too, and the helper always relaunches and
+   * health-checks what it installed. The one caller that leaves the relaunch to somebody else, a
+   * supervised `orca serve`, never selects this engine (`getMacSelfUpdateSupport`).
+   */
+  quitAndInstall(_isSilent?: boolean, _isForceRunAfter?: boolean): void {
     const staged = this.staged
     if (!staged) {
       this.emit(
@@ -141,10 +146,6 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
         appPid: this.deps.getPid(),
         currentVersion: this.deps.getCurrentVersion(),
         staged: { appPath: staged.appPath, version: staged.manifest.version },
-        // Why the supervisor rule: MacUpdater ignores these flags, so the caller expresses relaunch
-        // ownership through autoRunAppAfterInstall; either says the serve supervisor relaunches.
-        helperRelaunches: this.autoRunAppAfterInstall && isForceRunAfter !== false,
-        serveHandoffPath: this.deps.getServeHandoffPath?.() ?? null,
         relaunchProgram: this.deps.relaunchProgram,
         spawnHelper: this.deps.spawnHelper
       })

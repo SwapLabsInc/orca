@@ -32,14 +32,12 @@ import {
 import { initializeMainProcessAutomations } from './main-process-automations'
 import { initializeMainProcessPlugins } from './main-process-plugins'
 import { collectWorktreeTrashSweepRoots, sweepStaleWorktreeTrash } from '../worktree-trash'
-import { runAfterFirstWindowShown } from './first-window-deferral'
+import { runAfterFirstWindowShown, runOnlyAfterFirstWindowShown } from './first-window-deferral'
 import { logStartupMilestone } from './startup-diagnostics'
 import { reportMacSelfUpdateLaunchOutcome } from '../updater/mac-self-update/mac-self-update-launch-outcome'
 
 // Headless serve never opens a window, so the sweep still has to run off a timer there.
 const WORKTREE_TRASH_SWEEP_FALLBACK_MS = 15_000
-// LOCAL: the self-update helper rolls back after 90 s without this marker; a window is the health signal, a timer covers headless serve.
-const MAC_SELF_UPDATE_HEALTH_FALLBACK_MS = 20_000
 
 export async function initializeReadyRuntimeServices(): Promise<void> {
   const store = state.store
@@ -91,14 +89,14 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
       console.warn('[worktrees] Failed to sweep leftover worktree directories:', error)
     })
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
-  // LOCAL: a shown window is the health signal the self-update helper waits for; it also reports
-  // how the previous launch's install went and prunes what that install left behind. Headless
-  // serve signals from `printServeReady` instead: it never shows a window, and the fallback
-  // timer here would certify a runtime that never came to serve.
+  // LOCAL: a window that can paint is the health signal the self-update helper waits for (a
+  // fallback timer would certify a renderer that hung before it); the report also says how the
+  // previous launch's install went and prunes what it left behind. Headless serve opens no
+  // window and never certifies: the self-updater is inactive under a supervised serve.
   if (!state.isServeMode) {
-    runAfterFirstWindowShown(() => {
+    runOnlyAfterFirstWindowShown(() => {
       reportMacSelfUpdateLaunchOutcome()
-    }, MAC_SELF_UPDATE_HEALTH_FALLBACK_MS)
+    })
   }
   nativeTheme.themeSource = store.getSettings().theme ?? 'system'
   // Why (#16441): the real-home grant runs a codex app-server session. It stays

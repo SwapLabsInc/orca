@@ -3,13 +3,6 @@ import { join } from 'node:path'
 export const SERVE_UPDATE_HANDOFF_PATH_ENV = 'ORCA_SERVE_UPDATE_HANDOFF_PATH'
 export const SERVE_UPDATE_HANDOFF_FILE = 'serve-update-handoff.json'
 
-/**
- * LOCAL: which installer swaps the bundle. `mac-self-update` keeps a rollback the supervisor
- * can expect back after a failed replacement; absent means the platform's own (ShipIt), which
- * keeps none.
- */
-export type ServeUpdateInstaller = 'mac-self-update'
-
 export type ServeUpdateHandoffState =
   | {
       schemaVersion: 1
@@ -17,7 +10,6 @@ export type ServeUpdateHandoffState =
       fromVersion: string
       targetVersion: string
       servingPid: number
-      installer?: ServeUpdateInstaller
     }
   | {
       schemaVersion: 1
@@ -26,7 +18,6 @@ export type ServeUpdateHandoffState =
       targetVersion: string
       servingPid: number
       reason: string
-      installer?: ServeUpdateInstaller
     }
   | {
       schemaVersion: 1
@@ -35,7 +26,6 @@ export type ServeUpdateHandoffState =
       targetVersion: string
       servingPid: number
       runtimeId: string
-      installer?: ServeUpdateInstaller
     }
 
 export type ServeSupervisorMessage = {
@@ -64,8 +54,7 @@ export function parseServeUpdateHandoffState(value: unknown): ServeUpdateHandoff
     (state.servingPid as number) <= 0 ||
     (state.phase === 'failed' && typeof state.reason !== 'string') ||
     (state.phase === 'completed' &&
-      (typeof state.runtimeId !== 'string' || state.runtimeId.length === 0)) ||
-    (state.installer !== undefined && state.installer !== 'mac-self-update')
+      (typeof state.runtimeId !== 'string' || state.runtimeId.length === 0))
   ) {
     return null
   }

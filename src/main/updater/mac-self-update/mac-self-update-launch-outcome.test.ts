@@ -48,7 +48,6 @@ describe('mac self-update launch outcome', () => {
       fromVersion: FROM_VERSION,
       targetVersion: TARGET_VERSION,
       stagedAppPath: launch.paths.stagingDir,
-      relaunchOwner: 'helper',
       requestedAt: '2026-09-28T10:00:00Z'
     })
   })

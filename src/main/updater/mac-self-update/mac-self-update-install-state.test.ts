@@ -22,7 +22,6 @@ const STATE: MacSelfUpdateInstallState = {
   fromVersion: '1.4.197-swaplabs.202609241530',
   targetVersion: '1.4.197-swaplabs.202609251200',
   stagedAppPath: '/Applications/.Orca-update-staging/Orca.app',
-  relaunchOwner: 'helper',
   requestedAt: '2026-09-25T12:00:00.000Z'
 }
 
@@ -46,7 +45,7 @@ describe('install state file', () => {
     writeFileSync(path, '{not json')
     expect(readMacSelfUpdateInstallState(path)).toBeNull()
     expect(parseMacSelfUpdateInstallState({ ...STATE, phase: 'done' })).toBeNull()
-    expect(parseMacSelfUpdateInstallState({ ...STATE, relaunchOwner: 'me' })).toBeNull()
+    expect(parseMacSelfUpdateInstallState({ ...STATE, stagedAppPath: 7 })).toBeNull()
     expect(parseMacSelfUpdateInstallState({ ...STATE, schemaVersion: 2 })).toBeNull()
   })
 
@@ -101,26 +100,6 @@ describe('resolveMacSelfUpdateLaunchOutcome', () => {
       targetVersion: STATE.targetVersion,
       helperOutcome: null
     })
-  })
-
-  it('names the supervisor when it gave the build up', () => {
-    const outcome = resolveMacSelfUpdateLaunchOutcome(
-      {
-        schemaVersion: 1,
-        phase: 'install-requested',
-        fromVersion: '1.4.197-swaplabs.202609241530',
-        targetVersion: '1.4.197-swaplabs.202609251200',
-        stagedAppPath: '/Applications/.Orca-update-staging/Orca.app',
-        relaunchOwner: 'supervisor',
-        requestedAt: '2026-09-28T10:00:00Z'
-      },
-      '1.4.197-swaplabs.202609241530',
-      'supervisor-rejected'
-    )
-    expect(outcome.kind).toBe('failed')
-    expect(outcome.kind === 'failed' && outcome.message).toContain(
-      'the serve supervisor gave the new build up, so the previous build was restored'
-    )
   })
 
   it("reports a rollback in the previous build's words, naming what the helper recorded", () => {

@@ -8,7 +8,7 @@ import {
   type ReleaseSource
 } from '../../../shared/release-sources'
 import { getCanonicalUserDataPath } from '../../persistence'
-import { getSupervisedServeUpdateHandoffPath } from '../../serve-update-handoff'
+import { hasServeUpdateSupervisor } from '../../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
 import type { UpdateEngine } from '../update-engine'
 import {
@@ -25,13 +25,27 @@ export type MacSelfUpdateSupport =
   | { supported: true; source: ReleaseSource; publicKey: string }
   | {
       supported: false
-      reason: 'platform' | 'unpackaged' | 'no-public-key' | 'primary-source' | 'unknown-source'
+      reason:
+        | 'platform'
+        | 'unpackaged'
+        | 'supervised-serve'
+        | 'no-public-key'
+        | 'primary-source'
+        | 'unknown-source'
     }
+
+let supervisedServeRecorded = false
 
 /**
  * The conditions that can be known without touching the disk (plan §13.2): macOS, a packaged
- * build of a non-primary source, and a compiled-in verification key. Whether the running
- * bundle is signed with a stable identity is checked lazily by `readRunningBundleSignature`.
+ * build of a non-primary source not hosting a supervised `orca serve`, and a compiled-in
+ * verification key. Whether the running bundle is signed with a stable identity is checked
+ * lazily by `readRunningBundleSignature`.
+ *
+ * Why not under a supervisor: the helper's swap, relaunch and health watch are written for the
+ * desktop app (a window is the health signal), and the supervisor restarts a serve from the
+ * bundle on its own terms. Such a host keeps the manual update path electron-updater gives a
+ * fork build; supervised serve support is a possible follow-up.
  */
 export function getMacSelfUpdateSupport(): MacSelfUpdateSupport {
   if (process.platform !== 'darwin') {
@@ -51,6 +65,18 @@ export function getMacSelfUpdateSupport(): MacSelfUpdateSupport {
   }
   if (source.prereleaseIdentifier === null) {
     return { supported: false, reason: 'primary-source' }
+  }
+  // Last, so the diagnostic names a build the installer would otherwise have acted for.
+  if (hasServeUpdateSupervisor()) {
+    if (!supervisedServeRecorded) {
+      supervisedServeRecorded = true
+      recordUpdaterLifecycle(
+        'mac_self_update_inactive',
+        { reason: 'supervised-serve', source: source.id },
+        { message: 'Orca hosts a supervised serve; its macOS updates install by hand' }
+      )
+    }
+    return { supported: false, reason: 'supervised-serve' }
   }
   return { supported: true, source, publicKey }
 }
@@ -157,7 +183,6 @@ export function createMacSelfUpdateEngineIfSupported(): UpdateEngine | null {
     readRunningBundleSignature,
     fetchAsset: (url, init) => net.fetch(url, init),
     run: runProcess,
-    getServeHandoffPath: getSupervisedServeUpdateHandoffPath,
     requestQuit: () => app.quit(),
     getPid: () => process.pid
   })

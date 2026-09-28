@@ -43,8 +43,6 @@ export type MacSelfUpdateEngineFixtureOptions = {
   stagedRequirement?: string
   zipStatus?: number
   manifestStatus?: number
-  /** The serve supervisor's handoff record, when the fixture runs "under" one. */
-  serveHandoffPath?: string | null
 }
 
 export type MacSelfUpdateEngineFixture = {
@@ -62,6 +60,8 @@ export type MacSelfUpdateEngineFixture = {
   publishVersion: (version: string, cut?: string) => void
   /** Withholds zip responses until the returned function is called. */
   holdZipDownload: () => () => void
+  /** Keeps `ditto` from returning, its files already written, until the returned function is called. */
+  holdExtract: () => () => void
   /** The status the feed answers a manifest request with from now on. */
   setManifestStatus: (status: number) => void
   cleanup: () => void
@@ -145,6 +145,7 @@ export function createMacSelfUpdateEngineFixture(
   let served = initialRelease
   let manifestStatus = options.manifestStatus ?? 200
   let zipHold: Promise<void> | null = null
+  let extractHold: Promise<void> | null = null
 
   const fetchedUrls: string[] = []
   const fetchAsset: ReleaseAssetFetch = async (url) => {
@@ -172,6 +173,7 @@ export function createMacSelfUpdateEngineFixture(
       unpackedVersion = /^zip:([^:]+):/.exec(readFileSync(args.at(-2) ?? '', 'utf8'))?.[1] ?? ''
       mkdirSync(join(destination, 'Orca.app', 'Contents', 'MacOS'), { recursive: true })
       writeFileSync(join(destination, 'Orca.app', 'Contents', 'MacOS', 'Orca'), 'new build')
+      await extractHold
       return result
     }
     if (spec.program.endsWith('codesign') && args[0] === '-d') {
@@ -216,7 +218,6 @@ export function createMacSelfUpdateEngineFixture(
     run,
     spawnHelper,
     relaunchProgram: '/usr/bin/open',
-    getServeHandoffPath: () => options.serveHandoffPath ?? null,
     requestQuit,
     getPid: () => 1234
   }
@@ -241,6 +242,16 @@ export function createMacSelfUpdateEngineFixture(
       })
       return () => {
         zipHold = null
+        release()
+      }
+    },
+    holdExtract: () => {
+      let release = (): void => undefined
+      extractHold = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        extractHold = null
         release()
       }
     },

@@ -17,10 +17,6 @@ export type MacSelfUpdateInstallRequest = {
   appPid: number
   currentVersion: string
   staged: { appPath: string; version: string }
-  /** False when a serve supervisor relaunches; the helper then swaps and only watches. */
-  helperRelaunches: boolean
-  /** The supervisor's handoff record; its `failed` phase tells the helper to roll back at once. */
-  serveHandoffPath?: string | null
   relaunchProgram?: string
   spawnHelper?: HelperSpawner
 }
@@ -31,8 +27,7 @@ export type MacSelfUpdateInstallRequest = {
  * failure before the helper runs leaves no request behind, so nothing is reported later.
  */
 export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest): number {
-  const { paths, staged, helperRelaunches } = request
-  const relaunchOwner = helperRelaunches ? 'helper' : 'supervisor'
+  const { paths, staged } = request
   try {
     clearMacSelfUpdateInstallRecords(paths)
     writeMacSelfUpdateInstallState(paths.installStatePath, {
@@ -41,7 +36,6 @@ export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest
       fromVersion: request.currentVersion,
       targetVersion: staged.version,
       stagedAppPath: staged.appPath,
-      relaunchOwner,
       requestedAt: new Date().toISOString()
     })
   } catch (error) {
@@ -61,10 +55,7 @@ export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest
         healthMarkerPath: paths.healthMarkerPath,
         outcomePath: paths.helperOutcomePath,
         executableRelativePath: paths.executableRelativePath,
-        relaunchProgram: helperRelaunches
-          ? (request.relaunchProgram ?? MAC_SELF_UPDATE_RELAUNCH_PROGRAM)
-          : null,
-        serveHandoffPath: helperRelaunches ? null : (request.serveHandoffPath ?? null),
+        relaunchProgram: request.relaunchProgram ?? MAC_SELF_UPDATE_RELAUNCH_PROGRAM,
         healthTimeoutSeconds: MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS
       },
       request.spawnHelper,
@@ -83,8 +74,7 @@ export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest
   }
   recordUpdaterLifecycle('mac_self_update_helper_started', {
     version: staged.version,
-    helperPid,
-    relaunchOwner
+    helperPid
   })
   return helperPid
 }

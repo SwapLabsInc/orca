@@ -72,37 +72,6 @@ describe('serve update handoff', () => {
     }
   )
 
-  // LOCAL: the supervisor waits for Orca's own installer to put the previous build back only when
-  // the record says that installer performed the swap; the helper is handed the record's path.
-  it('records which installer swaps the bundle and exposes the record to that installer', async () => {
-    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    try {
-      const { getSupervisedServeUpdateHandoffPath, requestServeUpdateHandoff } =
-        await import('./serve-update-handoff')
-
-      expect(getSupervisedServeUpdateHandoffPath()).toBe(getServeUpdateHandoffPath(root))
-      expect(requestServeUpdateHandoff('1.0.61', { installer: 'mac-self-update' })).toBe(true)
-      expect(readState(root)).toEqual({
-        schemaVersion: 1,
-        phase: 'install-requested',
-        fromVersion: '1.0.51',
-        targetVersion: '1.0.61',
-        servingPid: process.pid,
-        installer: 'mac-self-update'
-      })
-      // One line, so the helper's single `read` sees the phase.
-      expect(readFileSync(getServeUpdateHandoffPath(root), 'utf8')).not.toContain('\n')
-
-      expect(requestServeUpdateHandoff('1.0.61')).toBe(true)
-      expect(readState(root)).not.toHaveProperty('installer')
-      expect(
-        parseServeUpdateHandoffState({ ...readState(root), installer: 'something-else' })
-      ).toBeNull()
-    } finally {
-      platformSpy.mockRestore()
-    }
-  })
-
   it('rejects a handoff path outside the canonical user-data directory', async () => {
     process.env[SERVE_UPDATE_HANDOFF_PATH_ENV] = join(root, '..', 'untrusted.json')
     const { hasServeUpdateSupervisor, requestServeUpdateHandoff } =

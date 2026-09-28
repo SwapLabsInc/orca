@@ -80,12 +80,6 @@ function schedulePruneRollback(paths: MacSelfUpdatePaths): void {
   timer.unref?.()
 }
 
-/**
- * Runs once per launch, as soon as the app has a window (or, headless, shortly after start):
- * writes the health marker the helper is waiting for, reports how the previous launch's
- * install request ended, and clears its records so the next launch starts clean. Idempotent,
- * so the updater and the startup path may both ask for it in either order.
- */
 /** What the previous launch's install request came to, read from disk and nothing written. */
 function peekMacSelfUpdateLaunchOutcome(): {
   paths: MacSelfUpdatePaths
@@ -110,6 +104,12 @@ function peekMacSelfUpdateLaunchOutcome(): {
   }
 }
 
+/**
+ * Runs once per launch, as soon as the first window can paint (`runOnlyAfterFirstWindowShown`):
+ * writes the health marker the helper is waiting for, reports how the previous launch's
+ * install request ended, and clears its records so the next launch starts clean. Idempotent,
+ * so a second caller in the same launch changes nothing.
+ */
 export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
   if (reported) {
     return reported
@@ -165,7 +165,7 @@ export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
 /**
  * The failure to show the user this session, if the previous launch's install did not take.
  * Why read-only: the updater can set up from a crash-loop fallback before any window has shown,
- * and the health marker must stay the first window's (or the headless timer's) to write.
+ * and the health marker must stay the first window's to write.
  */
 export function getMacSelfUpdateLaunchFailure(): string | null {
   const outcome = reported ?? peekMacSelfUpdateLaunchOutcome()?.outcome ?? { kind: 'none' }

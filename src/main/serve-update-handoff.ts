@@ -6,8 +6,7 @@ import {
   getServeUpdateHandoffPath,
   parseServeUpdateHandoffState,
   type ServeSupervisorMessage,
-  type ServeUpdateHandoffState,
-  type ServeUpdateInstaller
+  type ServeUpdateHandoffState
 } from '../shared/serve-update-handoff'
 import { getCanonicalUserDataPath } from './persistence'
 
@@ -24,15 +23,7 @@ export function hasServeUpdateSupervisor(): boolean {
   return process.platform === 'darwin' && getConfiguredHandoffPath() !== null
 }
 
-/** The supervisor's handoff record for this process, or null when no supervisor owns it. */
-export function getSupervisedServeUpdateHandoffPath(): string | null {
-  return hasServeUpdateSupervisor() ? getConfiguredHandoffPath() : null
-}
-
-export function requestServeUpdateHandoff(
-  targetVersion: string,
-  options: { installer?: ServeUpdateInstaller } = {}
-): boolean {
+export function requestServeUpdateHandoff(targetVersion: string): boolean {
   const handoffPath = getConfiguredHandoffPath()
   if (!handoffPath || !targetVersion) {
     return false
@@ -42,8 +33,7 @@ export function requestServeUpdateHandoff(
     phase: 'install-requested',
     fromVersion: app.getVersion(),
     targetVersion,
-    servingPid: process.pid,
-    ...(options.installer ? { installer: options.installer } : {})
+    servingPid: process.pid
   })
 }
 

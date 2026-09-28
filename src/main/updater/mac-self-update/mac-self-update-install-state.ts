@@ -11,8 +11,6 @@ export type MacSelfUpdateInstallState = {
   fromVersion: string
   targetVersion: string
   stagedAppPath: string
-  /** `helper` relaunches; `supervisor` means the serve supervisor does. The helper health-checks either way. */
-  relaunchOwner: 'helper' | 'supervisor'
   requestedAt: string
 }
 
@@ -39,7 +37,6 @@ export function parseMacSelfUpdateInstallState(value: unknown): MacSelfUpdateIns
     typeof value.fromVersion !== 'string' ||
     typeof value.targetVersion !== 'string' ||
     typeof value.stagedAppPath !== 'string' ||
-    (value.relaunchOwner !== 'helper' && value.relaunchOwner !== 'supervisor') ||
     typeof value.requestedAt !== 'string'
   ) {
     return null
@@ -50,7 +47,6 @@ export function parseMacSelfUpdateInstallState(value: unknown): MacSelfUpdateIns
     fromVersion: value.fromVersion,
     targetVersion: value.targetVersion,
     stagedAppPath: value.stagedAppPath,
-    relaunchOwner: value.relaunchOwner,
     requestedAt: value.requestedAt
   }
 }
@@ -85,11 +81,8 @@ export function readMacSelfUpdateHelperOutcome(path: string): string | null {
 
 const HELPER_OUTCOME_MESSAGES: Record<MacSelfUpdateHelperOutcome, string> = {
   healthy: 'the update was applied',
-  swapped: 'the update was applied',
   'rolled-back':
     'the new build did not start within its time limit, so the previous build was restored',
-  'supervisor-rejected':
-    'the serve supervisor gave the new build up, so the previous build was restored',
   'relaunch-failed': 'the new build could not be launched, so the previous build was restored',
   'rename-staged-failed': 'the downloaded build could not be moved into place',
   'rename-current-failed': 'the installed app could not be moved aside',

@@ -162,20 +162,20 @@ describe('MacSelfUpdateEngine', () => {
       '/usr/bin/open',
       String(MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS),
       fixture.paths.helperOutcomePath,
-      'Contents/MacOS/Orca',
-      ''
+      'Contents/MacOS/Orca'
     ])
     expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
       phase: 'install-requested',
       fromVersion: '1.4.197-swaplabs.202609241530',
       targetVersion: fixture.targetVersion,
-      stagedAppPath,
-      relaunchOwner: 'helper'
+      stagedAppPath
     })
   })
 
-  it('leaves the relaunch to a serve supervisor when autoRunAppAfterInstall is off', async () => {
-    fixture = createMacSelfUpdateEngineFixture({ serveHandoffPath: '/u/serve-update-handoff.json' })
+  // Why: the engine is never selected where a supervisor owns the relaunch, so the helper relaunches
+  // and health-checks whatever the caller's flags say, as MacUpdater ignores them too.
+  it('relaunches through the helper whatever quitAndInstall is told', async () => {
+    fixture = createMacSelfUpdateEngineFixture()
     fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
     await fixture.engine.checkForUpdates()
     await fixture.engine.downloadUpdate()
@@ -184,25 +184,7 @@ describe('MacSelfUpdateEngine', () => {
     fixture.engine.quitAndInstall(true, false)
 
     const [, args] = fixture.spawnHelper.mock.calls[0]
-    expect(args[8]).toBe('')
-    // The helper watches the supervisor's record to roll back as soon as it gives the build up.
-    expect(args.at(-1)).toBe('/u/serve-update-handoff.json')
-    expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
-      relaunchOwner: 'supervisor'
-    })
-  })
-
-  it('keeps the handoff record from a helper that relaunches on its own', async () => {
-    fixture = createMacSelfUpdateEngineFixture({ serveHandoffPath: '/u/serve-update-handoff.json' })
-    fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
-    await fixture.engine.checkForUpdates()
-    await fixture.engine.downloadUpdate()
-
-    fixture.engine.quitAndInstall()
-
-    const [, args] = fixture.spawnHelper.mock.calls[0]
     expect(args[8]).toBe('/usr/bin/open')
-    expect(args.at(-1)).toBe('')
   })
 
   it.each([
@@ -346,6 +328,39 @@ describe('MacSelfUpdateEngine', () => {
         targetVersion: NEWER_VERSION
       })
       expect(fixture.requestQuit).toHaveBeenCalledTimes(1)
+    })
+
+    // Why: the staging directory belongs to the download for as long as it runs. A check that
+    // supersedes the offer mid-extract must leave it to that download, which discards it as
+    // superseded; a removal from under `ditto` would fail the download as `extract-failed`.
+    it('leaves an extract in progress alone and lets the download discard it as superseded', async () => {
+      fixture = createMacSelfUpdateEngineFixture()
+      fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+      await fixture.engine.checkForUpdates()
+      const releaseExtract = fixture.holdExtract()
+      const download = fixture.engine.downloadUpdate()
+      download.catch(() => undefined)
+      await vi.waitFor(() =>
+        expect(fixture!.runCalls.some((call) => call.program.endsWith('ditto'))).toBe(true)
+      )
+      expect(readdirSync(fixture.paths.stagingDir)).toEqual(['Orca.app'])
+
+      fixture.publishVersion(NEWER_VERSION)
+      fixture.engine.setFeedURL({
+        provider: 'generic',
+        url: NEWER_RELEASE_PAGE_URL.replace('/releases/tag/', '/releases/download/')
+      })
+      await fixture.engine.checkForUpdates()
+      // The extract's files are where `ditto` left them.
+      expect(readdirSync(fixture.paths.stagingDir)).toEqual(['Orca.app'])
+      releaseExtract()
+
+      await expect(download).rejects.toMatchObject({
+        reason: 'offer-superseded',
+        message: expect.stringContaining(NEWER_VERSION)
+      })
+      expect(existsSync(fixture.paths.stagingDir)).toBe(false)
+      expect(fixture.runCalls.filter((call) => call.program.endsWith('ditto'))).toHaveLength(1)
     })
 
     it.each([

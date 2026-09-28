@@ -29,15 +29,12 @@ type Scenario = {
   relaunchLog: string
   /** Where the relaunch script records the pid of the stubborn "new app" it started, if asked to. */
   newAppPidFile: string
-  /** The stubborn new-app program, for a supervised scenario to start one itself. */
-  stubbornScript: string
   /** PATH for the helper; a scenario that hooks `mv` puts its wrapper first. */
   env: NodeJS.ProcessEnv
 }
 
 type ScenarioOptions = {
   healthy: boolean
-  relaunch?: boolean
   staged?: boolean
   /** What the relaunch program exits with; a non-zero code fails every launch attempt. */
   relaunchExitCode?: number
@@ -49,8 +46,6 @@ type ScenarioOptions = {
   newAppIgnoresSigterm?: boolean
   /** From the first relaunch on, the process table lists the new build whatever it is sent. */
   newAppSurvivesSigkill?: boolean
-  /** A serve supervisor owns the relaunch and its handoff record is handed to the helper. */
-  supervised?: boolean
 }
 
 /** Above every real pid (Linux caps at 2^22, macOS at 99998), so signalling it reaches nothing. */
@@ -79,24 +74,23 @@ function createScenario(options: ScenarioOptions): Scenario {
   const relaunchProgram = join(stateDir, 'relaunch.sh')
   const firstRelaunchFlag = join(stateDir, 'relaunched-once')
   const newAppPidFile = join(stateDir, 'new-app.pid')
-  const serveHandoffPath = join(stateDir, 'serve-update-handoff.json')
   const onFirstRelaunch = [...(options.onFirstRelaunch ?? [])]
   if (options.newAppSurvivesSigkill) {
     // The flag alone is the new build "starting"; the fake `ps` reads it.
     onFirstRelaunch.push(':')
   }
-  const stubbornScript = join(stateDir, 'stubborn-new-app.cjs')
-  writeFileSync(
-    stubbornScript,
-    [
-      '// Test-only: pose as the new build on the process table and ignore SIGTERM.',
-      'process.title = process.argv[2]',
-      'process.on("SIGTERM", () => {})',
-      'setInterval(() => {}, 1000)',
-      ''
-    ].join('\n')
-  )
   if (options.newAppIgnoresSigterm) {
+    const stubbornScript = join(stateDir, 'stubborn-new-app.cjs')
+    writeFileSync(
+      stubbornScript,
+      [
+        '// Test-only: pose as the new build on the process table and ignore SIGTERM.',
+        'process.title = process.argv[2]',
+        'process.on("SIGTERM", () => {})',
+        'setInterval(() => {}, 1000)',
+        ''
+      ].join('\n')
+    )
     onFirstRelaunch.push(
       `"${process.execPath}" "${stubbornScript}" "$1/Contents/MacOS/Orca" </dev/null >/dev/null 2>&1 &`,
       `printf '%s\\n' "$!" > "${newAppPidFile}"`
@@ -168,7 +162,6 @@ function createScenario(options: ScenarioOptions): Scenario {
     relaunchLog,
     appProcess,
     newAppPidFile,
-    stubbornScript,
     env,
     plan: {
       appPid: appProcess.pid ?? -1,
@@ -178,49 +171,10 @@ function createScenario(options: ScenarioOptions): Scenario {
       healthMarkerPath,
       outcomePath: join(stateDir, 'helper-outcome'),
       executableRelativePath: 'Contents/MacOS/Orca',
-      relaunchProgram: options.relaunch === false || options.supervised ? null : relaunchProgram,
-      serveHandoffPath: options.supervised ? serveHandoffPath : null,
-      healthTimeoutSeconds: options.supervised ? 30 : 2
+      relaunchProgram,
+      healthTimeoutSeconds: 2
     }
   }
-}
-
-/** Waits for the helper's outcome file to hold `outcome`, as a supervisor watching the bundle would notice the swap. */
-async function waitForOutcome(scenario: Scenario, outcome: string): Promise<void> {
-  await vi.waitFor(() => expect(outcomeOf(scenario.plan)).toBe(outcome), {
-    timeout: 10_000,
-    interval: 50
-  })
-}
-
-/** The serve supervisor giving the new build up: the same single-line JSON `writeServeUpdateHandoffState` writes. */
-function recordSupervisorFailure(scenario: Scenario): void {
-  writeFileSync(
-    scenario.plan.serveHandoffPath!,
-    JSON.stringify({
-      schemaVersion: 1,
-      phase: 'failed',
-      fromVersion: '1.0.51',
-      targetVersion: '1.0.61',
-      servingPid: 4101,
-      installer: 'mac-self-update',
-      reason: 'Replacement did not report serving version 1.0.61 within 60000ms.'
-    })
-  )
-}
-
-/** A process posing as the build the supervisor started: `Orca --serve …`, ignoring SIGTERM. */
-function startServingNewApp(scenario: Scenario): ChildProcess {
-  const child = spawn(
-    process.execPath,
-    [
-      scenario.stubbornScript,
-      `${scenario.plan.appPath}/Contents/MacOS/Orca --serve --serve-port 1`
-    ],
-    { stdio: 'ignore' }
-  )
-  writeFileSync(scenario.newAppPidFile, `${child.pid}\n`)
-  return child
 }
 
 function runHelper(scenario: Scenario): Promise<number | null> {
@@ -268,7 +222,6 @@ describe('helper argv', () => {
       outcomePath: '/Users/me/Library/Application Support/Orca/mac-self-update/helper-outcome',
       executableRelativePath: 'Contents/MacOS/Orca',
       relaunchProgram: '/usr/bin/open',
-      serveHandoffPath: null,
       healthTimeoutSeconds: 90
     }
     const args = buildMacSelfUpdateHelperArgs(plan)
@@ -286,22 +239,7 @@ describe('helper argv', () => {
       '/usr/bin/open',
       '90',
       plan.outcomePath,
-      'Contents/MacOS/Orca',
-      ''
-    ])
-    // Under a supervisor the helper relaunches nothing and watches the handoff record instead.
-    expect(
-      buildMacSelfUpdateHelperArgs({
-        ...plan,
-        relaunchProgram: null,
-        serveHandoffPath: '/Users/me/Library/Application Support/Orca/serve-update-handoff.json'
-      }).slice(8)
-    ).toEqual([
-      '',
-      '90',
-      plan.outcomePath,
-      'Contents/MacOS/Orca',
-      '/Users/me/Library/Application Support/Orca/serve-update-handoff.json'
+      'Contents/MacOS/Orca'
     ])
     // The script is the same bytes for every install: no path, version or user text inside it.
     expect(MAC_SELF_UPDATE_HELPER_SCRIPT).not.toContain('/Applications')
@@ -319,8 +257,7 @@ describe('helper argv', () => {
     healthMarkerPath: '/s/launch-healthy',
     outcomePath: '/s/helper-outcome',
     executableRelativePath: 'Contents/MacOS/Orca',
-    relaunchProgram: null,
-    serveHandoffPath: null,
+    relaunchProgram: '/usr/bin/open',
     healthTimeoutSeconds: 90
   }
 
@@ -418,108 +355,6 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
     )
   }, 20_000)
 
-  // Why: a supervised `orca serve` update used to end at the swap, so a replacement the
-  // supervisor gave up on stayed installed with the previous build sitting in the rollback folder.
-  describe('when a serve supervisor owns the relaunch', () => {
-    it('reports the swap, then healthy once the build the supervisor started writes the marker', async () => {
-      const scenario = createScenario({ healthy: false, supervised: true })
-      scenarios.push(scenario)
-      scenario.appProcess.kill('SIGKILL')
-      const helper = runHelper(scenario)
-
-      await waitForOutcome(scenario, 'swapped')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('new build')
-      writeFileSync(scenario.plan.healthMarkerPath, '1.0.61\n')
-
-      expect(await helper).toBe(0)
-      expect(outcomeOf(scenario.plan)).toBe('healthy')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('new build')
-      expect(bundleMarker(scenario.plan.rollbackAppPath)).toBe('old build')
-      expect(existsSync(scenario.relaunchLog)).toBe(false)
-    }, 20_000)
-
-    it('restores the previous bundle without relaunching when no health marker appears in time', async () => {
-      const scenario = createScenario({ healthy: false, relaunch: false })
-      scenarios.push(scenario)
-      scenario.appProcess.kill('SIGKILL')
-
-      expect(await runHelper(scenario)).toBe(1)
-      expect(outcomeOf(scenario.plan)).toBe('rolled-back')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
-      expect(bundleMarker(scenario.plan.stagedAppPath)).toBe('new build')
-      expect(existsSync(scenario.plan.rollbackAppPath)).toBe(false)
-      expect(existsSync(scenario.relaunchLog)).toBe(false)
-    }, 20_000)
-
-    it('restores the previous bundle as soon as the supervisor records the handoff as failed', async () => {
-      const scenario = createScenario({ healthy: false, supervised: true })
-      scenarios.push(scenario)
-      scenario.appProcess.kill('SIGKILL')
-      const helper = runHelper(scenario)
-
-      await waitForOutcome(scenario, 'swapped')
-      const gaveUpAt = Date.now()
-      recordSupervisorFailure(scenario)
-
-      expect(await helper).toBe(1)
-      // Well inside the 30 s health deadline: the record, not the clock, ended the wait.
-      expect(Date.now() - gaveUpAt).toBeLessThan(10_000)
-      expect(outcomeOf(scenario.plan)).toBe('supervisor-rejected')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
-      expect(bundleMarker(scenario.plan.stagedAppPath)).toBe('new build')
-      expect(existsSync(scenario.plan.rollbackAppPath)).toBe(false)
-      expect(existsSync(scenario.relaunchLog)).toBe(false)
-    }, 20_000)
-
-    it('stops a serving new build the supervisor gave up on before restoring', async () => {
-      const scenario = createScenario({ healthy: false, supervised: true })
-      scenarios.push(scenario)
-      scenario.appProcess.kill('SIGKILL')
-      const helper = runHelper(scenario)
-
-      await waitForOutcome(scenario, 'swapped')
-      const serving = startServingNewApp(scenario)
-      await vi.waitFor(() => expect(isProcessAlive(serving.pid!)).toBe(true))
-      // Give the process its title before the helper reads the table.
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      recordSupervisorFailure(scenario)
-
-      expect(await helper).toBe(1)
-      expect(isProcessAlive(serving.pid!)).toBe(false)
-      expect(outcomeOf(scenario.plan)).toBe('supervisor-rejected')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
-      expect(bundleMarker(scenario.plan.stagedAppPath)).toBe('new build')
-      expect(existsSync(scenario.relaunchLog)).toBe(false)
-    }, 40_000)
-
-    it('keeps waiting while the handoff still says the install is requested', async () => {
-      const scenario = createScenario({ healthy: false, supervised: true })
-      scenarios.push(scenario)
-      scenario.appProcess.kill('SIGKILL')
-      const helper = runHelper(scenario)
-
-      await waitForOutcome(scenario, 'swapped')
-      writeFileSync(
-        scenario.plan.serveHandoffPath!,
-        JSON.stringify({
-          schemaVersion: 1,
-          phase: 'install-requested',
-          fromVersion: '1.0.51',
-          targetVersion: '1.0.61',
-          servingPid: 4101,
-          installer: 'mac-self-update'
-        })
-      )
-      await new Promise((resolve) => setTimeout(resolve, 2_500))
-      expect(outcomeOf(scenario.plan)).toBe('swapped')
-      expect(bundleMarker(scenario.plan.appPath)).toBe('new build')
-
-      writeFileSync(scenario.plan.healthMarkerPath, '1.0.61\n')
-      expect(await helper).toBe(0)
-      expect(outcomeOf(scenario.plan)).toBe('healthy')
-    }, 20_000)
-  })
-
   // Why: the app has quit by the time the helper runs, so a failure that leaves the old bundle
   // in place must start it again or the user is left with no Orca at all.
   it('relaunches the untouched app when the staged bundle is missing', async () => {
@@ -531,16 +366,6 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
     expect(outcomeOf(scenario.plan)).toBe('staged-missing')
     expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
     expect(readFileSync(scenario.relaunchLog, 'utf8')).toBe(`${scenario.plan.appPath}\n`)
-  }, 20_000)
-
-  it('leaves the relaunch to the supervisor when the staged bundle is missing', async () => {
-    const scenario = createScenario({ healthy: true, staged: false, relaunch: false })
-    scenarios.push(scenario)
-    scenario.appProcess.kill('SIGKILL')
-
-    expect(await runHelper(scenario)).toBe(1)
-    expect(outcomeOf(scenario.plan)).toBe('staged-missing')
-    expect(existsSync(scenario.relaunchLog)).toBe(false)
   }, 20_000)
 
   // Why: `mv` onto a directory that survived `rm -rf` moves the app inside it, so the rollback

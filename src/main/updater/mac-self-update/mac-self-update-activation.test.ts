@@ -15,6 +15,9 @@ const runningBuild = vi.hoisted((): RunningBuild => ({
   publicKey: 'public-key',
   requirement: 'identifier "com.stablyai.orca" and certificate leaf = H"deadbeef"'
 }))
+/** Whether this process hosts a supervised `orca serve`, as the handoff module reports it. */
+const supervised = vi.hoisted(() => ({ serve: false }))
+const recordUpdaterLifecycleMock = vi.hoisted(() => vi.fn())
 
 // Why hoisted: the activation module reads the registry its own import loaded.
 vi.hoisted(() => {
@@ -50,8 +53,12 @@ vi.mock('electron', () => ({
   net: { fetch: vi.fn() }
 }))
 vi.mock('../../persistence', () => ({ getCanonicalUserDataPath: () => '/Users/me/Library/Orca' }))
-vi.mock('../../serve-update-handoff', () => ({ getSupervisedServeUpdateHandoffPath: () => null }))
-vi.mock('../../updater-lifecycle-diagnostics', () => ({ recordUpdaterLifecycle: vi.fn() }))
+vi.mock('../../serve-update-handoff', () => ({
+  hasServeUpdateSupervisor: () => supervised.serve
+}))
+vi.mock('../../updater-lifecycle-diagnostics', () => ({
+  recordUpdaterLifecycle: recordUpdaterLifecycleMock
+}))
 vi.mock('../../../shared/child-process/run-process', () => ({ runProcess: vi.fn() }))
 vi.mock('../../../shared/mac-self-update-public-key', () => ({
   readMacSelfUpdatePublicKey: () => runningBuild.publicKey
@@ -94,6 +101,8 @@ describe('mac self-update activation', () => {
     runningBuild.version = '1.4.197-swaplabs.202609241530'
     runningBuild.publicKey = 'public-key'
     runningBuild.requirement = 'identifier "com.stablyai.orca" and certificate leaf = H"deadbeef"'
+    supervised.serve = false
+    recordUpdaterLifecycleMock.mockReset()
   })
 
   afterEach(() => {
@@ -143,5 +152,49 @@ describe('mac self-update activation', () => {
     vi.resetModules()
     const unprobed = await loadModule()
     await expect(unprobed.getMacSelfUpdateInstallerSourceFor(SWAPLABS)).resolves.toBeNull()
+  })
+
+  // Why: the helper's swap, relaunch and health watch are written for the desktop app, and the
+  // supervisor restarts a serve on its own terms; such a host keeps the manual update path.
+  it('stays inactive under a supervised serve, with one lifecycle diagnostic', async () => {
+    supervised.serve = true
+    const {
+      createMacSelfUpdateEngineIfSupported,
+      getMacSelfUpdateInstallerSourceFor,
+      getMacSelfUpdateSourceFor,
+      getMacSelfUpdateSupport,
+      isMacSelfUpdateActive
+    } = await loadModule()
+
+    expect(getMacSelfUpdateSupport()).toEqual({ supported: false, reason: 'supervised-serve' })
+    expect(createMacSelfUpdateEngineIfSupported()).toBeNull()
+    await expect(isMacSelfUpdateActive()).resolves.toBe(false)
+    expect(getMacSelfUpdateSourceFor(SWAPLABS)).toBeNull()
+    await expect(getMacSelfUpdateInstallerSourceFor(SWAPLABS)).resolves.toBeNull()
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledTimes(1)
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+      'mac_self_update_inactive',
+      { reason: 'supervised-serve', source: 'swaplabs' },
+      expect.objectContaining({ message: expect.stringContaining('supervised serve') })
+    )
+
+    // The same build, hosting no supervised serve, is the one the installer acts for.
+    supervised.serve = false
+    vi.resetModules()
+    const desktop = await loadModule()
+    expect(desktop.getMacSelfUpdateSupport()).toMatchObject({ supported: true })
+    await expect(desktop.isMacSelfUpdateActive()).resolves.toBe(true)
+
+    // A build the installer never acts for says so, not "supervised serve".
+    supervised.serve = true
+    runningBuild.version = '1.4.197'
+    recordUpdaterLifecycleMock.mockReset()
+    vi.resetModules()
+    const upstream = await loadModule()
+    expect(upstream.getMacSelfUpdateSupport()).toEqual({
+      supported: false,
+      reason: 'primary-source'
+    })
+    expect(recordUpdaterLifecycleMock).not.toHaveBeenCalled()
   })
 })

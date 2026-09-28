@@ -181,6 +181,8 @@ All of these must hold, or the Mac assets stay download-only ("Open download
 page"):
 
 - macOS, packaged build;
+- the process is not a supervised `orca serve` (one started by the serve
+  supervisor, which hands it `ORCA_SERVE_UPDATE_HANDOFF_PATH`);
 - the running version belongs to a non-primary source (`…-swaplabs.<stamp>`);
 - the build was compiled with `ORCA_SWAPLABS_UPDATE_PUBLIC_KEY` (the raw 32-byte
   Ed25519 public key, base64; validated by `electron.vite.config.ts` like the
@@ -192,6 +194,15 @@ leaf = …`), read once with `codesign -d -r-`. An ad-hoc signature is
 
 `requiresManualInstall` says manual for a fork build's own next macOS build unless
 the installer is active; cross-source jumps stay manual on macOS and Windows.
+
+A supervised `orca serve` keeps the manual path a fork build had before: the
+updater lists the DMG, the buttons say "Open download page", and a lifecycle
+diagnostic (`updater_mac_self_update_inactive`, reason `supervised-serve`) says
+why, once per process. The helper's swap, relaunch and health watch are written
+for the desktop app (a window is the health signal) while the supervisor restarts
+a serve from the bundle on its own terms; teaching the two to cooperate is a
+possible follow-up, not part of this installer. An unsupervised headless `orca
+serve` defers downloads and installs as it always has.
 
 While the installer is active, "Check for local build" is refused before its file
 dialog opens: the loopback feed serves `latest-mac.yml`, which the installer cannot
@@ -247,29 +258,21 @@ attached; a DMG or a stray `latest-mac.yml` does not make it installable.
   Nothing from the download is executed at any point; the only
   programs run are `codesign`, `PlistBuddy`, `ditto` and `xattr` under `/usr`.
 - **Restart to update**: the existing quit-and-install sequence runs (session
-  save, terminal daemon handling, exit watchdog, supervised serve handoff), then
-  the engine records `install-state.json` and starts a detached `/bin/sh -c`
-  helper. The script is a fixed string in `mac-self-update-helper.ts`; every path
-  and number is an argv entry. It waits for the app pid to exit, moves the bundle
-  to `.<App>-update-rollback/`, moves the staged bundle into place, relaunches
-  with `/usr/bin/open`, and waits up to 90 s for the health marker the new app
-  writes once its first window is shown (or, under 20 s of no window, on a
-  fallback timer; a headless `orca serve` writes it once it serves). Without it,
-  the helper stops the new build (SIGTERM, then SIGKILL), restores the rollback
-  and relaunches the previous build. A new build still on the process table after
-  SIGKILL holds the single-instance lock, so the helper then leaves both bundles
-  where they are, relaunches nothing and records `new-app-still-running`. Every earlier
-  failure that leaves the previous bundle in place (staged bundle missing, no
-  rollback folder, either rename refused) relaunches it as well, so a failed
-  update never leaves Orca closed. Under a supervised `orca serve`, the helper
-  swaps, reports `swapped` and keeps watching while the supervisor (which
-  starts the new build once the bundle's version changes) waits for
-  `orca:serve-ready`. A replacement the supervisor gives up on is recorded as
-  `failed` in the serve handoff; the helper reads that, stops the new build,
-  restores the rollback without relaunching (`supervisor-rejected`), and the
-  supervisor, told by the handoff that Orca's own installer keeps a rollback,
-  starts the restored build instead of exiting. The helper's own 90 s deadline
-  still applies if the supervisor is gone.
+  save, terminal daemon handling, exit watchdog), then the engine records
+  `install-state.json` and starts a detached `/bin/sh -c` helper. The script is a
+  fixed string in `mac-self-update-helper.ts`; every path and number is an argv
+  entry. It waits for the app pid to exit, moves the bundle to
+  `.<App>-update-rollback/`, moves the staged bundle into place, relaunches with
+  `/usr/bin/open`, and waits up to 90 s for the health marker the new app writes
+  once its first window can paint (`ready-to-show`), and on no other signal: a
+  renderer that hangs or crashes before that is never certified, so the helper
+  rolls it back. Without the marker, the helper stops the new build (SIGTERM,
+  then SIGKILL), restores the rollback and relaunches the previous build. A new
+  build still on the process table after SIGKILL holds the single-instance lock,
+  so the helper then leaves both bundles where they are, relaunches nothing and
+  records `new-app-still-running`. Every earlier failure that leaves the previous
+  bundle in place (staged bundle missing, no rollback folder, either rename
+  refused) relaunches it as well, so a failed update never leaves Orca closed.
 - **Next launch**: `reportMacSelfUpdateLaunchOutcome` writes the health marker,
   records `updater_mac_self_update_completed` or `…_failed` with the helper's
   one-word outcome, shows a rollback as an error in the update card, discards a

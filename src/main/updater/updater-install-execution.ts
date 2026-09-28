@@ -76,13 +76,7 @@ export abstract class UpdaterInstallExecution extends UpdaterPackageRecovery {
 
         if (
           this.updateInstallMode === 'supervised-headless-serve' &&
-          !requestServeUpdateHandoff(pendingVersion, {
-            // LOCAL: Orca's own installer keeps a rollback, which the supervisor waits for.
-            installer:
-              this.getAutoUpdater().installerReadinessSource === 'staged-bundle'
-                ? 'mac-self-update'
-                : undefined
-          })
+          !requestServeUpdateHandoff(pendingVersion)
         ) {
           recordUpdaterLifecycle(
             'headless_serve_handoff_failed',
