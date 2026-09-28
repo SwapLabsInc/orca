@@ -92,10 +92,14 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
     })
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
   // LOCAL: a shown window is the health signal the self-update helper waits for; it also reports
-  // how the previous launch's install went and prunes what that install left behind.
-  runAfterFirstWindowShown(() => {
-    reportMacSelfUpdateLaunchOutcome()
-  }, MAC_SELF_UPDATE_HEALTH_FALLBACK_MS)
+  // how the previous launch's install went and prunes what that install left behind. Headless
+  // serve signals from `printServeReady` instead: it never shows a window, and the fallback
+  // timer here would certify a runtime that never came to serve.
+  if (!state.isServeMode) {
+    runAfterFirstWindowShown(() => {
+      reportMacSelfUpdateLaunchOutcome()
+    }, MAC_SELF_UPDATE_HEALTH_FALLBACK_MS)
+  }
   nativeTheme.themeSource = store.getSettings().theme ?? 'system'
   // Why (#16441): the real-home grant runs a codex app-server session. It stays
   // ordered before managed-hook reconciliation — an incapable host must re-arm

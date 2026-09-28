@@ -17,8 +17,10 @@ export type MacSelfUpdateInstallRequest = {
   appPid: number
   currentVersion: string
   staged: { appPath: string; version: string }
-  /** False when a serve supervisor relaunches; the helper then only swaps. */
+  /** False when a serve supervisor relaunches; the helper then swaps and only watches. */
   helperRelaunches: boolean
+  /** The supervisor's handoff record; its `failed` phase tells the helper to roll back at once. */
+  serveHandoffPath?: string | null
   relaunchProgram?: string
   spawnHelper?: HelperSpawner
 }
@@ -62,6 +64,7 @@ export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest
         relaunchProgram: helperRelaunches
           ? (request.relaunchProgram ?? MAC_SELF_UPDATE_RELAUNCH_PROGRAM)
           : null,
+        serveHandoffPath: helperRelaunches ? null : (request.serveHandoffPath ?? null),
         healthTimeoutSeconds: MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS
       },
       request.spawnHelper,

@@ -13,6 +13,7 @@ export type MacSelfUpdateHelperOutcome =
   | 'healthy'
   | 'swapped'
   | 'rolled-back'
+  | 'supervisor-rejected'
   | 'relaunch-failed'
   | 'rename-staged-failed'
   | 'rename-current-failed'
@@ -26,17 +27,21 @@ export type MacSelfUpdateHelperOutcome =
 /**
  * The swap runs after this process has exited, so it cannot be JavaScript. It is a fixed
  * POSIX sh program handed to `/bin/sh -c`: every path and number arrives as a positional
- * argument, nothing is interpolated into it, and it calls no interpreter but `mv`, `ps`,
- * `kill` and the relaunch program it was given. Steps, per plan §13.2:
+ * argument, nothing is interpolated into it, and it calls no program but `mv`, `ps`, `kill`,
+ * `mkdir`, `rm`, `sleep` and the relaunch program it was given. Steps, per plan §13.2:
  *
  * 1. wait for the app process to exit (bounded; the exit watchdog guarantees it);
  * 2. move the current bundle aside as the rollback, once the previous rollback is gone (`mv`
  *    onto a surviving directory would nest the bundle inside it);
  * 3. move the staged, verified bundle into place;
- * 4. relaunch (unless a serve supervisor owns the relaunch);
+ * 4. relaunch, or, when a serve supervisor owns the relaunch, report `swapped` so the
+ *    supervisor (watching the bundle's version) starts the new build itself;
  * 5. wait for the new app's health marker; without one, stop the new app and wait for it to be
  *    gone (it holds the single-instance lock), then restore the rollback and relaunch it. A new
  *    app that outlives SIGKILL leaves both bundles where they are and nothing is relaunched.
+ *    Under a supervisor the wait also ends as soon as the serve handoff records `failed`: the
+ *    supervisor has given the new build up, so the rollback goes back at once and the
+ *    supervisor, which never stops watching the version, starts it again.
  *
  * The app has already quit by step 2, so every failure that leaves or restores the previous
  * bundle relaunches it too (when the helper owns relaunching): a failed update must never
@@ -54,6 +59,8 @@ relaunch=$6
 timeout=$7
 outcome=$8
 exe=$9
+shift 9
+handoff=$1
 report() {
   printf '%s\\n' "$1" > "$outcome.tmp" 2>/dev/null && mv -f "$outcome.tmp" "$outcome" 2>/dev/null
 }
@@ -71,7 +78,7 @@ launch() {
 new_app_pids() {
   ps -axo pid=,args= | while read -r p a; do
     case "$a" in
-      "$app/$exe"|"$app/$exe -psn"*) printf '%s ' "$p" ;;
+      "$app/$exe"|"$app/$exe -psn"*|"$app/$exe --serve"|"$app/$exe --serve "*) printf '%s ' "$p" ;;
     esac
   done
 }
@@ -115,8 +122,21 @@ roll_back() {
   mv "$app" "$staged"
   restore_previous
   report "$1"
-  launch "$app"
+  if [ -n "$relaunch" ]; then
+    launch "$app"
+  fi
   exit 1
+}
+supervisor_gave_up() {
+  if [ -z "$handoff" ]; then
+    return 1
+  fi
+  state=
+  read -r state < "$handoff" 2>/dev/null
+  case "$state" in
+    *'"phase":"failed"'*) return 0 ;;
+  esac
+  return 1
 }
 n=0
 while kill -0 "$pid" 2>/dev/null; do
@@ -144,18 +164,21 @@ if [ -e "$app" ] || ! mv "$staged" "$app"; then
   give_up rename-staged-failed
 fi
 rm -f "$marker"
-if [ -z "$relaunch" ]; then
+if [ -n "$relaunch" ]; then
+  if ! launch "$app"; then
+    roll_back relaunch-failed
+  fi
+else
   report swapped
-  exit 0
-fi
-if ! launch "$app"; then
-  roll_back relaunch-failed
 fi
 n=0
 while [ ! -e "$marker" ]; do
   n=$((n + 1))
   if [ "$n" -gt "$timeout" ]; then
     roll_back rolled-back
+  fi
+  if supervisor_gave_up; then
+    roll_back supervisor-rejected
   fi
   sleep 1
 done
@@ -172,8 +195,14 @@ export type MacSelfUpdateHelperPlan = {
   outcomePath: string
   /** `Contents/MacOS/<executable>` inside the bundle, so a hung new app can be found by its command line. */
   executableRelativePath: string
-  /** Null when a serve supervisor relaunches; the helper then only swaps. */
+  /** Null when a serve supervisor relaunches; the helper then swaps and only watches. */
   relaunchProgram: string | null
+  /**
+   * The serve supervisor's handoff record, when one owns the relaunch: its `failed` phase ends
+   * the health wait early. The helper reads one line of it and matches a fixed substring, so the
+   * supervisor's record must stay single-line JSON (`writeServeUpdateHandoffState`).
+   */
+  serveHandoffPath: string | null
   healthTimeoutSeconds: number
 }
 
@@ -191,7 +220,8 @@ export function buildMacSelfUpdateHelperArgs(plan: MacSelfUpdateHelperPlan): str
     plan.relaunchProgram ?? '',
     String(plan.healthTimeoutSeconds),
     plan.outcomePath,
-    plan.executableRelativePath
+    plan.executableRelativePath,
+    plan.serveHandoffPath ?? ''
   ]
 }
 

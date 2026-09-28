@@ -43,6 +43,8 @@ export type MacSelfUpdateEngineFixtureOptions = {
   stagedRequirement?: string
   zipStatus?: number
   manifestStatus?: number
+  /** The serve supervisor's handoff record, when the fixture runs "under" one. */
+  serveHandoffPath?: string | null
 }
 
 export type MacSelfUpdateEngineFixture = {
@@ -214,6 +216,7 @@ export function createMacSelfUpdateEngineFixture(
     run,
     spawnHelper,
     relaunchProgram: '/usr/bin/open',
+    getServeHandoffPath: () => options.serveHandoffPath ?? null,
     requestQuit,
     getPid: () => 1234
   }

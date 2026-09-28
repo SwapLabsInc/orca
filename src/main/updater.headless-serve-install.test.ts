@@ -314,7 +314,8 @@ describe('headless serve update install handoff', () => {
     await vi.advanceTimersByTimeAsync(100)
     quitAndInstall()
 
-    expect(requestServeUpdateHandoffMock).toHaveBeenCalledWith('1.0.61')
+    // electron-updater keeps no rollback the supervisor could wait for.
+    expect(requestServeUpdateHandoffMock).toHaveBeenCalledWith('1.0.61', { installer: undefined })
     expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false)
     expect(autoUpdaterMock.autoRunAppAfterInstall).toBe(false)
     expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledOnce()

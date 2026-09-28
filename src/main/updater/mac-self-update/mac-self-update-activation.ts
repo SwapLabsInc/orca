@@ -8,6 +8,7 @@ import {
   type ReleaseSource
 } from '../../../shared/release-sources'
 import { getCanonicalUserDataPath } from '../../persistence'
+import { getSupervisedServeUpdateHandoffPath } from '../../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
 import type { UpdateEngine } from '../update-engine'
 import {
@@ -54,12 +55,34 @@ export function getMacSelfUpdateSupport(): MacSelfUpdateSupport {
   return { supported: true, source, publicKey }
 }
 
-/** The source whose macOS releases the self-update manifest contract applies to, or null. */
+/**
+ * The source whose macOS releases the engine reads by the self-update manifest contract, or
+ * null. Only the running source's: the engine installs nothing published by another source
+ * (a cross-source jump is a manual install), so another source's releases are judged by what
+ * a hand install needs, whatever they carry.
+ */
 export function getMacSelfUpdateSourceFor(source: ReleaseSource): ReleaseSource | null {
   if (source.prereleaseIdentifier === null || process.platform !== 'darwin') {
     return null
   }
-  return getMacSelfUpdateSupport().supported ? source : null
+  const support = getMacSelfUpdateSupport()
+  return support.supported && support.source.id === source.id ? source : null
+}
+
+/**
+ * The source whose releases Orca's own installer can install right now, or null: the manifest
+ * contract above plus a running bundle it can act for. A release list keyed on this lists what
+ * the installer in use (in-app or by hand) can take, where the engine's contract would hide a
+ * hand-installable release from a build that can only install by hand.
+ */
+export async function getMacSelfUpdateInstallerSourceFor(
+  source: ReleaseSource
+): Promise<ReleaseSource | null> {
+  const contractSource = getMacSelfUpdateSourceFor(source)
+  if (!contractSource) {
+    return null
+  }
+  return (await isMacSelfUpdateActive()) ? contractSource : null
 }
 
 export function resolveRunningMacSelfUpdatePaths(): MacSelfUpdatePaths {
@@ -134,6 +157,7 @@ export function createMacSelfUpdateEngineIfSupported(): UpdateEngine | null {
     readRunningBundleSignature,
     fetchAsset: (url, init) => net.fetch(url, init),
     run: runProcess,
+    getServeHandoffPath: getSupervisedServeUpdateHandoffPath,
     requestQuit: () => app.quit(),
     getPid: () => process.pid
   })

@@ -8,6 +8,12 @@ import {
 const fetchMock = vi.fn()
 vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
 
+/** LOCAL: what the running build's installer applies to, as the activation module would answer. */
+const installerSource = vi.hoisted((): { value: unknown } => ({ value: null }))
+vi.mock('./updater/mac-self-update/mac-self-update-activation', () => ({
+  getMacSelfUpdateInstallerSourceFor: async () => installerSource.value
+}))
+
 const tokenMock = vi.fn<() => Promise<string | null>>()
 let tokenScope = 'native:github.com'
 const rejectTokenMock = vi.fn()
@@ -261,6 +267,96 @@ describe('listReleaseBuilds', () => {
       )
       await expect(listForkBuilds('stable', 'darwin', swaplabs, 'arm64', null)).resolves.toEqual([])
     } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  // LOCAL: a build Orca's own installer cannot act for (ad-hoc signed, or the identity probe
+  // failed) installs by hand, as does any other source's build; what a hand install needs is the
+  // DMG, and the slice's self-update assets say nothing about it.
+  it('lists a fork macOS release by its DMG when the installer does not apply to it', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const dmgOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [{ name: 'orca-macos-arm64.dmg' }, { name: 'orca-macos-x64.dmg' }]
+    }
+    const sliceOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609261200',
+      name: '1.4.197-swaplabs.202609261200 • Sep 26 • def5678',
+      draft: false,
+      published_at: '2026-09-26T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609261200',
+      assets: [
+        { name: 'orca-macos-arm64.zip' },
+        { name: 'swaplabs-update-mac-arm64.json' },
+        { name: 'swaplabs-update-mac-arm64.json.sig' }
+      ]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([sliceOnly, dmgOnly]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      const byHand = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', null)
+      expect(byHand.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609251200'])
+      expect(byHand[0].installerUrl).toBe(
+        'https://github.com/SwapLabsInc/orca/releases/download/swaplabs-v1.4.197%2B202609251200/orca-macos-arm64.dmg'
+      )
+      // With the installer active the same list is the slice's, which the DMG-only release lacks.
+      const inApp = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+      expect(inApp.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609261200'])
+      // The primary source keeps the platform rule either way: no DMG requirement, no slice.
+      await expect(
+        listForkBuilds('stable', 'darwin', PRIMARY_RELEASE_SOURCE, 'arm64', null)
+      ).resolves.toEqual([])
+    } finally {
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
+
+  it('keys the default listing on what the running build can install', async () => {
+    const swaplabs = {
+      id: 'swaplabs',
+      label: 'SwapLabs',
+      repo: 'SwapLabsInc/orca',
+      prereleaseIdentifier: 'swaplabs'
+    }
+    const dmgOnly = {
+      tag_name: 'swaplabs-v1.4.197+202609251200',
+      name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+      draft: false,
+      published_at: '2026-09-25T12:00:00Z',
+      html_url: 'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+      assets: [{ name: 'orca-macos-arm64.dmg' }]
+    }
+    fetchMock.mockResolvedValue(jsonResponse([dmgOnly]))
+    const { setReleaseSourcesLiteralForTest, FORK_RELEASE_SOURCES_LITERAL } =
+      await import('../shared/release-sources.fixture')
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    try {
+      vi.resetModules()
+      const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+      installerSource.value = null
+      await expect(
+        listForkBuilds('stable', 'darwin', swaplabs, 'arm64').then((builds) =>
+          builds.map((build) => build.version)
+        )
+      ).resolves.toEqual(['1.4.197-swaplabs.202609251200'])
+      installerSource.value = swaplabs
+      await expect(listForkBuilds('stable', 'darwin', swaplabs, 'arm64')).resolves.toEqual([])
+    } finally {
+      installerSource.value = null
       setReleaseSourcesLiteralForTest(null)
     }
   })

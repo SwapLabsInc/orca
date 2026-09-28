@@ -11,7 +11,7 @@ export type MacSelfUpdateInstallState = {
   fromVersion: string
   targetVersion: string
   stagedAppPath: string
-  /** `helper` relaunches and health-checks; `supervisor` means the serve supervisor relaunches. */
+  /** `helper` relaunches; `supervisor` means the serve supervisor does. The helper health-checks either way. */
   relaunchOwner: 'helper' | 'supervisor'
   requestedAt: string
 }
@@ -88,6 +88,8 @@ const HELPER_OUTCOME_MESSAGES: Record<MacSelfUpdateHelperOutcome, string> = {
   swapped: 'the update was applied',
   'rolled-back':
     'the new build did not start within its time limit, so the previous build was restored',
+  'supervisor-rejected':
+    'the serve supervisor gave the new build up, so the previous build was restored',
   'relaunch-failed': 'the new build could not be launched, so the previous build was restored',
   'rename-staged-failed': 'the downloaded build could not be moved into place',
   'rename-current-failed': 'the installed app could not be moved aside',

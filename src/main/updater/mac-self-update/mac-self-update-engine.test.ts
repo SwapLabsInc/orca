@@ -162,7 +162,8 @@ describe('MacSelfUpdateEngine', () => {
       '/usr/bin/open',
       String(MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS),
       fixture.paths.helperOutcomePath,
-      'Contents/MacOS/Orca'
+      'Contents/MacOS/Orca',
+      ''
     ])
     expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
       phase: 'install-requested',
@@ -174,7 +175,7 @@ describe('MacSelfUpdateEngine', () => {
   })
 
   it('leaves the relaunch to a serve supervisor when autoRunAppAfterInstall is off', async () => {
-    fixture = createMacSelfUpdateEngineFixture()
+    fixture = createMacSelfUpdateEngineFixture({ serveHandoffPath: '/u/serve-update-handoff.json' })
     fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
     await fixture.engine.checkForUpdates()
     await fixture.engine.downloadUpdate()
@@ -184,9 +185,24 @@ describe('MacSelfUpdateEngine', () => {
 
     const [, args] = fixture.spawnHelper.mock.calls[0]
     expect(args[8]).toBe('')
+    // The helper watches the supervisor's record to roll back as soon as it gives the build up.
+    expect(args.at(-1)).toBe('/u/serve-update-handoff.json')
     expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
       relaunchOwner: 'supervisor'
     })
+  })
+
+  it('keeps the handoff record from a helper that relaunches on its own', async () => {
+    fixture = createMacSelfUpdateEngineFixture({ serveHandoffPath: '/u/serve-update-handoff.json' })
+    fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+    await fixture.engine.checkForUpdates()
+    await fixture.engine.downloadUpdate()
+
+    fixture.engine.quitAndInstall()
+
+    const [, args] = fixture.spawnHelper.mock.calls[0]
+    expect(args[8]).toBe('/usr/bin/open')
+    expect(args.at(-1)).toBe('')
   })
 
   it.each([

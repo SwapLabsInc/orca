@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
 import { resolveAdvertisedPairingEndpoint } from '../runtime/pairing-endpoint'
 import { notifyServeSupervisorReady } from '../serve-update-handoff'
+import { reportMacSelfUpdateLaunchOutcome } from '../updater/mac-self-update/mac-self-update-launch-outcome'
 import { mainProcessState as state } from './main-process-state'
 import { getServeOptions, type ServeOptions } from './serve-options'
 
@@ -93,4 +94,7 @@ export async function printServeReady(options: ServeOptions): Promise<void> {
       : { mode: options.json ? 'json' : 'human' }
   )
   notifyServeSupervisorReady(runtime.getRuntimeId())
+  // LOCAL: a serving runtime is the health signal the self-update helper waits for; the window
+  // path's fallback timer would certify a build that never got this far.
+  reportMacSelfUpdateLaunchOutcome()
 }

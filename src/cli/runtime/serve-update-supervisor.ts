@@ -67,18 +67,31 @@ export async function superviseForegroundServe(
         : null
     )
 
-    if (result.readiness === 'failed') {
-      return 1
-    }
-    if (expectedHandoff && result.readiness !== 'verified') {
-      if (args.handoffPath) {
+    if (result.readiness === 'failed' || (expectedHandoff && result.readiness !== 'verified')) {
+      if (expectedHandoff && result.readiness !== 'failed' && args.handoffPath) {
         await recordServeUpdateHandoffFailure(
           args.handoffPath,
           expectedHandoff,
           `Replacement exited before serving version ${expectedHandoff.targetVersion}.`
         )
       }
-      return 1
+      // LOCAL: Orca's own installer reads that failure record and puts the previous build back;
+      // a supervisor that exited here would leave the server down beside a runnable build. Not
+      // after a forwarded signal: that was the operator stopping the server.
+      if (
+        !expectedHandoff ||
+        expectedHandoff.installer !== 'mac-self-update' ||
+        result.signalWasForwarded ||
+        !(await waitForMacBundleVersion(args.executable, expectedHandoff.fromVersion))
+      ) {
+        return 1
+      }
+      process.stderr.write(
+        `[serve] previous build ${expectedHandoff.fromVersion} restored; starting it\n`
+      )
+      expectedHandoff = null
+      child = args.spawnChild(args.executable, args.childArgs, args.spawnOptions)
+      continue
     }
 
     const handoff = args.handoffPath ? await readServeUpdateHandoff(args.handoffPath) : null

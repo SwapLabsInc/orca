@@ -85,18 +85,20 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       )
       return
     }
+    if (this.currentStatus.state === 'checking' || this.currentStatus.state === 'downloading') {
+      return
+    }
+    if (this.localBuildSelectionInProgress) {
+      return
+    }
+    // Why after the in-flight guards: the refusal restores the release feed, which must not
+    // unwind a check or download that is still running.
     if (this.getAutoUpdater().installerReadinessSource === 'staged-bundle') {
       const runningSource = this.getRunningReleaseSource()
       this.sendLocalBuildErrorAndRestore(
         describeRefusedLocalBuildSwitch(runningSource ? getReleaseSource(runningSource) : null),
         true
       )
-      return
-    }
-    if (this.currentStatus.state === 'checking' || this.currentStatus.state === 'downloading') {
-      return
-    }
-    if (this.localBuildSelectionInProgress) {
       return
     }
     this.localBuildSelectionInProgress = true

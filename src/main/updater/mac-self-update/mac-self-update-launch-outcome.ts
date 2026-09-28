@@ -5,6 +5,7 @@ import {
   getMacSelfUpdateSupport,
   resolveRunningMacSelfUpdatePaths
 } from './mac-self-update-activation'
+import { MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS } from './mac-self-update-helper'
 import {
   clearMacSelfUpdateInstallRecords,
   pruneMacSelfUpdateRollback,
@@ -23,7 +24,45 @@ import type { MacSelfUpdatePaths } from './mac-self-update-paths'
  */
 export const ROLLBACK_PRUNE_DELAY_MS = 3 * 60_000
 
+/** How often a refused health-marker write is tried again while the helper is still waiting. */
+export const HEALTH_MARKER_RETRY_MS = 5_000
+
 let reported: MacSelfUpdateLaunchOutcome | null = null
+
+/**
+ * Why retry: the helper rolls this healthy build back when the marker is missing at its
+ * deadline, so one refused write (a transient EAGAIN, a folder recreated a moment later) must
+ * not decide that. Bounded by the helper's own clock, after which the retries would be moot.
+ */
+function writeHealthMarkerUntilItSticks(
+  paths: MacSelfUpdatePaths,
+  version: string,
+  attempt = 1
+): void {
+  try {
+    writeMacSelfUpdateHealthMarker(paths.healthMarkerPath, version)
+    if (attempt > 1) {
+      recordUpdaterLifecycle('mac_self_update_health_marker_written', { attempt })
+    }
+  } catch (error) {
+    recordUpdaterLifecycle(
+      'mac_self_update_health_marker_failed',
+      { attempt, errorType: error instanceof Error ? error.name : typeof error },
+      {
+        level: 'warn',
+        message: 'Could not write the launch health marker; the helper may roll back'
+      }
+    )
+    if (attempt * HEALTH_MARKER_RETRY_MS >= MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS * 1000) {
+      return
+    }
+    const timer = setTimeout(
+      () => writeHealthMarkerUntilItSticks(paths, version, attempt + 1),
+      HEALTH_MARKER_RETRY_MS
+    )
+    timer.unref?.()
+  }
+}
 
 function schedulePruneRollback(paths: MacSelfUpdatePaths): void {
   const timer = setTimeout(() => {
@@ -84,7 +123,7 @@ export function reportMacSelfUpdateLaunchOutcome(): MacSelfUpdateLaunchOutcome {
   try {
     if (outcome.kind === 'completed') {
       // Why first: the helper's 90 s clock is running; everything else here can wait.
-      writeMacSelfUpdateHealthMarker(paths.healthMarkerPath, outcome.targetVersion)
+      writeHealthMarkerUntilItSticks(paths, outcome.targetVersion)
       recordUpdaterLifecycle('mac_self_update_completed', {
         from: outcome.fromVersion,
         to: outcome.targetVersion,

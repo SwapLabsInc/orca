@@ -103,6 +103,26 @@ describe('resolveMacSelfUpdateLaunchOutcome', () => {
     })
   })
 
+  it('names the supervisor when it gave the build up', () => {
+    const outcome = resolveMacSelfUpdateLaunchOutcome(
+      {
+        schemaVersion: 1,
+        phase: 'install-requested',
+        fromVersion: '1.4.197-swaplabs.202609241530',
+        targetVersion: '1.4.197-swaplabs.202609251200',
+        stagedAppPath: '/Applications/.Orca-update-staging/Orca.app',
+        relaunchOwner: 'supervisor',
+        requestedAt: '2026-09-28T10:00:00Z'
+      },
+      '1.4.197-swaplabs.202609241530',
+      'supervisor-rejected'
+    )
+    expect(outcome.kind).toBe('failed')
+    expect(outcome.kind === 'failed' && outcome.message).toContain(
+      'the serve supervisor gave the new build up, so the previous build was restored'
+    )
+  })
+
   it("reports a rollback in the previous build's words, naming what the helper recorded", () => {
     const outcome = resolveMacSelfUpdateLaunchOutcome(STATE, STATE.fromVersion, 'rolled-back')
     expect(outcome).toMatchObject({ kind: 'failed', helperOutcome: 'rolled-back' })

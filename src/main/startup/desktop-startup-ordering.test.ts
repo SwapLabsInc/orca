@@ -309,6 +309,29 @@ describe('startup ordering', () => {
     expect(supervisorReady).toBeGreaterThan(readyStart)
   })
 
+  // LOCAL: the self-update helper rolls back a build that never signals health, so headless
+  // serve must signal from readiness and not from the window path's fallback timer.
+  it('signals self-update health from serve readiness, not the window fallback, under headless serve', () => {
+    const serveSource = readFileSync(
+      join(process.cwd(), 'src/main/startup/main-process-serve.ts'),
+      'utf8'
+    )
+    const supervisorReady = serveSource.indexOf('notifyServeSupervisorReady(')
+    const healthSignal = serveSource.indexOf('reportMacSelfUpdateLaunchOutcome()', supervisorReady)
+    expect(supervisorReady).toBeGreaterThanOrEqual(0)
+    expect(healthSignal).toBeGreaterThan(supervisorReady)
+
+    const runtimeSource = readFileSync(
+      join(process.cwd(), 'src/main/startup/main-process-ready-runtime.ts'),
+      'utf8'
+    )
+    const guard = runtimeSource.indexOf('if (!state.isServeMode) {')
+    const windowSignal = runtimeSource.indexOf('reportMacSelfUpdateLaunchOutcome()', guard)
+    expect(guard).toBeGreaterThanOrEqual(0)
+    expect(windowSignal).toBeGreaterThan(guard)
+    expect(windowSignal - guard).toBeLessThan(200)
+  })
+
   it('does not run the rate-limit quota fetch before the first window can show results', () => {
     const source = readFileSync(
       join(process.cwd(), 'src/main/startup/main-window-core-services.ts'),

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,7 +22,10 @@ vi.mock('./mac-self-update-activation', () => ({
     return launch.paths
   }
 }))
-vi.mock('../../updater-lifecycle-diagnostics', () => ({ recordUpdaterLifecycle: vi.fn() }))
+const recordUpdaterLifecycleMock = vi.hoisted(() => vi.fn())
+vi.mock('../../updater-lifecycle-diagnostics', () => ({
+  recordUpdaterLifecycle: recordUpdaterLifecycleMock
+}))
 
 const FROM_VERSION = '1.4.197-swaplabs.202609241530'
 const TARGET_VERSION = '1.4.197-swaplabs.202609251200'
@@ -51,6 +54,8 @@ describe('mac self-update launch outcome', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
+    recordUpdaterLifecycleMock.mockReset()
     platformSpy?.mockRestore()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -73,6 +78,38 @@ describe('mac self-update launch outcome', () => {
     })
     expect(existsSync(launch.paths!.healthMarkerPath)).toBe(true)
     expect(existsSync(launch.paths!.installStatePath)).toBe(false)
+  })
+
+  // Why: the helper rolls this healthy build back when the marker is missing at its deadline,
+  // and one refused write used to be the end of it; the outcome was cached and never retried.
+  it('keeps trying to write the health marker while the helper is still waiting', async () => {
+    vi.useFakeTimers()
+    launch.runningVersion = TARGET_VERSION
+    // A folder where the marker file goes: the first write is refused (EISDIR).
+    mkdirSync(launch.paths!.healthMarkerPath, { recursive: true })
+    const { HEALTH_MARKER_RETRY_MS, reportMacSelfUpdateLaunchOutcome } = await loadModule()
+
+    expect(reportMacSelfUpdateLaunchOutcome()).toMatchObject({ kind: 'completed' })
+    expect(statSync(launch.paths!.healthMarkerPath).isDirectory()).toBe(true)
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+      'mac_self_update_health_marker_failed',
+      expect.objectContaining({ attempt: 1 }),
+      expect.objectContaining({ level: 'warn' })
+    )
+    // The rest of the report still ran: the request is cleared and the completion recorded.
+    expect(existsSync(launch.paths!.installStatePath)).toBe(false)
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+      'mac_self_update_completed',
+      expect.objectContaining({ to: TARGET_VERSION })
+    )
+
+    rmSync(launch.paths!.healthMarkerPath, { recursive: true })
+    vi.advanceTimersByTime(HEALTH_MARKER_RETRY_MS)
+    expect(statSync(launch.paths!.healthMarkerPath).isFile()).toBe(true)
+    expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
+      'mac_self_update_health_marker_written',
+      { attempt: 2 }
+    )
   })
 
   it('shows the same failure before and after the launch is reported', async () => {

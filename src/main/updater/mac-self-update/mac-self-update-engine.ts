@@ -46,6 +46,8 @@ export type MacSelfUpdateEngineDependencies = {
   run: BundleToolRunner
   spawnHelper?: HelperSpawner
   relaunchProgram?: string
+  /** The serve supervisor's handoff record, when this process runs under one. */
+  getServeHandoffPath?: () => string | null
   requestQuit: () => void
   getPid: () => number
 }
@@ -142,6 +144,7 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
         // Why the supervisor rule: MacUpdater ignores these flags, so the caller expresses relaunch
         // ownership through autoRunAppAfterInstall; either says the serve supervisor relaunches.
         helperRelaunches: this.autoRunAppAfterInstall && isForceRunAfter !== false,
+        serveHandoffPath: this.deps.getServeHandoffPath?.() ?? null,
         relaunchProgram: this.deps.relaunchProgram,
         spawnHelper: this.deps.spawnHelper
       })

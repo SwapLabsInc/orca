@@ -63,7 +63,8 @@ vi.mock('./updater/mac-self-update/mac-self-update-activation', () => ({
   getMacSelfUpdateSupport: () =>
     activation.active ? { supported: true } : { supported: false, reason: 'no-public-key' },
   isMacSelfUpdateActive: async () => activation.active,
-  getMacSelfUpdateSourceFor: () => null
+  getMacSelfUpdateSourceFor: () => null,
+  getMacSelfUpdateInstallerSourceFor: async () => null
 }))
 vi.mock('./updater/mac-self-update/mac-self-update-launch-outcome', () => ({
   getMacSelfUpdateLaunchFailure: () => activation.launchFailure
@@ -273,6 +274,45 @@ describe('updater with the macOS self-update engine', () => {
     expect(chooseLocalBuildMock).not.toHaveBeenCalled()
     expect(fetchedUrls).toEqual([])
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  // Why: the refusal restores the release feed and replaces the card; sent over a running
+  // download it clobbered the progress card and unwound the attempt's feed under it.
+  it('ignores a local-build request while a download is in flight, like every other request', async () => {
+    const { holdZipDownload, targetVersion } = activateEngine()
+    fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [FORK_TAG], state: 'ready' })
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const { setupAutoUpdater, checkForUpdates, checkForUpdatesFromMenu, downloadUpdate } =
+      await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
+    checkForUpdates()
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'updater:status',
+        expect.objectContaining({ state: 'available', version: targetVersion })
+      )
+    })
+    const releaseZip = holdZipDownload()
+    downloadUpdate()
+    expect(send).toHaveBeenLastCalledWith(
+      'updater:status',
+      expect.objectContaining({ state: 'downloading', version: targetVersion })
+    )
+
+    checkForUpdatesFromMenu({ localBuild: true })
+    releaseZip()
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'updater:status',
+        expect.objectContaining({ state: 'downloaded', version: targetVersion })
+      )
+    })
+    expect(send).not.toHaveBeenCalledWith(
+      'updater:status',
+      expect.objectContaining({ source: 'local' })
+    )
+    expect(chooseLocalBuildMock).not.toHaveBeenCalled()
   })
 
   it('keeps electron-updater when the engine is not supported', async () => {
