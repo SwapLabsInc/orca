@@ -137,42 +137,53 @@ describe('helper argv', () => {
     )
   })
 
+  const spawnPlan: MacSelfUpdateHelperPlan = {
+    appPid: 1,
+    appPath: '/a/Orca.app',
+    stagedAppPath: '/a/.Orca-update-staging/Orca.app',
+    rollbackAppPath: '/a/.Orca-update-rollback/Orca.app',
+    healthMarkerPath: '/s/launch-healthy',
+    outcomePath: '/s/helper-outcome',
+    executableRelativePath: 'Contents/MacOS/Orca',
+    relaunchProgram: null,
+    healthTimeoutSeconds: 90
+  }
+
   it('spawns detached through the injected spawner and unrefs the child', () => {
     const unref = vi.fn()
-    const spawner = vi.fn(() => ({ pid: 99, unref }))
-    const pid = spawnMacSelfUpdateHelper(
-      {
-        appPid: 1,
-        appPath: '/a/Orca.app',
-        stagedAppPath: '/a/.Orca-update-staging/Orca.app',
-        rollbackAppPath: '/a/.Orca-update-rollback/Orca.app',
-        healthMarkerPath: '/s/launch-healthy',
-        outcomePath: '/s/helper-outcome',
-        executableRelativePath: 'Contents/MacOS/Orca',
-        relaunchProgram: null,
-        healthTimeoutSeconds: 90
-      },
-      spawner
-    )
+    const spawner = vi.fn(() => ({ pid: 99, unref, on: vi.fn() }))
+    const pid = spawnMacSelfUpdateHelper(spawnPlan, spawner)
     expect(pid).toBe(99)
     expect(spawner).toHaveBeenCalledWith(MAC_SELF_UPDATE_HELPER_SHELL, expect.any(Array))
     expect(unref).toHaveBeenCalledTimes(1)
     expect(() =>
+      spawnMacSelfUpdateHelper(spawnPlan, () => ({ pid: undefined, unref, on: vi.fn() }))
+    ).toThrow(/did not start/)
+  })
+
+  // Why a real spawn: Node reports a refused one as a pid-less child whose `error` fires a tick
+  // later, and an `error` nobody listens for is an uncaught exception in the main process.
+  it('hears the late error of a spawn the system refused, and passes its cause on', async () => {
+    const spawned: ChildProcess[] = []
+    const causes: Error[] = []
+    expect(() =>
       spawnMacSelfUpdateHelper(
-        {
-          appPid: 1,
-          appPath: '/a/Orca.app',
-          stagedAppPath: '/a/s/Orca.app',
-          rollbackAppPath: '/a/r/Orca.app',
-          healthMarkerPath: '/s/h',
-          outcomePath: '/s/o',
-          executableRelativePath: 'Contents/MacOS/Orca',
-          relaunchProgram: null,
-          healthTimeoutSeconds: 90
+        spawnPlan,
+        (_program, args) => {
+          const child = spawn(join(tmpdir(), 'orca-mac-self-update-no-such-shell'), args, {
+            detached: true,
+            stdio: 'ignore'
+          })
+          spawned.push(child)
+          return child
         },
-        () => ({ pid: undefined, unref })
+        (error) => causes.push(error)
       )
     ).toThrow(/did not start/)
+    expect(spawned[0].pid).toBeUndefined()
+    expect(spawned[0].listenerCount('error')).toBe(1)
+    await vi.waitFor(() => expect(causes).toHaveLength(1))
+    expect(causes[0]).toMatchObject({ code: 'ENOENT' })
   })
 })
 
@@ -261,6 +272,33 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
     expect(outcomeOf(scenario.plan)).toBe('staged-missing')
     expect(existsSync(scenario.relaunchLog)).toBe(false)
   }, 20_000)
+
+  // Why: `mv` onto a directory that survived `rm -rf` moves the app inside it, so the rollback
+  // would hold a bundle nested in the leftovers and restoring it would leave no runnable Orca.
+  it.skipIf(process.getuid?.() === 0)(
+    'leaves the app in place and relaunches it when the previous rollback cannot be removed',
+    async () => {
+      const scenario = createScenario({ healthy: true })
+      scenarios.push(scenario)
+      scenario.appProcess.kill('SIGKILL')
+      const leftover = join(scenario.plan.rollbackAppPath, 'Contents')
+      mkdirSync(leftover, { recursive: true })
+      writeFileSync(join(leftover, 'Info.plist'), 'older build')
+      // A read-only directory refuses to give up its entries, so `rm -rf` fails below it.
+      chmodSync(leftover, 0o555)
+      try {
+        expect(await runHelper(scenario.plan)).toBe(1)
+      } finally {
+        chmodSync(leftover, 0o755)
+      }
+      expect(outcomeOf(scenario.plan)).toBe('rollback-dir-failed')
+      expect(bundleMarker(scenario.plan.appPath)).toBe('old build')
+      expect(bundleMarker(scenario.plan.stagedAppPath)).toBe('new build')
+      expect(existsSync(join(scenario.plan.rollbackAppPath, 'Orca.app'))).toBe(false)
+      expect(readFileSync(scenario.relaunchLog, 'utf8')).toBe(`${scenario.plan.appPath}\n`)
+    },
+    20_000
+  )
 
   // Root ignores directory permissions, so the failure cannot be provoked there.
   it.skipIf(process.getuid?.() === 0)(

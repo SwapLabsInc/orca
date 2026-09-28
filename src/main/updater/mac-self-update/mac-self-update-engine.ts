@@ -53,6 +53,11 @@ export type MacSelfUpdateEngineDependencies = {
 type VerifiedOffer = { manifest: MacSelfUpdateManifest; feedUrl: string; manualInstallUrl: string }
 type StagedBundle = { appPath: string; manifest: MacSelfUpdateManifest }
 
+/** Why the checksum too: a release cut again keeps its version but is another build. */
+function isSameBuild(a: MacSelfUpdateManifest, b: MacSelfUpdateManifest): boolean {
+  return a.version === b.version && a.sha512 === b.sha512
+}
+
 /** The tag's release page: the way out when the in-app path refuses. */
 function toReleasePageUrl(feedUrl: string): string {
   return feedUrl.replace('/releases/download/', '/releases/tag/')
@@ -91,7 +96,7 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
     try {
       this.offer = await this.readVerifiedOffer()
       // Why: a later check must not leave an older staged bundle for Restart to install.
-      if (this.staged && this.staged.manifest.version !== this.offer.manifest.version) {
+      if (this.staged && !isSameBuild(this.staged.manifest, this.offer.manifest)) {
         this.staged = null
         await rm(this.deps.paths.stagingDir, { recursive: true, force: true }).catch(
           () => undefined
@@ -286,6 +291,16 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
         this.deps.run
       )
       await stripQuarantine(stagedAppPath, this.deps.run)
+      // Why: a check that finished during the download replaced the offer, and Restart must install
+      // the build the card now names. A failed check replaced nothing, so it discards nothing.
+      const latest = this.offer
+      if (latest && !isSameBuild(latest.manifest, manifest)) {
+        throw new MacSelfUpdateError(
+          'offer-superseded',
+          `Orca ${latest.manifest.version} was published while ${manifest.version} was downloading. Download it instead.`,
+          { manualInstallUrl: latest.manualInstallUrl }
+        )
+      }
       this.staged = { appPath: stagedAppPath, manifest }
       recordUpdaterLifecycle('mac_self_update_staged', { version: manifest.version })
       this.emit('update-downloaded', { ...this.describe(manifest), downloadedFile: stagedAppPath })

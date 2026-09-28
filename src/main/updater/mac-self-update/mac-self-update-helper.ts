@@ -27,7 +27,8 @@ export type MacSelfUpdateHelperOutcome =
  * `kill` and the relaunch program it was given. Steps, per plan §13.2:
  *
  * 1. wait for the app process to exit (bounded; the exit watchdog guarantees it);
- * 2. move the current bundle aside as the rollback;
+ * 2. move the current bundle aside as the rollback, once the previous rollback is gone (`mv`
+ *    onto a surviving directory would nest the bundle inside it);
  * 3. move the staged, verified bundle into place;
  * 4. relaunch (unless a serve supervisor owns the relaunch);
  * 5. wait for the new app's health marker; without one, restore the rollback and relaunch it.
@@ -86,7 +87,9 @@ done
 if [ ! -d "$staged" ]; then
   give_up staged-missing
 fi
-rm -rf "$rollback"
+if ! rm -rf "$rollback" || [ -e "$rollback" ]; then
+  give_up rollback-dir-failed
+fi
 if ! mkdir -p "$(dirname "$rollback")"; then
   give_up rollback-dir-failed
 fi
@@ -159,15 +162,26 @@ export function buildMacSelfUpdateHelperArgs(plan: MacSelfUpdateHelperPlan): str
   ]
 }
 
-export type HelperSpawner = (program: string, args: string[]) => { pid?: number; unref(): void }
+export type HelperSpawner = (
+  program: string,
+  args: string[]
+) => {
+  pid?: number
+  unref(): void
+  on(event: 'error', listener: (error: Error) => void): unknown
+}
 
 const defaultSpawner: HelperSpawner = (program, args) =>
   spawnProcess({ program, args, detached: true, stdio: 'ignore', timeoutMs: null })
 
-/** Starts the helper in its own session so it outlives this process and its quit. */
+/**
+ * Starts the helper in its own session so it outlives this process and its quit.
+ * `onSpawnError` hears the cause of a refused spawn, which arrives after this has thrown.
+ */
 export function spawnMacSelfUpdateHelper(
   plan: MacSelfUpdateHelperPlan,
-  spawner: HelperSpawner = defaultSpawner
+  spawner: HelperSpawner = defaultSpawner,
+  onSpawnError: (error: Error) => void = () => undefined
 ): number {
   let child: ReturnType<HelperSpawner>
   try {
@@ -178,6 +192,8 @@ export function spawnMacSelfUpdateHelper(
       `Could not start the update helper: ${error instanceof Error ? error.message : String(error)}`
     )
   }
+  // Why: a refused spawn (EAGAIN, EMFILE, EACCES) emits `error` a tick later; unheard, it takes the app down.
+  child.on('error', onSpawnError)
   if (!child.pid) {
     throw new MacSelfUpdateError('helper-launch-failed', 'The update helper did not start.')
   }

@@ -91,7 +91,7 @@ const HELPER_OUTCOME_MESSAGES: Record<MacSelfUpdateHelperOutcome, string> = {
   'relaunch-failed': 'the new build could not be launched, so the previous build was restored',
   'rename-staged-failed': 'the downloaded build could not be moved into place',
   'rename-current-failed': 'the installed app could not be moved aside',
-  'rollback-dir-failed': 'no rollback folder could be created next to the app',
+  'rollback-dir-failed': 'the rollback folder next to the app could not be prepared',
   'staged-missing': 'the downloaded build was gone by the time the helper ran',
   'app-still-running': 'the previous build never exited'
 }

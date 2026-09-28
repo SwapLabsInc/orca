@@ -19,6 +19,7 @@ export type MacSelfUpdateFailureReason =
   | 'bundle-signature-invalid'
   | 'bundle-identity-mismatch'
   | 'bundle-version-mismatch'
+  | 'offer-superseded'
   | 'nothing-staged'
   | 'helper-launch-failed'
   | 'install-state-unwritable'

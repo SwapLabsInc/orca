@@ -23,6 +23,7 @@ export type ReleaseAssetFetch = (
   init?: { signal?: AbortSignal }
 ) => Promise<ReleaseAssetResponse>
 
+/** For the whole transfer: `net.fetch` errors the body too when its signal aborts. */
 const SMALL_ASSET_TIMEOUT_MS = 10_000
 /** A stalled transfer is abandoned after this long without a byte; a slow one is not. */
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000

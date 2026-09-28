@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { vi } from 'vitest'
@@ -15,7 +15,7 @@ import { resolveMacSelfUpdatePaths, type MacSelfUpdatePaths } from './mac-self-u
 /**
  * Test-only: the real engine over a temp directory, with every macOS tool, the network and
  * the helper spawn replaced by fakes. `ditto` is faked by creating the bundle directory the
- * zip would have held; `codesign` and `PlistBuddy` answer from the fixture's manifest.
+ * zip would have held; `codesign` answers from the fixture, `PlistBuddy` from the unpacked zip.
  */
 
 export const FIXTURE_SOURCE: ReleaseSource = {
@@ -56,6 +56,12 @@ export type MacSelfUpdateEngineFixture = {
   manifestBytes: Buffer
   zipBytes: Buffer
   targetVersion: string
+  /** Replaces what the feed serves, as a release cut after the last check would; `cut` tells two builds of one version apart. */
+  publishVersion: (version: string, cut?: string) => void
+  /** Withholds zip responses until the returned function is called. */
+  holdZipDownload: () => () => void
+  /** The status the feed answers a manifest request with from now on. */
+  setManifestStatus: (status: number) => void
   cleanup: () => void
 }
 
@@ -107,49 +113,61 @@ export function createMacSelfUpdateEngineFixture(
   writeFileSync(executablePath, 'old build')
   const paths = resolveMacSelfUpdatePaths({ executablePath, userDataPath: join(dir, 'userData') })
 
-  const zipBytes = Buffer.from(`zip:${targetVersion}:${'z'.repeat(2048)}`, 'utf8')
-  const manifestBytes = Buffer.from(
-    JSON.stringify({
-      schema: 1,
-      source: FIXTURE_SOURCE.id,
-      version: targetVersion,
-      arch,
-      file: `orca-macos-${arch}.zip`,
-      size: zipBytes.length,
-      sha512: createHash('sha512').update(zipBytes).digest('base64'),
-      bundleId: 'com.stablyai.orca',
-      commit: 'abcdef123456',
-      designatedRequirementSha256: hashDesignatedRequirement(FIXTURE_DR),
-      releasedAt: '2026-09-25T12:00:00Z',
-      ...options.manifestOverrides
-    }),
-    'utf8'
-  )
   const trusted = generateKeyPairSync('ed25519')
   const signer = options.signWithForeignKey ? generateKeyPairSync('ed25519') : trusted
-  const signatureBytes = Buffer.from(
-    sign(null, manifestBytes, signer.privateKey).toString('base64')
-  )
+  const buildRelease = (version: string, cut = '') => {
+    const zipBytes = Buffer.from(`zip:${version}:${cut}${'z'.repeat(2048)}`, 'utf8')
+    const manifestBytes = Buffer.from(
+      JSON.stringify({
+        schema: 1,
+        source: FIXTURE_SOURCE.id,
+        version,
+        arch,
+        file: `orca-macos-${arch}.zip`,
+        size: zipBytes.length,
+        sha512: createHash('sha512').update(zipBytes).digest('base64'),
+        bundleId: 'com.stablyai.orca',
+        commit: 'abcdef123456',
+        designatedRequirementSha256: hashDesignatedRequirement(FIXTURE_DR),
+        releasedAt: '2026-09-25T12:00:00Z',
+        ...options.manifestOverrides
+      }),
+      'utf8'
+    )
+    const signatureBytes = Buffer.from(
+      sign(null, manifestBytes, signer.privateKey).toString('base64')
+    )
+    return { zipBytes, manifestBytes, signatureBytes }
+  }
+  const initialRelease = buildRelease(targetVersion)
+  let served = initialRelease
+  let manifestStatus = options.manifestStatus ?? 200
+  let zipHold: Promise<void> | null = null
 
   const fetchedUrls: string[] = []
   const fetchAsset: ReleaseAssetFetch = async (url) => {
     fetchedUrls.push(url)
     if (url.endsWith('.json')) {
-      return respond(options.manifestStatus ?? 200, manifestBytes)
+      return respond(manifestStatus, served.manifestBytes)
     }
     if (url.endsWith('.sig')) {
-      return respond(200, signatureBytes)
+      return respond(200, served.signatureBytes)
     }
+    // Why read first: a request already under way keeps the asset it asked for.
+    const { zipBytes } = served
+    await zipHold
     return respond(options.zipStatus ?? 200, zipBytes)
   }
 
   const runCalls: ProcessSpec[] = []
+  let unpackedVersion = ''
   const run = async (spec: ProcessSpec): Promise<ProcessResult> => {
     runCalls.push(spec)
     const result: ProcessResult = { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
     const args = spec.args ?? []
     if (spec.program.endsWith('ditto')) {
       const destination = args.at(-1) ?? ''
+      unpackedVersion = /^zip:([^:]+):/.exec(readFileSync(args.at(-2) ?? '', 'utf8'))?.[1] ?? ''
       mkdirSync(join(destination, 'Orca.app', 'Contents', 'MacOS'), { recursive: true })
       writeFileSync(join(destination, 'Orca.app', 'Contents', 'MacOS', 'Orca'), 'new build')
       return result
@@ -167,7 +185,7 @@ export function createMacSelfUpdateEngineFixture(
         stdout:
           key === 'Print :CFBundleIdentifier'
             ? 'com.stablyai.orca\n'
-            : `${options.stagedBundleVersion ?? targetVersion}\n`
+            : `${options.stagedBundleVersion ?? unpackedVersion}\n`
       }
     }
     if (spec.program.endsWith('xattr') && args[0] === '-p') {
@@ -176,7 +194,11 @@ export function createMacSelfUpdateEngineFixture(
     return result
   }
 
-  const spawnHelper = vi.fn<HelperSpawner>(() => ({ pid: 4242, unref: () => undefined }))
+  const spawnHelper = vi.fn<HelperSpawner>(() => ({
+    pid: 4242,
+    unref: () => undefined,
+    on: () => undefined
+  }))
   const requestQuit = vi.fn<() => void>()
   const deps: MacSelfUpdateEngineDependencies = {
     source: FIXTURE_SOURCE,
@@ -203,9 +225,25 @@ export function createMacSelfUpdateEngineFixture(
     requestQuit,
     runCalls,
     fetchedUrls,
-    manifestBytes,
-    zipBytes,
+    manifestBytes: initialRelease.manifestBytes,
+    zipBytes: initialRelease.zipBytes,
     targetVersion,
+    publishVersion: (version, cut) => {
+      served = buildRelease(version, cut)
+    },
+    holdZipDownload: () => {
+      let release = (): void => undefined
+      zipHold = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        zipHold = null
+        release()
+      }
+    },
+    setManifestStatus: (status) => {
+      manifestStatus = status
+    },
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }

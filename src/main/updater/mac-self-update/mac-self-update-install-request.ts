@@ -64,7 +64,15 @@ export function requestMacSelfUpdateInstall(request: MacSelfUpdateInstallRequest
           : null,
         healthTimeoutSeconds: MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS
       },
-      request.spawnHelper
+      request.spawnHelper,
+      (error) =>
+        recordUpdaterLifecycle(
+          'mac_self_update_helper_spawn_error',
+          {
+            errorCode: 'code' in error && typeof error.code === 'string' ? error.code : error.name
+          },
+          { level: 'warn', message: error.message }
+        )
     )
   } catch (error) {
     clearMacSelfUpdateInstallRecords(paths)

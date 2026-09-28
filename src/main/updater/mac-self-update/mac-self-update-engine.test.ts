@@ -223,6 +223,102 @@ describe('MacSelfUpdateEngine', () => {
     expect(fixture.requestQuit).not.toHaveBeenCalled()
   })
 
+  describe('a check that finishes while a download is staging', () => {
+    const NEWER_VERSION = '1.4.197-swaplabs.202609261200'
+    const NEWER_RELEASE_PAGE_URL =
+      'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609261200'
+
+    /** Starts a download and parks it at the zip request, where a check can overtake it. */
+    async function startHeldDownload(held: MacSelfUpdateEngineFixture) {
+      held.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+      await held.engine.checkForUpdates()
+      const releaseZip = held.holdZipDownload()
+      const download = held.engine.downloadUpdate()
+      // Why: the rejection is asserted later; until then it must not count as unhandled.
+      download.catch(() => undefined)
+      await vi.waitFor(() => expect(held.fetchedUrls.at(-1)).toMatch(/\.zip$/))
+      return { download, releaseZip }
+    }
+
+    // Why: the finished download used to become the staged bundle regardless, so Restart
+    // installed the build the newer check had already replaced on the card.
+    it('discards the superseded build instead of staging it for Restart', async () => {
+      fixture = createMacSelfUpdateEngineFixture()
+      const { download, releaseZip } = await startHeldDownload(fixture)
+
+      fixture.publishVersion(NEWER_VERSION)
+      fixture.engine.setFeedURL({
+        provider: 'generic',
+        url: NEWER_RELEASE_PAGE_URL.replace('/releases/tag/', '/releases/download/')
+      })
+      await fixture.engine.checkForUpdates()
+      const emitted = recordEvents(fixture.engine)
+      releaseZip()
+
+      await expect(download).rejects.toMatchObject({
+        reason: 'offer-superseded',
+        message: expect.stringContaining(NEWER_VERSION),
+        presentation: { manualInstallUrl: NEWER_RELEASE_PAGE_URL }
+      })
+      expect(emitted.map((entry) => entry.event)).not.toContain('update-downloaded')
+      expect(existsSync(fixture.paths.stagingDir)).toBe(false)
+      fixture.engine.quitAndInstall()
+      expect(emitted.at(-1)).toMatchObject({
+        event: 'error',
+        payload: expect.objectContaining({ reason: 'nothing-staged' })
+      })
+      expect(fixture.spawnHelper).not.toHaveBeenCalled()
+      expect(fixture.requestQuit).not.toHaveBeenCalled()
+
+      // The offer that replaced it downloads and installs like any other.
+      await fixture.engine.downloadUpdate()
+      fixture.engine.quitAndInstall()
+      expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
+        targetVersion: NEWER_VERSION
+      })
+      expect(fixture.requestQuit).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ['finds the same build again', 200],
+      ['cannot reach the feed', 503]
+    ])('keeps the downloaded build when the check %s', async (_label, manifestStatus) => {
+      fixture = createMacSelfUpdateEngineFixture()
+      const { download, releaseZip } = await startHeldDownload(fixture)
+
+      fixture.setManifestStatus(manifestStatus)
+      await fixture.engine.checkForUpdates().catch(() => undefined)
+      releaseZip()
+
+      await expect(download).resolves.toEqual([join(fixture.paths.stagingDir, 'Orca.app')])
+      fixture.engine.quitAndInstall()
+      expect(readMacSelfUpdateInstallState(fixture.paths.installStatePath)).toMatchObject({
+        targetVersion: fixture.targetVersion
+      })
+    })
+
+    // Why: a release cut again under its tag keeps the version, so the version alone would let
+    // Restart install the build its publisher had replaced.
+    it('drops a staged build whose release was cut again under the same version', async () => {
+      fixture = createMacSelfUpdateEngineFixture()
+      fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+      await fixture.engine.checkForUpdates()
+      await fixture.engine.downloadUpdate()
+
+      fixture.publishVersion(fixture.targetVersion, 'second cut')
+      await fixture.engine.checkForUpdates()
+
+      expect(existsSync(fixture.paths.stagingDir)).toBe(false)
+      const emitted = recordEvents(fixture.engine)
+      fixture.engine.quitAndInstall()
+      expect(emitted.at(-1)).toMatchObject({
+        event: 'error',
+        payload: expect.objectContaining({ reason: 'nothing-staged' })
+      })
+      expect(fixture.requestQuit).not.toHaveBeenCalled()
+    })
+  })
+
   it('refuses to download before a check pinned a feed', async () => {
     fixture = createMacSelfUpdateEngineFixture()
     await expect(fixture.engine.checkForUpdates()).rejects.toMatchObject({ reason: 'no-feed' })

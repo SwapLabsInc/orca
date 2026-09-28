@@ -133,6 +133,37 @@ describe('mac self-update download', () => {
     expect(oversized.cancelled()).toBe(true)
   })
 
+  // Why: the deadline signal is the only bound on a stalled body; `net.fetch` honours it by
+  // erroring the body (measured on Electron 43.7), which must read as a failure worth retrying.
+  it('reports a small asset whose body the deadline cut off as retryable', async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    const stalled: ReleaseAssetFetch = async (_url, init) => {
+      signals.push(init?.signal)
+      let pulls = 0
+      return new Response(
+        new ReadableStream<Uint8Array<ArrayBuffer>>({
+          pull(controller) {
+            pulls += 1
+            if (pulls === 1) {
+              controller.enqueue(toResponseChunk(Buffer.from('{"schema":')))
+              return
+            }
+            controller.error(new DOMException('The operation was aborted', 'AbortError'))
+          }
+        }),
+        { status: 200 }
+      )
+    }
+    await expect(
+      fetchSmallReleaseAsset(stalled, 'https://example.invalid/m.json', 64)
+    ).rejects.toMatchObject({
+      reason: 'manifest-unavailable',
+      message: expect.stringContaining('The operation was aborted'),
+      presentation: {}
+    })
+    expect(signals).toEqual([expect.any(AbortSignal)])
+  })
+
   it('fetches a small asset whole and refuses one over the limit', async () => {
     const bytes = await fetchSmallReleaseAsset(
       respond(200, [Buffer.from('{"schema":1}')]),
