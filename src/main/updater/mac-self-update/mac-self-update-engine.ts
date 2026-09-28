@@ -223,12 +223,18 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
     }
   }
 
-  private async assertAppLocationWritable(manualInstallUrl: string): Promise<void> {
+  /**
+   * Why the app's parent: the swap renames the bundle out of it and the staged one into it, and
+   * staging lives there too. Why a real probe: `access` answers from mode bits, and macOS ACLs
+   * can still refuse.
+   */
+  private async prepareStagingBesideApp(manualInstallUrl: string): Promise<void> {
     const { paths } = this.deps
     try {
       await access(paths.appPath, fsConstants.W_OK)
-      // Why a real probe as well: `access` answers from mode bits, and macOS ACLs can still refuse.
-      await rmdir(await mkdtemp(join(paths.stagingDir, 'probe-')))
+      await rmdir(await mkdtemp(`${paths.stagingDir}-probe-`))
+      await rm(paths.stagingDir, { recursive: true, force: true })
+      await mkdir(paths.stagingDir, { recursive: true })
     } catch (error) {
       throw new MacSelfUpdateError(
         'app-location-unwritable',
@@ -251,9 +257,7 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
     const zipPath = join(paths.downloadsDir, manifest.file)
     this.staged = null
     try {
-      await rm(paths.stagingDir, { recursive: true, force: true })
-      await mkdir(paths.stagingDir, { recursive: true })
-      await this.assertAppLocationWritable(manualInstallUrl)
+      await this.prepareStagingBesideApp(manualInstallUrl)
       await downloadVerifiedReleaseZip({
         fetchAsset: this.deps.fetchAsset,
         url: `${feedUrl}/${manifest.file}`,

@@ -310,6 +310,58 @@ describe('listReleaseBuilds', () => {
     }
   })
 
+  // LOCAL: on a build Orca's own installer updates, nothing else attached installs in-app, so
+  // neither the DMG nor a stray latest-mac.yml may list a release whose slice is incomplete.
+  it.each([
+    ['its DMG', ['orca-macos-arm64.dmg']],
+    ['a stray latest-mac.yml', ['latest-mac.yml', 'orca-macos-arm64.dmg']]
+  ])(
+    'hides a fork macOS release with an incomplete slice even when it carries %s',
+    async (_label, otherAssets) => {
+      const swaplabs = {
+        id: 'swaplabs',
+        label: 'SwapLabs',
+        repo: 'SwapLabsInc/orca',
+        prereleaseIdentifier: 'swaplabs'
+      }
+      const sliceAssets = [
+        'orca-macos-arm64.zip',
+        'swaplabs-update-mac-arm64.json',
+        'swaplabs-update-mac-arm64.json.sig'
+      ]
+      const forkRelease = (assetNames: string[]) => ({
+        tag_name: 'swaplabs-v1.4.197+202609251200',
+        name: '1.4.197-swaplabs.202609251200 • Sep 25 • abc1234',
+        draft: false,
+        published_at: '2026-09-25T12:00:00Z',
+        html_url:
+          'https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.197%2B202609251200',
+        assets: assetNames.map((name) => ({ name }))
+      })
+      setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+      try {
+        vi.resetModules()
+        const { listReleaseBuilds: listForkBuilds } = await import('./updater-release-builds')
+        for (const missing of sliceAssets) {
+          fetchMock.mockResolvedValue(
+            jsonResponse([
+              forkRelease([...otherAssets, ...sliceAssets.filter((name) => name !== missing)])
+            ])
+          )
+          await expect(
+            listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs),
+            `without ${missing}`
+          ).resolves.toEqual([])
+        }
+        fetchMock.mockResolvedValue(jsonResponse([forkRelease([...otherAssets, ...sliceAssets])]))
+        const complete = await listForkBuilds('stable', 'darwin', swaplabs, 'arm64', swaplabs)
+        expect(complete.map((build) => build.version)).toEqual(['1.4.197-swaplabs.202609251200'])
+      } finally {
+        setReleaseSourcesLiteralForTest(null)
+      }
+    }
+  )
+
   it('resolves the platform installer download url', async () => {
     fetchMock.mockResolvedValue(jsonResponse([release('v1.4.163-hourly.202607312054')]))
 

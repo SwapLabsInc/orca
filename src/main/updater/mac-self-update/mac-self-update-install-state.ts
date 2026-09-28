@@ -96,7 +96,9 @@ const HELPER_OUTCOME_MESSAGES: Record<MacSelfUpdateHelperOutcome, string> = {
     'the previous build could not be restored because the app folder was still occupied, so the build found there was relaunched',
   'rollback-failed': 'the previous build could not be moved back into place',
   'staged-missing': 'the downloaded build was gone by the time the helper ran',
-  'app-still-running': 'the previous build never exited'
+  'app-still-running': 'the previous build never exited',
+  'new-app-still-running':
+    'the new build did not come up and could not be stopped, so the previous build was left in the rollback folder'
 }
 
 function isKnownHelperOutcome(outcome: string): outcome is MacSelfUpdateHelperOutcome {

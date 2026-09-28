@@ -45,7 +45,12 @@ type ScenarioOptions = {
   afterAppMovedAside?: string
   /** The first relaunch starts a process posing as the new build's executable that ignores SIGTERM. */
   newAppIgnoresSigterm?: boolean
+  /** From the first relaunch on, the process table lists the new build whatever it is sent. */
+  newAppSurvivesSigkill?: boolean
 }
+
+/** Above every real pid (Linux caps at 2^22, macOS at 99998), so signalling it reaches nothing. */
+const UNKILLABLE_PID = 2147483647
 
 /**
  * A real swap over a temp tree: the "app" is a directory with a marker file, the running
@@ -71,6 +76,10 @@ function createScenario(options: ScenarioOptions): Scenario {
   const firstRelaunchFlag = join(stateDir, 'relaunched-once')
   const newAppPidFile = join(stateDir, 'new-app.pid')
   const onFirstRelaunch = [...(options.onFirstRelaunch ?? [])]
+  if (options.newAppSurvivesSigkill) {
+    // The flag alone is the new build "starting"; the fake `ps` reads it.
+    onFirstRelaunch.push(':')
+  }
   if (options.newAppIgnoresSigterm) {
     const stubbornScript = join(stateDir, 'stubborn-new-app.cjs')
     writeFileSync(
@@ -108,11 +117,29 @@ function createScenario(options: ScenarioOptions): Scenario {
   )
   chmodSync(relaunchProgram, 0o755)
   let env = process.env
+  const binDir = join(stateDir, 'bin')
+  if (options.afterAppMovedAside || options.newAppSurvivesSigkill) {
+    mkdirSync(binDir)
+    env = { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ''}` }
+  }
+  if (options.newAppSurvivesSigkill) {
+    // Why a fake `ps`: no test can start a process SIGKILL does not end, so the process table
+    // itself keeps naming the new build, as it does for one stuck in the kernel.
+    writeFileSync(
+      join(binDir, 'ps'),
+      [
+        '#!/bin/sh',
+        `if [ -e "${firstRelaunchFlag}" ]; then`,
+        `  printf '%s %s\\n' "${UNKILLABLE_PID}" "${join(appPath, 'Contents', 'MacOS', 'Orca')}"`,
+        'fi',
+        ''
+      ].join('\n')
+    )
+    chmodSync(join(binDir, 'ps'), 0o755)
+  }
   if (options.afterAppMovedAside) {
     // Why a wrapper on PATH: nothing else runs between the helper's two renames, so the actor
     // that reoccupies the app's slot can only be simulated from inside `mv` itself.
-    const binDir = join(stateDir, 'bin')
-    mkdirSync(binDir)
     const hookFlag = join(stateDir, 'moved-aside-once')
     writeFileSync(
       join(binDir, 'mv'),
@@ -129,7 +156,6 @@ function createScenario(options: ScenarioOptions): Scenario {
       ].join('\n')
     )
     chmodSync(join(binDir, 'mv'), 0o755)
-    env = { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ''}` }
   }
   const appProcess = spawn('sleep', ['30'], { stdio: 'ignore' })
   return {
@@ -533,4 +559,29 @@ describePosix('helper script (real /bin/sh over a temp tree)', () => {
       `${scenario.plan.appPath}\n${scenario.plan.appPath}\n`
     )
   }, 40_000)
+
+  // Why: a build SIGKILL does not end (stuck in the kernel) still holds the single-instance lock,
+  // so restoring and launching the previous build would hand off to it and report a rollback
+  // nobody is running. The bundles stay put until that process is gone.
+  it.each([
+    ['never reports healthy', { healthy: false }, 1],
+    ['could not be launched', { healthy: false, relaunchExitCode: 1 }, 5]
+  ])(
+    'neither restores nor relaunches while a new build that %s survives SIGKILL',
+    async (_label, options, launchAttempts) => {
+      const scenario = createScenario({ ...options, newAppSurvivesSigkill: true })
+      scenarios.push(scenario)
+      scenario.appProcess.kill('SIGKILL')
+
+      expect(await runHelper(scenario)).toBe(1)
+      expect(outcomeOf(scenario.plan)).toBe('new-app-still-running')
+      expect(bundleMarker(scenario.plan.appPath)).toBe('new build')
+      expect(bundleMarker(scenario.plan.rollbackAppPath)).toBe('old build')
+      expect(existsSync(scenario.plan.stagedAppPath)).toBe(false)
+      expect(readFileSync(scenario.relaunchLog, 'utf8')).toBe(
+        `${scenario.plan.appPath}\n`.repeat(launchAttempts)
+      )
+    },
+    60_000
+  )
 })

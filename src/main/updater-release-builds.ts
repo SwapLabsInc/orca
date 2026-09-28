@@ -150,18 +150,22 @@ function resolveReleaseVersion(tag: string, name: string, source: ReleaseSource)
 }
 
 /**
- * LOCAL: on macOS a fork release is installable through Orca's own installer once this slice's
- * zip, signed manifest and signature are all attached: the installer fetches each, and a release
- * caught between uploads (or with one asset removed by hand) would 404 on selection.
+ * LOCAL: on a build Orca's own installer updates, a release is installable once this slice's zip,
+ * signed manifest and signature are all attached: the installer fetches each and nothing else, so
+ * a release caught between uploads (or carrying only a DMG or a stray `latest-mac.yml`) would
+ * fail on selection. Everywhere else the platform's electron-updater manifest decides.
  */
-function hasMacSelfUpdateAssets(
+function hasInstallableArtifact(
   assetNames: readonly string[],
+  platform: NodeJS.Platform,
   arch: NodeJS.Architecture,
   macSelfUpdateSource: ReleaseSource | null
 ): boolean {
-  return (
-    macSelfUpdateSource !== null &&
-    getMacSelfUpdateAssetNames(macSelfUpdateSource, arch).every((name) => assetNames.includes(name))
+  if (macSelfUpdateSource === null) {
+    return hasInstallableArtifactForPlatform(platform, assetNames)
+  }
+  return getMacSelfUpdateAssetNames(macSelfUpdateSource, arch).every((name) =>
+    assetNames.includes(name)
   )
 }
 
@@ -188,10 +192,7 @@ function parseReleaseEntry(
   // outright. Asking what the release actually carries covers both without the
   // picker ever offering a row whose download 404s.
   const assetNames = readAssetNames(entry.assets)
-  if (
-    !hasInstallableArtifactForPlatform(platform, assetNames) &&
-    !hasMacSelfUpdateAssets(assetNames, arch, macSelfUpdateSource)
-  ) {
+  if (!hasInstallableArtifact(assetNames, platform, arch, macSelfUpdateSource)) {
     return null
   }
   // Why by arch: the picker's download is installed by hand, so it must be the running slice.

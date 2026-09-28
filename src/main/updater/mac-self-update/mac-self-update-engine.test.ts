@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { setReleaseSourcesLiteralForTest } from '../../../shared/release-sources.fixture'
 import {
@@ -221,6 +221,56 @@ describe('MacSelfUpdateEngine', () => {
     fixture.engine.quitAndInstall()
     expect(errors.at(-1)).toMatchObject({ reason: 'nothing-staged' })
     expect(fixture.requestQuit).not.toHaveBeenCalled()
+  })
+
+  // Why: the swap renames the bundle out of and into the app's parent folder. An install a
+  // non-admin user cannot write beside used to surface as a raw, retryable EACCES from staging.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
+    ['no staging folder yet', false],
+    ['a staging folder left behind', true]
+  ])(
+    'refuses before the download when the folder holding the app is not writable, with %s',
+    async (_label, leftoverStaging) => {
+      fixture = createMacSelfUpdateEngineFixture()
+      const emitted = recordEvents(fixture.engine)
+      fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+      await fixture.engine.checkForUpdates()
+      if (leftoverStaging) {
+        mkdirSync(fixture.paths.stagingDir)
+      }
+      const parent = dirname(fixture.paths.appPath)
+      chmodSync(parent, 0o555)
+      try {
+        await expect(fixture.engine.downloadUpdate()).rejects.toMatchObject({
+          reason: 'app-location-unwritable',
+          presentation: { retryable: false, manualInstallUrl: FIXTURE_RELEASE_PAGE_URL }
+        })
+      } finally {
+        chmodSync(parent, 0o755)
+      }
+      expect(emitted.at(-1)).toMatchObject({
+        event: 'error',
+        payload: expect.objectContaining({ reason: 'app-location-unwritable' })
+      })
+      expect(fixture.fetchedUrls.filter((url) => url.endsWith('.zip'))).toEqual([])
+      expect(readdirSync(parent).filter((name) => name !== 'Orca.app')).toEqual(
+        leftoverStaging ? ['.Orca-update-staging'] : []
+      )
+    }
+  )
+
+  // Why: the writability probe is made beside the app, where nothing prunes what it leaves.
+  it('probes the folder holding the app and leaves nothing behind in it', async () => {
+    fixture = createMacSelfUpdateEngineFixture()
+    fixture.engine.setFeedURL({ provider: 'generic', url: FIXTURE_FEED_URL })
+    await fixture.engine.checkForUpdates()
+    await fixture.engine.downloadUpdate()
+
+    expect(readdirSync(dirname(fixture.paths.appPath)).sort()).toEqual([
+      '.Orca-update-staging',
+      'Orca.app'
+    ])
+    expect(readdirSync(fixture.paths.stagingDir)).toEqual(['Orca.app'])
   })
 
   describe('a check that finishes while a download is staging', () => {

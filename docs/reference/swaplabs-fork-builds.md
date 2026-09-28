@@ -215,7 +215,9 @@ Per macOS slice (`arm64`, `x64`), uploaded in this order, manifest last:
 `latest-mac.yml` stays absent so electron-updater never tries Squirrel. The
 atom-feed readiness probe, the pinned-tag verification and the Updates-section
 listing all read the JSON manifest in place of `latest-mac.yml` on a build where
-the installer is supported, and treat the `.sig` as a required asset.
+the installer is supported, and treat the `.sig` as a required asset. There the
+listing offers a release only when the slice's zip, manifest and signature are all
+attached; a DMG or a stray `latest-mac.yml` does not make it installable.
 
 ### What a check, a download and a restart do
 
@@ -239,8 +241,10 @@ the installer is supported, and treat the `.sig` as a required asset.
   `com.apple.quarantine` stripped and `update-downloaded` emitted, which is also
   the installer-ready signal Squirrel would have given. Any failure removes the
   staging directory and the zip, and the error status carries the tag's release
-  page as `manualInstallUrl`. An unwritable app location is refused before the
-  download starts. Nothing from the download is executed at any point; the only
+  page as `manualInstallUrl`. An app that cannot be written, or whose parent
+  folder cannot (probed with a real directory, since the swap renames there), is
+  refused before anything is staged or downloaded, as a non-retryable error.
+  Nothing from the download is executed at any point; the only
   programs run are `codesign`, `PlistBuddy`, `ditto` and `xattr` under `/usr`.
 - **Restart to update**: the existing quit-and-install sequence runs (session
   save, terminal daemon handling, exit watchdog, supervised serve handoff), then
@@ -250,7 +254,10 @@ the installer is supported, and treat the `.sig` as a required asset.
   to `.<App>-update-rollback/`, moves the staged bundle into place, relaunches
   with `/usr/bin/open`, and waits up to 90 s for the health marker the new app
   writes once its first window is shown (or after 20 s headless). Without it, the
-  helper restores the rollback and relaunches the previous build. Every earlier
+  helper stops the new build (SIGTERM, then SIGKILL), restores the rollback and
+  relaunches the previous build. A new build still on the process table after
+  SIGKILL holds the single-instance lock, so the helper then leaves both bundles
+  where they are, relaunches nothing and records `new-app-still-running`. Every earlier
   failure that leaves the previous bundle in place (staged bundle missing, no
   rollback folder, either rename refused) relaunches it as well, so a failed
   update never leaves Orca closed. Under a supervised `orca serve`, the helper

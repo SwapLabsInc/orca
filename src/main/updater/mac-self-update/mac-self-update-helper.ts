@@ -21,6 +21,7 @@ export type MacSelfUpdateHelperOutcome =
   | 'rollback-failed'
   | 'staged-missing'
   | 'app-still-running'
+  | 'new-app-still-running'
 
 /**
  * The swap runs after this process has exited, so it cannot be JavaScript. It is a fixed
@@ -34,7 +35,8 @@ export type MacSelfUpdateHelperOutcome =
  * 3. move the staged, verified bundle into place;
  * 4. relaunch (unless a serve supervisor owns the relaunch);
  * 5. wait for the new app's health marker; without one, stop the new app and wait for it to be
- *    gone (it holds the single-instance lock), then restore the rollback and relaunch it.
+ *    gone (it holds the single-instance lock), then restore the rollback and relaunch it. A new
+ *    app that outlives SIGKILL leaves both bundles where they are and nothing is relaunched.
  *
  * The app has already quit by step 2, so every failure that leaves or restores the previous
  * bundle relaunches it too (when the helper owns relaunching): a failed update must never
@@ -86,6 +88,7 @@ stop_new_app() {
       sleep 0.1
     done
   done
+  [ -z "$(new_app_pids)" ]
 }
 give_up() {
   report "$1"
@@ -104,6 +107,10 @@ restore_previous() {
   fi
 }
 roll_back() {
+  if ! stop_new_app; then
+    report new-app-still-running
+    exit 1
+  fi
   mkdir -p "$(dirname "$staged")"
   mv "$app" "$staged"
   restore_previous
@@ -148,7 +155,6 @@ n=0
 while [ ! -e "$marker" ]; do
   n=$((n + 1))
   if [ "$n" -gt "$timeout" ]; then
-    stop_new_app
     roll_back rolled-back
   fi
   sleep 1
