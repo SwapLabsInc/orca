@@ -11,9 +11,13 @@ import { hasServeUpdateSupervisor } from '../serve-update-handoff'
 import { getLinuxPackageType } from '../linux-update-package-type'
 import { UpdaterNudge } from './updater-nudge'
 import type { UpdateInstallMode } from './updater-state'
+import { readServerUpdateHelpUrlEnv } from './server-update-help-url-env'
 
 /** Exposes updater state to runtime RPC callers without leaking internal mutators. */
 export abstract class UpdaterRemoteStatus extends UpdaterNudge {
+  // Why a field: read once at startup, so a bad value warns once rather than on every status poll.
+  private readonly serverUpdateHelpUrl = readServerUpdateHelpUrlEnv()
+
   protected getUpdateStatus(): UpdateStatus {
     return this.currentStatus
   }
@@ -43,7 +47,9 @@ export abstract class UpdaterRemoteStatus extends UpdaterNudge {
       return {
         installMode: this.updateInstallMode,
         automatic: false,
-        reason: 'manual-service-update-required'
+        reason: 'manual-service-update-required',
+        // Why spread: an unset variable leaves the key off the wire, not present as undefined.
+        ...(this.serverUpdateHelpUrl ? { helpUrl: this.serverUpdateHelpUrl } : {})
       }
     }
     return { installMode: this.updateInstallMode, automatic: true, reason: 'available' }

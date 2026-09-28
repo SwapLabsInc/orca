@@ -23,6 +23,7 @@ import {
 } from './runtime-environment-host-details'
 import {
   getRemoteServerManualUpdateHelp,
+  RemoteServerManualUpdateHelpLink,
   RemoteServerUpdateStatus
 } from './RemoteServerUpdateStatus'
 
@@ -173,6 +174,7 @@ export function RuntimeServerRow({
         {remoteUpdate?.phase === 'manual' ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {getRemoteServerManualUpdateHelp(remoteUpdate)}
+            <RemoteServerManualUpdateHelpLink entry={remoteUpdate} />
           </p>
         ) : null}
         {remoteUpdate?.phase === 'failed' && remoteUpdate.error ? (

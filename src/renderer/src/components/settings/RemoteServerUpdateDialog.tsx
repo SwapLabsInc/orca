@@ -16,6 +16,7 @@ import type { RemoteServerUpdateEntry } from '@/runtime/remote-server-update-coo
 import { translate } from '@/i18n/i18n'
 import {
   getRemoteServerManualUpdateHelp,
+  RemoteServerManualUpdateHelpLink,
   RemoteServerUpdateStatus
 } from './RemoteServerUpdateStatus'
 
@@ -99,6 +100,9 @@ function ServerUpdateRow({
           }
         >
           {help}
+          {entry.phase === 'manual' && !entry.error ? (
+            <RemoteServerManualUpdateHelpLink entry={entry} />
+          ) : null}
         </p>
       ) : null}
     </div>
