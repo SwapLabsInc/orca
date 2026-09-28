@@ -2,7 +2,10 @@ import { beginMacUpdateDownload, deferMacQuitUntilInstallerReady } from '../upda
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { isExternallyManagedLinuxInstall } from '../linux-update-package-type'
 import { LINUX_PACKAGE_EXTERNALLY_MANAGED_MESSAGE } from '../linux-package-downloaded-status'
-import { isSupersededOfferFailure } from './mac-self-update/mac-self-update-failure'
+import {
+  isSupersededOfferFailure,
+  readUpdateErrorPresentation
+} from './mac-self-update/mac-self-update-failure'
 import { QUIT_AND_INSTALL_DELAY_MS } from './updater-state'
 import { UpdaterRemoteStatus } from './updater-remote-status'
 
@@ -100,7 +103,7 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
         if (localBuildDownload) {
           this.sendLocalBuildErrorAndRestore(message)
         } else {
-          this.sendErrorStatus(message, undefined, undefined, err)
+          this.sendErrorStatus(message, undefined, undefined, readUpdateErrorPresentation(err))
         }
       })
   }

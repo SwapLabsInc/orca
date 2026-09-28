@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { KeyObject } from 'node:crypto'
 import type { ReleaseSource } from '../../../shared/release-sources'
 import {
+  MAC_SELF_UPDATE_MAX_MANIFEST_BYTES,
   getMacSelfUpdateManifestName,
   getMacSelfUpdateSignatureName
 } from '../../../shared/mac-self-update-assets'
@@ -27,7 +28,6 @@ import { requestMacSelfUpdateInstall } from './mac-self-update-install-request'
 import { verifyMacSelfUpdateManifest, type MacSelfUpdateManifest } from './mac-self-update-manifest'
 import type { MacSelfUpdatePaths } from './mac-self-update-paths'
 
-const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_SIGNATURE_BYTES = 1024
 
 /** The running bundle's signing identity, read once per process. */
@@ -195,7 +195,7 @@ export class MacSelfUpdateEngine extends EventEmitter implements UpdateEngine {
         fetchSmallReleaseAsset(
           this.deps.fetchAsset,
           `${feed.url}/${manifestName}`,
-          MAX_MANIFEST_BYTES
+          MAC_SELF_UPDATE_MAX_MANIFEST_BYTES
         ),
         fetchSmallReleaseAsset(
           this.deps.fetchAsset,

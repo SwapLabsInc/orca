@@ -6,6 +6,7 @@ import {
   createMacSelfUpdateEngineFixture,
   type MacSelfUpdateEngineFixture
 } from './updater/mac-self-update/mac-self-update-engine.fixture'
+import { MacSelfUpdateError } from './updater/mac-self-update/mac-self-update-failure'
 import { MAC_SELF_UPDATE_HELPER_SCRIPT } from './updater/mac-self-update/mac-self-update-helper'
 import type { UpdateEngine } from './updater/update-engine'
 
@@ -184,6 +185,37 @@ describe('updater with the macOS self-update engine', () => {
         userInitiated: true,
         retryable: false,
         manualInstallUrl: FORK_RELEASE_PAGE_URL,
+        releaseSource: 'swaplabs'
+      })
+    })
+  })
+
+  // Why: a settled check used to rebuild its error status from the message alone, so a refusal
+  // that carried a retry verdict but no manual-install page reached the card as retryable.
+  it('keeps the retry verdict of a check refusal that has no manual-install page', async () => {
+    const { engine } = activateEngine()
+    const refusal = new MacSelfUpdateError(
+      'manifest-malformed',
+      'The release manifest is over the size limit.',
+      { retryable: false }
+    )
+    vi.spyOn(engine, 'checkForUpdates').mockImplementation(async () => {
+      engine.emit('error', refusal)
+      throw refusal
+    })
+    fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [FORK_TAG], state: 'ready' })
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
+
+    checkForUpdatesFromMenu()
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith('updater:status', {
+        state: 'error',
+        message: refusal.message,
+        userInitiated: true,
+        retryable: false,
         releaseSource: 'swaplabs'
       })
     })

@@ -56,19 +56,19 @@ export function isMacSelfUpdateError(error: unknown): error is MacSelfUpdateErro
   )
 }
 
+/** Only the fields that are set, so an unknown verdict stays absent on the wire rather than `undefined`. */
+export function pickUpdateErrorPresentation(
+  presentation: UpdateErrorPresentation
+): UpdateErrorPresentation {
+  return {
+    ...(presentation.manualInstallUrl ? { manualInstallUrl: presentation.manualInstallUrl } : {}),
+    ...(presentation.retryable === undefined ? {} : { retryable: presentation.retryable })
+  }
+}
+
 /** Reads the card presentation off an error, or nothing for errors that carry none. */
 export function readUpdateErrorPresentation(error: unknown): UpdateErrorPresentation {
-  if (!isMacSelfUpdateError(error)) {
-    return {}
-  }
-  return {
-    ...(error.presentation.manualInstallUrl
-      ? { manualInstallUrl: error.presentation.manualInstallUrl }
-      : {}),
-    ...(error.presentation.retryable === undefined
-      ? {}
-      : { retryable: error.presentation.retryable })
-  }
+  return isMacSelfUpdateError(error) ? pickUpdateErrorPresentation(error.presentation) : {}
 }
 
 /** A download the engine refused because a check replaced its offer mid-flight: the card needs a fresh offer, not a retry of this one. */

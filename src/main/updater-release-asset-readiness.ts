@@ -1,7 +1,12 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
+import {
+  FetchResponseBodyTooLargeError,
+  readFetchResponseTextWithinLimit
+} from '../shared/fetch-response-body'
 import { PrioritySemaphore } from '../shared/priority-semaphore'
 import {
+  MAC_SELF_UPDATE_MAX_MANIFEST_BYTES,
   getMacSelfUpdateManifestName,
   getMacSelfUpdateSignatureName
 } from '../shared/mac-self-update-assets'
@@ -183,7 +188,17 @@ export async function probeReleaseManifest(
     if (!res.ok) {
       return { readiness: 'unavailable', version: null }
     }
-    const manifestText = await res.text()
+    let manifestText: string
+    try {
+      // Why a cap: the release serves whatever was uploaded, and a manifest is read before anything
+      // is verified, so an oversized one is cut off as unreadable rather than buffered whole.
+      manifestText = await readFetchResponseTextWithinLimit(res, MAC_SELF_UPDATE_MAX_MANIFEST_BYTES)
+    } catch (error) {
+      if (error instanceof FetchResponseBodyTooLargeError) {
+        return { readiness: 'not-ready', version: null }
+      }
+      throw error
+    }
     let parsed: ParsedManifest | null
     try {
       parsed = parse(manifestText)
@@ -196,7 +211,8 @@ export async function probeReleaseManifest(
       return { readiness: 'not-ready', version }
     }
     if (macSelfUpdateSource) {
-      // Why: the signature is uploaded last, so its presence is what makes the release installable.
+      // Why: the installer fetches the signature beside the manifest, so a release without it is
+      // not installable whatever else is attached.
       assetNames.push(getMacSelfUpdateSignatureName(manifestName))
     }
     const assetResults = await Promise.all(

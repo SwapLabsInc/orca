@@ -6,6 +6,36 @@ vi.mock('electron', () => ({
   net: { fetch: netFetchMock, request: vi.fn() }
 }))
 
+/** A response whose body streams `chunks`, as `net.fetch` hands the probe; `text()` reads it whole. */
+function streamedResponse(chunks: Uint8Array[], onCancel?: () => void) {
+  let next = 0
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    body: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (next >= chunks.length) {
+          controller.close()
+          return
+        }
+        controller.enqueue(chunks[next++])
+      },
+      cancel() {
+        onCancel?.()
+      }
+    }),
+    text: () => Promise.resolve(new TextDecoder().decode(Buffer.concat(chunks)))
+  }
+}
+
+const SWAPLABS_SOURCE = {
+  id: 'swaplabs',
+  label: 'SwapLabs',
+  repo: 'SwapLabsInc/orca',
+  prereleaseIdentifier: 'swaplabs'
+}
+
 describe('probeReleaseManifest', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -190,12 +220,7 @@ describe('probeReleaseManifest', () => {
   // LOCAL: on a build with Orca's own macOS installer, a fork tag's readiness is its signed
   // per-slice manifest: the zip it names and the detached signature must both be there.
   it('reads a fork macOS slice through its self-update manifest and requires the signature', async () => {
-    const swaplabs = {
-      id: 'swaplabs',
-      label: 'SwapLabs',
-      repo: 'SwapLabsInc/orca',
-      prereleaseIdentifier: 'swaplabs'
-    }
+    const swaplabs = SWAPLABS_SOURCE
     const arch = Object.getOwnPropertyDescriptor(process, 'arch')
     Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true })
     const probed: string[] = []
@@ -212,7 +237,7 @@ describe('probeReleaseManifest', () => {
         return Promise.resolve({ ok: status === 200, status, text: () => Promise.resolve('') })
       }
       probed.push(url)
-      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(manifest) })
+      return Promise.resolve(streamedResponse([new TextEncoder().encode(manifest)]))
     })
     try {
       const { probeReleaseManifest } = await import('./updater-release-asset-readiness')
@@ -233,6 +258,56 @@ describe('probeReleaseManifest', () => {
         readiness: 'not-ready',
         version: '1.4.197-swaplabs.202609251200'
       })
+    } finally {
+      if (arch) {
+        Object.defineProperty(process, 'arch', arch)
+      }
+    }
+  })
+
+  // LOCAL: the probe reads a fork manifest before anything about it is verified, so a release
+  // serving an oversized one must be cut off at the installer's own cap, never buffered whole.
+  it('cuts off a fork manifest past the installer size cap without buffering or probing it', async () => {
+    const arch = Object.getOwnPropertyDescriptor(process, 'arch')
+    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true })
+    const chunkBytes = 16 * 1024
+    // Valid JSON in full, so reading it whole would have answered 'ready' after the asset probes.
+    const oversized = JSON.stringify({
+      schema: 1,
+      version: '1.4.197-swaplabs.202609251200',
+      file: 'orca-macos-arm64.zip',
+      padding: 'x'.repeat(8 * chunkBytes)
+    })
+    const bytes = new TextEncoder().encode(oversized)
+    const chunks: Uint8Array[] = []
+    for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+      chunks.push(bytes.subarray(offset, offset + chunkBytes))
+    }
+    let cancelled = false
+    const heads: string[] = []
+    netFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'HEAD') {
+        heads.push(url)
+        return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
+      }
+      return Promise.resolve(
+        streamedResponse(chunks, () => {
+          cancelled = true
+        })
+      )
+    })
+    try {
+      const { probeReleaseManifest } = await import('./updater-release-asset-readiness')
+      await expect(
+        probeReleaseManifest(
+          'swaplabs-v1.4.197+202609251200',
+          SWAPLABS_SOURCE.repo,
+          undefined,
+          SWAPLABS_SOURCE
+        )
+      ).resolves.toEqual({ readiness: 'not-ready', version: null })
+      expect(cancelled).toBe(true)
+      expect(heads).toEqual([])
     } finally {
       if (arch) {
         Object.defineProperty(process, 'arch', arch)

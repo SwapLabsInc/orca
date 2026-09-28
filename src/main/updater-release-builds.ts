@@ -19,7 +19,7 @@ import { getGhRateLimitBlockedUntilMs, recordGhPrimaryRateLimit } from './git/gh
 import { isValidVersion } from './updater-fallback'
 import { rejectReleaseApiToken, resolveReleaseApiToken } from './updater-release-api-token'
 import { getReleaseDownloadUrlForRepo } from './updater-release-urls'
-import { getMacSelfUpdateManifestName } from '../shared/mac-self-update-assets'
+import { getMacSelfUpdateAssetNames } from '../shared/mac-self-update-assets'
 import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
 
 export { getReleaseDownloadUrlForRepo }
@@ -149,15 +149,19 @@ function resolveReleaseVersion(tag: string, name: string, source: ReleaseSource)
   )
 }
 
-/** LOCAL: on macOS a fork release is installable through Orca's own installer when it carries this slice's signed manifest. */
-function hasMacSelfUpdateManifest(
+/**
+ * LOCAL: on macOS a fork release is installable through Orca's own installer once this slice's
+ * zip, signed manifest and signature are all attached: the installer fetches each, and a release
+ * caught between uploads (or with one asset removed by hand) would 404 on selection.
+ */
+function hasMacSelfUpdateAssets(
   assetNames: readonly string[],
   arch: NodeJS.Architecture,
   macSelfUpdateSource: ReleaseSource | null
 ): boolean {
   return (
     macSelfUpdateSource !== null &&
-    assetNames.includes(getMacSelfUpdateManifestName(macSelfUpdateSource, arch))
+    getMacSelfUpdateAssetNames(macSelfUpdateSource, arch).every((name) => assetNames.includes(name))
   )
 }
 
@@ -186,7 +190,7 @@ function parseReleaseEntry(
   const assetNames = readAssetNames(entry.assets)
   if (
     !hasInstallableArtifactForPlatform(platform, assetNames) &&
-    !hasMacSelfUpdateManifest(assetNames, arch, macSelfUpdateSource)
+    !hasMacSelfUpdateAssets(assetNames, arch, macSelfUpdateSource)
   ) {
     return null
   }

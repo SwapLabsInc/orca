@@ -38,3 +38,15 @@ export function getMacSelfUpdateSignatureName(manifestName: string): string {
 export function getMacSelfUpdateZipName(arch: NodeJS.Architecture): string {
   return `orca-macos-${arch}.zip`
 }
+
+/** Every asset the installer fetches for one slice; a release missing any of them cannot be installed. */
+export function getMacSelfUpdateAssetNames(
+  source: ReleaseSource,
+  arch: NodeJS.Architecture
+): string[] {
+  const manifestName = getMacSelfUpdateManifestName(source, arch)
+  return [getMacSelfUpdateZipName(arch), manifestName, getMacSelfUpdateSignatureName(manifestName)]
+}
+
+/** A real manifest is under 1 KiB; every reader stops a transfer past this before buffering it. */
+export const MAC_SELF_UPDATE_MAX_MANIFEST_BYTES = 64 * 1024
