@@ -16,6 +16,8 @@ export type RemoteServerUpdateSupport = {
     | 'manual-service-update-required'
     | 'unpackaged-build'
     | 'updater-unavailable'
+  /** Where the host's operator documents its update path. Only a manual host publishes it; read it through `readRemoteServerUpdateSupport`. */
+  helpUrl?: string
 }
 
 export type RemoteServerUpdaterSnapshot = {

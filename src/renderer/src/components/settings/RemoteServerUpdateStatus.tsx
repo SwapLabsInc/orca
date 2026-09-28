@@ -5,6 +5,7 @@ import type {
   RemoteServerUpdatePhase
 } from '@/runtime/remote-server-update-coordinator'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 
 export function getRemoteServerUpdatePhaseLabel(phase: RemoteServerUpdatePhase): string {
@@ -92,7 +93,20 @@ export function RemoteServerUpdateStatus({
   )
 }
 
+function getRemoteServerManualUpdateHelpUrl(entry: RemoteServerUpdateEntry): string | null {
+  if (entry.support?.reason !== 'manual-service-update-required') {
+    return null
+  }
+  return entry.support.helpUrl ?? null
+}
+
 export function getRemoteServerManualUpdateHelp(entry: RemoteServerUpdateEntry): string {
+  if (getRemoteServerManualUpdateHelpUrl(entry)) {
+    return translate(
+      'auto.components.settings.RemoteServerUpdateStatus.managedByDeploymentHelp',
+      'Updates for this server are managed by its deployment.'
+    )
+  }
   if (entry.support?.reason === 'manual-service-update-required') {
     return translate(
       'auto.components.settings.RemoteServerUpdateStatus.serviceManagerHelp',
@@ -108,5 +122,34 @@ export function getRemoteServerManualUpdateHelp(entry: RemoteServerUpdateEntry):
   return translate(
     'auto.components.settings.RemoteServerUpdateStatus.legacyHelp',
     'Update this server manually once to enable remote updates.'
+  )
+}
+
+/** Trails the manual-update help text; renders nothing for a host that published no link. */
+export function RemoteServerManualUpdateHelpLink({
+  entry
+}: {
+  entry: RemoteServerUpdateEntry
+}): React.JSX.Element | null {
+  const helpUrl = getRemoteServerManualUpdateHelpUrl(entry)
+  if (!helpUrl) {
+    return null
+  }
+  return (
+    <>
+      {' '}
+      <Button
+        type="button"
+        variant="link"
+        size="xs"
+        className="h-auto align-baseline"
+        onClick={() => void window.api.shell.openUrl(helpUrl)}
+      >
+        {translate(
+          'auto.components.settings.RemoteServerUpdateStatus.howToUpdate',
+          'How to update'
+        )}
+      </Button>
+    </>
   )
 }

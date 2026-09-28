@@ -6,6 +6,7 @@ import {
   isValidAppVersion
 } from '../../../shared/app-version'
 import { REMOTE_SERVER_UPDATE_CAPABILITY } from '../../../shared/remote-server-update'
+import { readRemoteServerUpdateSupport } from '../../../shared/remote-server-update-help-url'
 import { getVersionReleaseSource } from '../../../shared/release-sources'
 import type {
   RemoteServerUpdateInstallResult,
@@ -118,7 +119,7 @@ export async function inspectRemoteServerUpdate(
 
   const currentVersion = status.appVersion?.trim() || null
   const supportsRemoteUpdate = status.capabilities?.includes(REMOTE_SERVER_UPDATE_CAPABILITY)
-  const support = status.remoteUpdateSupport ?? null
+  const support = readRemoteServerUpdateSupport(status.remoteUpdateSupport)
   // Why: versions only order within one release source. A host that names its source is
   // believed; one that does not is placed by its version string, so an older host still
   // compares — and a fork build is never called "outdated" against upstream's semver.
