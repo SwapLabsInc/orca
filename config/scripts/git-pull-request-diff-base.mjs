@@ -2,7 +2,12 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
-export function selectPullRequestDiffBase(requestedBase, headParents, eventName) {
+export function selectPullRequestDiffBase(requestedBase, headParents, eventName, syncBase) {
+  // LOCAL: a SwapLabs sync PR brings in all of upstream, which upstream's own CI already gated.
+  // The workflow sets the upstream commit it merges so changed-line gates see only the fork's lines.
+  if (syncBase) {
+    return syncBase
+  }
   if (eventName === 'pull_request' && headParents.length >= 2) {
     return headParents[0]
   }
@@ -20,7 +25,12 @@ export function resolvePullRequestDiffBase(
   })
     .trim()
     .split(/\s+/)
-  return selectPullRequestDiffBase(requestedBase, headParents, eventName)
+  return selectPullRequestDiffBase(
+    requestedBase,
+    headParents,
+    eventName,
+    process.env.ORCA_SYNC_PR_DIFF_BASE
+  )
 }
 
 // Why a CLI: the workflow's inline gates used `git diff --merge-base "$BASE_SHA" "$HEAD_SHA"`,
