@@ -794,19 +794,25 @@ jobs:
           fi
           echo "Signed macOS update assets verified for $VERSION."
 
-      # The VM is discarded anyway; this keeps the key and the trust setting from
-      # outliving the step that needed them if that ever changes.
+      # The VM is discarded anyway; this keeps the key from outliving the job if
+      # that ever changes. Why no trust removal: every signed run (36462741113,
+      # 36463362658, 36484164352) hung here until the 90-minute job timeout, after
+      # all assets were up, and the queued next build waited behind it; removing
+      # admin-domain trust (`sudo security remove-trusted-cert -d`) was the step's
+      # only call that needs authorization. Why the bound: cleanup must never cost
+      # a build that already published.
       - name: Remove the temporary keychain
         if: always() && steps.signing.outputs.enabled == 'true'
+        timeout-minutes: 2
+        continue-on-error: true
         shell: bash
         run: |
           set -uo pipefail
           if [[ -n "${SWAPLABS_SIGNING_KEYCHAIN:-}" && -f "$SWAPLABS_SIGNING_KEYCHAIN" ]]; then
+            echo "Deleting the temporary keychain."
             security delete-keychain "$SWAPLABS_SIGNING_KEYCHAIN" || echo "::warning::Could not delete the temporary keychain."
           fi
-          if [[ -n "${SWAPLABS_SIGNING_CERT_PEM:-}" && -f "$SWAPLABS_SIGNING_CERT_PEM" ]]; then
-            sudo security remove-trusted-cert -d "$SWAPLABS_SIGNING_CERT_PEM" || echo "::warning::Could not remove the certificate trust setting."
-            sudo security delete-certificate -c "$SWAPLABS_MAC_SIGN_IDENTITY" /Library/Keychains/System.keychain || true
+          if [[ -n "${SWAPLABS_SIGNING_CERT_PEM:-}" ]]; then
             rm -f "$SWAPLABS_SIGNING_CERT_PEM"
           fi
 
