@@ -16,4 +16,19 @@ describe('pull request diff base selection', () => {
       'requested-base'
     )
   })
+
+  // LOCAL: set only for the fork's own upstream sync PRs.
+  it('prefers the sync base over the merge commit first parent', () => {
+    expect(
+      selectPullRequestDiffBase(
+        'event-base',
+        ['current-base', 'sync-head'],
+        'pull_request',
+        'upstream-tip'
+      )
+    ).toBe('upstream-tip')
+    expect(
+      selectPullRequestDiffBase('event-base', ['current-base', 'sync-head'], 'pull_request', '')
+    ).toBe('current-base')
+  })
 })
