@@ -59,6 +59,19 @@ Fill in [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 
 Cover all four concisely. Don't pad or walk the diff.
 
+# SwapLabs Fork
+
+## Code Review Rules
+
+### Upstream sync pull requests
+
+A pull request into `swaplabs/main` whose head is `main` or a `sync/upstream-*` branch (titled `sync: upstream <sha> into swaplabs/main`) merges upstream Orca into this fork. Almost all of its diff is upstream code that the fork deliberately leaves unchanged, so a finding there cannot be fixed here. On such a pull request, review only:
+
+- lines that differ from the upstream commit being merged, which is the head's merge base with `main`: these are the fork's own changes;
+- the conflict resolutions in the sync branch's merge commits, as `git show --remerge-diff <merge>` shows them.
+
+Do not comment on any other line of a sync pull request. Review every other pull request as usual.
+
 # Considerations
 
 ## Worktree Safety
