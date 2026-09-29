@@ -48,3 +48,26 @@ hands → probe once more → `rename` in one syscall → verify we kept it.
 **Residual risk.** The final probe and the `rename` are two syscalls, and POSIX has no
 rename-if-target-is-inode-X. The harm is separately unreachable: a daemon never creates a session
 on an endpoint it no longer holds (`daemon-server.ts`), and it drains rather than serving on.
+
+## Draining a Stale Daemon (fork, off by default)
+
+`ORCA_DAEMON_DRAIN_STALE_BUNDLE=1` (`daemon-drain.ts`) lets a daemon launched from an older app
+bundle keep its live sessions while a fresh daemon serves new terminals. Without it, such a daemon
+is preserved until it owns no session, so a host that is never idle never runs new daemon code.
+
+It is the one sanctioned exception to "only replace an entry proven dead", and it is narrow:
+
+- **The app never touches the canonical name.** It gives the verified, stale incumbent a second,
+  app-owned name (`drain-v<N>-<hex>.sock`, by `link`), copies its token, and moves its PID record
+  there. Then it launches the fresh daemon with `--handed-over-endpoint <dev>:<ino>`.
+- **Only the publishing daemon replaces the live entry**, only while it is still that exact inode,
+  and still in one `rename`. The drain link holds the inode, so the number cannot be recycled.
+- **The incumbent drains itself.** Its ownership watch sees the name lost; it refuses to create,
+  still attaches (`attachOnly`), and retires once its last session ends. The router only ever
+  attaches to a draining adapter, and creates on the current daemon once the session is gone.
+- **Drain names are the app's own and never reused.** Daemon init finds them beside the legacy
+  protocol endpoints, and removes a slot only when nothing serves it and its process is dead.
+- **First launch only.** Daemon init discovers drained daemons once; a respawn under a live router
+  would strand every session left on a daemon drained beneath it.
+- **Undo while nothing changed.** If the fresh daemon never takes the name, the launcher puts the
+  PID record back and removes the drain names, but only while the incumbent still holds the name.

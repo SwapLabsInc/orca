@@ -14,10 +14,20 @@ export type DaemonChildSpawnOptions = {
   pidPath: string
   launchNonce: string
   macosLoginSessionWatch: boolean
+  /** `<dev>:<ino>` of a live incumbent this launch drains rather than replaces (daemon-drain.ts). */
+  handedOverEndpoint?: string
 }
 
 function buildDaemonScriptArgs(options: DaemonChildSpawnOptions): string[] {
-  const { socketPath, tokenPath, pidPath, launchNonce, entryPath, macosLoginSessionWatch } = options
+  const {
+    socketPath,
+    tokenPath,
+    pidPath,
+    launchNonce,
+    entryPath,
+    macosLoginSessionWatch,
+    handedOverEndpoint
+  } = options
   return [
     '--socket',
     socketPath,
@@ -34,6 +44,7 @@ function buildDaemonScriptArgs(options: DaemonChildSpawnOptions): string[] {
     '--spawner-exec-path',
     process.execPath,
     ...(macosLoginSessionWatch ? ['--login-session-watch'] : []),
+    ...(handedOverEndpoint ? ['--handed-over-endpoint', handedOverEndpoint] : []),
     ...daemonLogArgs()
   ]
 }

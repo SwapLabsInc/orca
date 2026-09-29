@@ -21,6 +21,8 @@ type DaemonEndpointLifecycleOptions = {
   log: DaemonFileLog
   isServing: () => boolean
   onOwnershipLost: () => void
+  /** A live incumbent the launcher handed the endpoint over from; see publishDaemonEndpoint. */
+  handedOverEndpoint?: DaemonSocketIdentity | null
 }
 
 export class DaemonEndpointLifecycle {
@@ -62,7 +64,8 @@ export class DaemonEndpointLifecycle {
     const outcome = await publishDaemonEndpoint(
       bindPath,
       this.options.socketPath,
-      probeSocketConnect
+      probeSocketConnect,
+      this.options.handedOverEndpoint ?? null
     )
     if (outcome.status !== 'published') {
       this.options.log.log('endpoint-publish-declined', { reason: outcome.status })

@@ -9,6 +9,7 @@ export type DaemonStartOptions = {
   launchNonce?: string
   startedAtMs?: number
   publishEndpointOwnership?: DaemonServerOptions['publishEndpointOwnership']
+  handedOverEndpoint?: DaemonServerOptions['handedOverEndpoint']
   entryPath?: string
   appVersion?: string
   spawnerExecPath?: string
@@ -38,6 +39,7 @@ export async function startDaemon(opts: DaemonStartOptions): Promise<DaemonHandl
     ...(opts.publishEndpointOwnership
       ? { publishEndpointOwnership: opts.publishEndpointOwnership }
       : {}),
+    ...(opts.handedOverEndpoint ? { handedOverEndpoint: opts.handedOverEndpoint } : {}),
     ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
     ...(opts.appVersion ? { appVersion: opts.appVersion } : {}),
     ...(opts.spawnerExecPath ? { spawnerExecPath: opts.spawnerExecPath } : {}),

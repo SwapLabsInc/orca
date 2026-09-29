@@ -36,6 +36,11 @@ type ReplacementPreflightOptions = {
   releaseAdoptionClient: () => void
   preserveDaemon: PreserveDaemon
   launchNonce: string
+  /**
+   * Hands a stale-bundle daemon's endpoint over rather than preserving it (daemon-drain.ts); true
+   * once its sessions are reachable elsewhere and a fresh daemon may publish. Absent when off.
+   */
+  drainStaleDaemon?: () => Promise<boolean>
 }
 
 export async function prepareDaemonReplacement(
@@ -50,7 +55,8 @@ export async function prepareDaemonReplacement(
     attributedReason,
     releaseAdoptionClient,
     preserveDaemon,
-    launchNonce
+    launchNonce,
+    drainStaleDaemon
   } = options
   let pendingReplacement:
     | {
@@ -112,6 +118,16 @@ export async function prepareDaemonReplacement(
             replacementLabel
           )
         ) {
+          // Why only a stale bundle: a different app path alone does not show a different build,
+          // and each drain leaves one more daemon running until its sessions end.
+          if (stalePackagedBundle && drainStaleDaemon && (await drainStaleDaemon())) {
+            releaseAdoptionClient()
+            console.warn(
+              '[daemon] Draining daemon launched before the current app bundle was installed: its live sessions stay on it, and new terminals start on a fresh daemon'
+            )
+            // Nothing to kill: the fresh daemon's launch completes the hand-over.
+            return null
+          }
           return preserveDaemon()
         }
         console.warn(

@@ -112,6 +112,65 @@ describe('publishDaemonEndpoint', () => {
     }
   })
 
+  unixIt(
+    'takes over a live incumbent it was handed, leaving it reachable by its drain name',
+    async () => {
+      const directory = makeTempDir()
+      const canonicalPath = join(directory, 'd')
+      const drainPath = join(directory, 'drain')
+      const incumbentPath = getDaemonSocketBindPath(canonicalPath)
+      const newcomerPath = getDaemonSocketBindPath(canonicalPath)
+      const incumbent = await listen(incumbentPath)
+      const newcomer = await listen(newcomerPath)
+      try {
+        await publishListener(incumbentPath, canonicalPath)
+        linkSync(canonicalPath, drainPath)
+        const handedOver = readDaemonSocketIdentity(canonicalPath)!
+
+        const outcome = await publishDaemonEndpoint(
+          newcomerPath,
+          canonicalPath,
+          probeSocketConnect,
+          handedOver
+        )
+
+        expect(outcome.status).toBe('published')
+        await expectReachable(canonicalPath)
+        expect(newcomer.connections()).toBe(1)
+        await expectReachable(drainPath)
+        expect(incumbent.connections()).toBe(1)
+      } finally {
+        await Promise.all([close(incumbent.server), close(newcomer.server)])
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  )
+
+  unixIt('leaves a live incumbent in place when it is not the one handed over', async () => {
+    const directory = makeTempDir()
+    const canonicalPath = join(directory, 'd')
+    const incumbentPath = getDaemonSocketBindPath(canonicalPath)
+    const newcomerPath = getDaemonSocketBindPath(canonicalPath)
+    const incumbent = await listen(incumbentPath)
+    const newcomer = await listen(newcomerPath)
+    try {
+      await publishListener(incumbentPath, canonicalPath)
+      const other = readDaemonSocketIdentity(canonicalPath)!
+
+      const outcome = await publishDaemonEndpoint(newcomerPath, canonicalPath, probeSocketConnect, {
+        dev: other.dev,
+        ino: other.ino + 1n
+      })
+
+      expect(outcome).toEqual({ status: 'occupied' })
+      await expectReachable(canonicalPath)
+      expect(newcomer.connections()).toBe(0)
+    } finally {
+      await Promise.all([close(incumbent.server), close(newcomer.server)])
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   unixIt('replaces an incumbent that has stopped listening', async () => {
     const directory = makeTempDir()
     const canonicalPath = join(directory, 'd')

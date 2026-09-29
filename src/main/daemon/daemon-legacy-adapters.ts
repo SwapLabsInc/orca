@@ -6,7 +6,8 @@ import {
 import { parseDaemonPidFile } from './daemon-pid-file-parse'
 import { DaemonPtyAdapter } from './daemon-pty-adapter'
 import { getDaemonPidPath, getDaemonSocketPath, getDaemonTokenPath } from './daemon-spawner'
-import { PREVIOUS_DAEMON_PROTOCOL_VERSIONS } from './types'
+import { listDaemonDrainSlots, removeDeadDaemonDrainSlot } from './daemon-drain'
+import { PREVIOUS_DAEMON_PROTOCOL_VERSIONS, PROTOCOL_VERSION } from './types'
 
 function legacyDaemonProcessMayBeAlive(runtimeDir: string, protocolVersion: number): boolean {
   try {
@@ -59,6 +60,40 @@ export async function createLegacyDaemonAdapters(
         runtimeDir,
         protocolVersion,
         historyPath
+      })
+    )
+  }
+  return [...adapters, ...(await createDrainedDaemonAdapters(runtimeDir, historyPath))]
+}
+
+/**
+ * Daemons drained for a newer bundle keep their live sessions until those end; like legacy ones
+ * they never respawn. A slot whose daemon is proven gone is removed; one that cannot be classified
+ * is left for the next launch, never dropped.
+ */
+async function createDrainedDaemonAdapters(
+  runtimeDir: string,
+  historyPath: string
+): Promise<DaemonPtyAdapter[]> {
+  const adapters: DaemonPtyAdapter[] = []
+  for (const slot of listDaemonDrainSlots(runtimeDir)) {
+    const speaksProtocol =
+      slot.protocolVersion === PROTOCOL_VERSION ||
+      (PREVIOUS_DAEMON_PROTOCOL_VERSIONS as readonly number[]).includes(slot.protocolVersion)
+    if (!speaksProtocol || !(await probeSocket(slot.socketPath))) {
+      await removeDeadDaemonDrainSlot(slot)
+      continue
+    }
+    adapters.push(
+      new DaemonPtyAdapter({
+        socketPath: slot.socketPath,
+        tokenPath: slot.tokenPath,
+        pidPath: slot.pidPath,
+        profileScope: runtimeDir,
+        runtimeDir,
+        protocolVersion: slot.protocolVersion,
+        historyPath,
+        draining: true
       })
     )
   }
