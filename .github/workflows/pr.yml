@@ -218,6 +218,23 @@ jobs:
       - uses: ./.github/actions/install-mobile-dependencies
         if: needs.code_paths.outputs.mobile_dependencies == 'true'
 
+      # LOCAL: a sync PR merges all of upstream into swaplabs/main, and every upstream line
+      # would otherwise count as changed here. Gate only the fork's own lines: those added
+      # since the upstream commit the PR merges, where it meets this repository's mirror `main`.
+      - name: Scope changed-line gates to the fork's own lines on a sync PR
+        if: >-
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          (github.head_ref == 'main' || startsWith(github.head_ref, 'sync/upstream-'))
+        run: |
+          set -uo pipefail
+          if git fetch --no-tags --depth=50 origin main &&
+            upstream="$(git merge-base HEAD FETCH_HEAD)"; then
+            echo "ORCA_SYNC_PR_DIFF_BASE=$upstream" >> "$GITHUB_ENV"
+            echo "Gating the fork's lines since upstream $upstream"
+          else
+            echo "::warning::Could not find where this sync PR meets upstream main; gating every changed line."
+          fi
+
       - name: Enforce changed-code quality
         id: changed-code-quality
         background: true
