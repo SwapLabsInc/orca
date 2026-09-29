@@ -460,7 +460,8 @@ function respondWithForkFeed(releases: ForkRelease[], upstreamTags: string[] = [
       const entries = releases
         .map(
           ({ tag, title }) =>
-            `<entry><link rel="alternate" type="text/html" href="https://github.com/SwapLabsInc/orca/releases/tag/${tag}"/><title>${title}</title></entry>`
+            // Why encoded: GitHub serves the tag percent-encoded in the href (`+` as `%2B`).
+            `<entry><link rel="alternate" type="text/html" href="https://github.com/SwapLabsInc/orca/releases/tag/${encodeURIComponent(tag)}"/><title>${title}</title></entry>`
         )
         .join('')
       return Promise.resolve({ ok: true, text: () => Promise.resolve(`<feed>${entries}</feed>`) })
@@ -553,6 +554,26 @@ describe('fetchNewerReleaseTag across release sources', () => {
       )
     )
     expect(urls.some((url) => url.includes('stablyai'))).toBe(false)
+  })
+
+  // Why: the fork feed also lists upstream's bare tags (`v1.4.216`), which carry no fork assets.
+  it('decodes feed tags once and never probes a mirrored upstream tag', async () => {
+    respondWithForkFeed([
+      { tag: 'v1.4.216', title: 'v1.4.216' },
+      { tag: 'swaplabs-v1.4.214+202609282117', title: '1.4.214-swaplabs.202609282117 • 7655161' },
+      { tag: 'v1.4.215', title: 'v1.4.215' },
+      { tag: 'swaplabs-v1.4.214+202609281805', title: '1.4.214-swaplabs.202609281805 • f326ee0' }
+    ])
+    const { fetchNewerReleaseTagsWithReadiness, swaplabs } = await loadFeed()
+
+    const result = await fetchNewerReleaseTagsWithReadiness('1.4.214-swaplabs.202609281805', 1, {
+      source: swaplabs
+    })
+
+    expect(result).toEqual({ tags: ['swaplabs-v1.4.214+202609282117'], state: 'ready' })
+    const urls = netFetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls.some((url) => url.includes('%25'))).toBe(false)
+    expect(urls.some((url) => /\/download\/v1\.4\.21[56]\//.test(url))).toBe(false)
   })
 
   it('reads a version the title omits from the release manifest', async () => {

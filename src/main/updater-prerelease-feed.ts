@@ -143,13 +143,30 @@ function resolveEntryVersion(tag: string, title: string, source: ReleaseSource):
   return null
 }
 
+/** LOCAL: the href carries the tag percent-encoded (`+` as `%2B`); every URL built from it encodes it again. */
+function decodeFeedTag(href: string): string | null {
+  try {
+    return decodeURIComponent(decodeXmlText(href))
+  } catch {
+    return null
+  }
+}
+
+/** LOCAL: a tag that is itself another source's version (`v1.4.216` mirrored into a fork) is never this source's release. */
+function isOtherSourceVersionTag(tag: string, source: ReleaseSource): boolean {
+  const tagVersion = normalizeTagToVersion(tag)
+  return isValidVersion(tagVersion) && getVersionReleaseSource(tagVersion) !== source.id
+}
+
 function parseReleaseFeedEntries(body: string, source: ReleaseSource): ReleaseFeedEntry[] {
   const hrefPattern = getReleaseTagHrefPattern(source)
   const entries: ReleaseFeedEntry[] = []
   for (const entryMatch of body.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
     const entry = entryMatch[1]
-    const tag = [...entry.matchAll(hrefPattern)][0]?.[1]
-    if (!tag) {
+    const href = [...entry.matchAll(hrefPattern)][0]?.[1]
+    const tag = href ? decodeFeedTag(href) : null
+    // Why skip rather than probe: a non-primary source would otherwise spend manifest probes on them.
+    if (!tag || isOtherSourceVersionTag(tag, source)) {
       continue
     }
     const title = decodeXmlText(entry.match(/<title[^>]*>([\s\S]*?)<\/title>/)?.[1] ?? '')

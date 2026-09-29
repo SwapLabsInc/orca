@@ -212,7 +212,8 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
       )
       throw new ReleaseFeedPreflightError(
         'release-not-ready',
-        isPerfCheck ? 'perf' : includePrerelease ? 'prerelease' : 'default',
+        // LOCAL: a non-primary source has one channel, so its not-ready reads like a stable one.
+        isPerfCheck ? 'perf' : includePrerelease && isPrimarySource ? 'prerelease' : 'default',
         'Latest release artifacts are not ready'
       )
     }

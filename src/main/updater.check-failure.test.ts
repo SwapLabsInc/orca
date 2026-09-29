@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
 import { installNetRequestFetchAdapter } from './updater-net-request.fixture'
 import { publishingIncident } from './updater-prerelease-feed-reproduction.fixture'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../shared/release-sources.fixture'
 
 const { netFetchMock, netRequestMock } = vi.hoisted(() => ({
   netFetchMock: vi.fn(),
@@ -285,6 +290,48 @@ describe('updater check failure handling', () => {
       warnMock.mockRestore()
     }
   )
+
+  // Why: a fork source has only a prerelease channel, so its not-ready check is its stable one.
+  it('tells a fork build a newer release is not available yet, not that the server is unreachable', async () => {
+    setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+    appMock.getVersion.mockReturnValue('1.4.214-swaplabs.202609281805')
+    netFetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === 'https://github.com/SwapLabsInc/orca/releases.atom'
+          ? {
+              ok: true,
+              status: 200,
+              text: () =>
+                Promise.resolve(
+                  '<feed><entry><link rel="alternate" type="text/html" href="https://github.com/SwapLabsInc/orca/releases/tag/swaplabs-v1.4.214%2B202609282117"/><title>1.4.214-swaplabs.202609282117</title></entry></feed>'
+                )
+            }
+          : { ok: false, status: 404, text: () => Promise.resolve('') }
+      )
+    )
+    const warnMock = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { mainWindow, send: sendMock } = createUpdaterMainWindowFake()
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
+
+    try {
+      setupAutoUpdater(mainWindow, {
+        getLastUpdateCheckAt: () => Date.now()
+      })
+      checkForUpdatesFromMenu()
+
+      await vi.waitFor(() => {
+        expect(sendMock).toHaveBeenCalledWith('updater:status', {
+          state: 'error',
+          message: RELEASE_NOT_READY_MESSAGE,
+          userInitiated: true,
+          releaseSource: 'swaplabs'
+        })
+      })
+    } finally {
+      warnMock.mockRestore()
+      setReleaseSourcesLiteralForTest(null)
+    }
+  })
 
   it('silently drops background benign failures to idle and waits for the hourly retry', async () => {
     vi.useFakeTimers()
