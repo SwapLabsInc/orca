@@ -67,7 +67,7 @@ Cover all four concisely. Don't pad or walk the diff.
 
 A pull request into `swaplabs/main` whose head is `main` or a `sync/upstream-*` branch (titled `sync: upstream <sha> into swaplabs/main`) merges upstream Orca into this fork. Almost all of its diff is upstream code that the fork deliberately leaves unchanged, so a finding there cannot be fixed here. On such a pull request, review only:
 
-- lines that differ from the upstream commit being merged, which is the head's merge base with `main`: these are the fork's own changes;
+- lines that differ from the upstream commit being merged: these are the fork's own changes. That commit is the sync merge's second parent, and also the head's merge base with this repository's `main` branch, which mirrors upstream (not `swaplabs/main`, whose merge base would expose the whole upstream import);
 - the conflict resolutions in the sync branch's merge commits, as `git show --remerge-diff <merge>` shows them.
 
 Do not comment on any other line of a sync pull request. Review every other pull request as usual.
