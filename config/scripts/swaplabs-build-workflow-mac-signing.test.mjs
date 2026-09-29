@@ -151,7 +151,10 @@ describe('swaplabs fork build macOS signing', () => {
     expect(cleanup.if).toBe(`always() && ${SIGNING_GATE}`)
     expect(index(cleanup.name)).toBe(mac.steps.length - 1)
     expect(cleanup.run).toContain('security delete-keychain')
-    expect(cleanup.run).toContain('security remove-trusted-cert -d')
+    // Removing admin-domain trust hung every signed run until the job timeout.
+    expect(cleanup.run).not.toContain('remove-trusted-cert')
+    expect(cleanup['timeout-minutes']).toBeLessThanOrEqual(5)
+    expect(cleanup['continue-on-error']).toBe(true)
   })
 
   it('zips with ditto, signs with the secret key and verifies locally before any upload', () => {

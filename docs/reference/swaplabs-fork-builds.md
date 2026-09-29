@@ -167,8 +167,10 @@ In the run, the `.p12` is imported into a keychain created for the job under
 `$RUNNER_TEMP` with a random password, the decoded file is removed immediately, and
 the certificate is added as a code-signing trust root in the admin domain, because
 `security find-identity -v` (what electron-builder and osx-sign consult) lists only
-trusted identities and a self-signed certificate is its own root. The keychain and
-the trust setting are removed at the end of the job. The `.p12` uses the
+trusted identities and a self-signed certificate is its own root. The keychain is
+deleted at the end of the job, in a step bounded to two minutes that cannot fail the
+build; the trust setting is left to die with the VM, because removing it hung every
+signed run until the 90-minute job timeout. The `.p12` uses the
 SHA1/3DES container algorithms on purpose: OpenSSL 3's AES default is rejected by
 `security import`.
 
@@ -328,9 +330,8 @@ None of this has run on the fork yet; these were not verifiable from a checkout:
 - The org must be able to allocate `ubuntu-24.04-arm` and `macos-15` hosted runners.
 - The `swaplabs/main` checkout must carry the release-sources change; the
   packaging verification step fails by name otherwise.
-- The keychain import, trust and `codesign` behaviour of the mac leg was written
-  from the documented `security` commands and electron-builder's identity lookup,
-  not exercised on a Mac; its first real run is the test. In particular
-  `sudo security add-trusted-cert -d` is what makes a self-signed identity
-  "valid" headlessly, and `codesign -d -r-` must print a `designated =>`
-  requirement that names the certificate rather than a `cdhash`.
+- The keychain import, trust and `codesign` behaviour of the mac leg ran on
+  `macos-15` from 2026-09-28: `sudo security add-trusted-cert -d` makes the
+  self-signed identity "valid" headlessly, and the manifest step (which refuses a
+  `cdhash` requirement) produced signed manifests for both arches. Installing and
+  self-updating on a real Mac is still the operator's test.
