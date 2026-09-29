@@ -7,10 +7,6 @@ import {
 } from '@/lib/windows-terminal-capabilities'
 import { requestTerminalWritePipelineProbe } from '@/lib/pane-manager/terminal-write-pipeline-health'
 import {
-  RESET_KITTY_KEYBOARD_PROTOCOL,
-  RESET_TERMINAL_CURSOR_STYLE
-} from '../../../../../shared/terminal-mode-reset-profiles'
-import {
   isRealUserTerminalInput,
   subscribeToTerminalUserInput
 } from '../terminal-user-input-signal'
@@ -89,11 +85,6 @@ export function installDirectSshRetryStatus(session: ConnectPanePtySession): voi
     ),
     executionHostId: session.executionHostId
   })
-  if (session.isNativeWindowsConpty) {
-    // Why: Windows ConPTY agent turns can leave renderer keyboard modes armed
-    // after completion, corrupting plain input with encoded bytes.
-    session.idleAgentTerminalModeReset = `${RESET_TERMINAL_CURSOR_STYLE}${RESET_KITTY_KEYBOARD_PROTOCOL}`
-  }
   session.shouldApplyNativeWindowsRewriteRefresh = session.isNativeWindowsConpty
   session.shouldApplyWindowsRendererUnicodeRefresh = CLIENT_PLATFORM === 'win32'
   session.shouldProtectNativeWindowsSynchronizedOutput = session.isNativeWindowsConpty
