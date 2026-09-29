@@ -7,7 +7,7 @@
  * Shuts down cleanly on SIGTERM.
  */
 import { readFileSync } from 'node:fs'
-import { startDaemon, type DaemonHandle } from './daemon-main'
+import { startDaemon, type DaemonHandle, type DaemonStartOptions } from './daemon-main'
 import { createPtySubprocess } from './pty-subprocess'
 import { warmWindowsConptyOnce } from './windows-conpty-warmup'
 import { warmPwshAvailabilityCache } from '../pwsh'
@@ -16,7 +16,8 @@ import { PROTOCOL_VERSION } from './types'
 import { detectOwnCgroupScopeUnit } from './daemon-cgroup-scope'
 import {
   DAEMON_EXIT_ENDPOINT_OCCUPIED,
-  DaemonEndpointUnavailableError
+  DaemonEndpointUnavailableError,
+  parseHandedOverEndpoint
 } from './daemon-endpoint-ownership'
 import {
   prepareMacosTccLoginShell,
@@ -41,6 +42,8 @@ export type ParsedDaemonArgs = {
   /** GUI-spawned daemons only — headless serve/SSH daemons must survive session loss. */
   loginSessionWatch?: boolean
   freshDaemonScope?: boolean
+  /** The live incumbent a draining launch hands the endpoint over from (daemon-drain.ts). */
+  handedOverEndpoint?: DaemonStartOptions['handedOverEndpoint']
   /** Optional — absent for adopted old daemons and tests, which log nothing. */
   logFilePath?: string
 }
@@ -56,6 +59,7 @@ export function parseArgs(argv: string[]): ParsedDaemonArgs {
   let spawnerExecPath = ''
   let loginSessionWatch = false
   let freshDaemonScope = false
+  let handedOverEndpoint: DaemonStartOptions['handedOverEndpoint']
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--socket' && argv[i + 1]) {
@@ -86,6 +90,8 @@ export function parseArgs(argv: string[]): ParsedDaemonArgs {
       loginSessionWatch = true
     } else if (argv[i] === '--fresh-daemon-scope') {
       freshDaemonScope = true
+    } else if (argv[i] === '--handed-over-endpoint') {
+      handedOverEndpoint = parseHandedOverEndpoint(argv[++i] ?? '')
     }
   }
 
@@ -106,6 +112,7 @@ export function parseArgs(argv: string[]): ParsedDaemonArgs {
     ...(spawnerExecPath ? { spawnerExecPath } : {}),
     ...(loginSessionWatch ? { loginSessionWatch } : {}),
     ...(freshDaemonScope ? { freshDaemonScope } : {}),
+    ...(handedOverEndpoint ? { handedOverEndpoint } : {}),
     ...(logFilePath ? { logFilePath } : {})
   }
 }
@@ -128,6 +135,7 @@ async function main(): Promise<void> {
     spawnerExecPath,
     loginSessionWatch,
     freshDaemonScope,
+    handedOverEndpoint,
     logFilePath
   } = parseArgs(process.argv.slice(2))
   const startedAtMs = Date.now() - process.uptime() * 1000
@@ -275,6 +283,7 @@ async function main(): Promise<void> {
     ...(pidPath ? { pidPath } : {}),
     ...(launchNonce ? { launchNonce } : {}),
     ...(pidPath ? { startedAtMs } : {}),
+    ...(handedOverEndpoint ? { handedOverEndpoint } : {}),
     ...(entryPath ? { entryPath } : {}),
     ...(appVersion ? { appVersion } : {}),
     ...(spawnerExecPath ? { spawnerExecPath } : {}),

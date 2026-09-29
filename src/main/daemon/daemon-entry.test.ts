@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { parseArgs } from './daemon-entry'
 
 describe('daemon-entry parseArgs', () => {
+  it('reads the endpoint a draining launch hands over, and refuses one it cannot read', () => {
+    const args = ['--socket', '/tmp/test.sock', '--token', '/tmp/test.token']
+    expect(parseArgs(args)).not.toHaveProperty('handedOverEndpoint')
+    expect(parseArgs([...args, '--handed-over-endpoint', '64769:1234'])).toHaveProperty(
+      'handedOverEndpoint',
+      { dev: 64769n, ino: 1234n }
+    )
+    for (const value of ['', '64769', '64769:', 'a:b', '-1:2', '1:2:3']) {
+      expect(() => parseArgs([...args, '--handed-over-endpoint', value, '--x'])).toThrow()
+    }
+  })
+
   it('only enables scope cleanup with the fresh launch flag', () => {
     const args = ['--socket', '/tmp/t.sock', '--token', '/tmp/t.token']
     expect(parseArgs(args)).not.toHaveProperty('freshDaemonScope')

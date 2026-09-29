@@ -58,6 +58,8 @@ export type DaemonPtyAdapterOptions = {
   runtimeDir?: string
   packagedAppVersion?: string | null
   respawn?: (reason: DaemonRespawnReason) => Promise<void | (() => void)>
+  /** A daemon drained for a newer bundle (daemon-drain.ts): it only keeps the sessions it has. */
+  draining?: boolean
 }
 
 export type DaemonRespawnReason =
@@ -73,6 +75,7 @@ export type DaemonIdentityChangeEvent = {
 
 export abstract class DaemonPtyRuntimeState {
   readonly protocolVersion: number
+  readonly draining: boolean
   protected socketPath: string
   protected tokenPath: string
   protected pidPath: string | null
@@ -190,6 +193,7 @@ export abstract class DaemonPtyRuntimeState {
 
   constructor(opts: DaemonPtyAdapterOptions) {
     this.protocolVersion = opts.protocolVersion ?? PROTOCOL_VERSION
+    this.draining = opts.draining === true
     this.socketPath = opts.socketPath
     this.tokenPath = opts.tokenPath
     this.pidPath = opts.pidPath ?? null

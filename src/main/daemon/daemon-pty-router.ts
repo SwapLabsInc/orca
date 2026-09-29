@@ -11,6 +11,7 @@ import type {
 import type { PtyProcessInspection } from '../providers/pty-process-inspection'
 import { shouldHandoffDaemonHistory } from './daemon-history-handoff'
 import type { DaemonPtyRouterDataEvent, DaemonPtyRouterExitEvent } from './daemon-pty-router-events'
+import { SessionNotFoundError } from './daemon-errors'
 import { DaemonSessionOwnerResolver } from './daemon-session-owner-resolution'
 import type { WriteSettlement } from '../../shared/pty-write-settlement'
 
@@ -43,13 +44,45 @@ export class DaemonPtyRouter implements IPtyProvider {
       return await this.ownerResolver.spawnAttachOnly({ ...opts, sessionId: opts.sessionId })
     }
     const adapter = opts.sessionId ? this.sessionAdapters.get(opts.sessionId) : undefined
-    const target = adapter ?? this.current
+    if (adapter?.draining && opts.sessionId) {
+      const attached = await this.attachToDrainedSession(adapter, {
+        ...opts,
+        sessionId: opts.sessionId
+      })
+      if (attached) {
+        return attached
+      }
+    }
+    const target = adapter && !adapter.draining ? adapter : this.current
     const result = await target.spawn(opts)
     // Why: the adapter filters intentional recovery exits and canonical-ID races before publishing proof.
     if (!result.exitedBeforeSpawnReply) {
       this.ownerResolver.recordRoute(result.id, target, result.incarnationId)
     }
     return result
+  }
+
+  /**
+   * A drained daemon refuses to create, so a create-or-attach routed to it can only attach. Null
+   * once it is proven not to hold the session, and the caller creates it on the current daemon; an
+   * owner that cannot be established still throws, so the session is never started twice.
+   */
+  private async attachToDrainedSession(
+    adapter: DaemonPtyAdapter,
+    opts: PtySpawnOptions & { sessionId: string }
+  ): Promise<PtySpawnResult | null> {
+    try {
+      return await this.ownerResolver.spawnAttachOnly({
+        ...opts,
+        attachOnly: true
+      })
+    } catch (error) {
+      if (!(error instanceof SessionNotFoundError)) {
+        throw error
+      }
+      this.ownerResolver.forgetRoute(opts.sessionId, adapter)
+      return null
+    }
   }
 
   supportsGitCredentialGuardHost(sessionId?: string): boolean {

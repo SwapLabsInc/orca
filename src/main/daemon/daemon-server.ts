@@ -159,7 +159,8 @@ export class DaemonServer {
       publishEndpointOwnership: options.publishEndpointOwnership ?? (() => {}),
       log: this.log,
       isServing: () => this.lifecycle.isAcceptingWork(),
-      onOwnershipLost: () => this.lifecycle.onEndpointOwnershipLost()
+      onOwnershipLost: () => this.lifecycle.onEndpointOwnershipLost(),
+      handedOverEndpoint: options.handedOverEndpoint ?? null
     })
     const lifecycleClock = options.initialAdoptionTestConfig?.clock ?? {
       setTimeout: (callback: () => void, delayMs: number) => {

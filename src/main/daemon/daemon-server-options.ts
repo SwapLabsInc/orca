@@ -1,3 +1,4 @@
+import type { DaemonSocketIdentity } from './daemon-endpoint-ownership'
 import type { DaemonFileLog } from './daemon-file-log'
 import type { SubprocessHandle } from './session-subprocess-handle'
 
@@ -8,6 +9,8 @@ export type DaemonServerOptions = {
   launchNonce?: string
   startedAtMs?: number
   publishEndpointOwnership?: () => void
+  /** A live incumbent the launcher handed the endpoint over from; see publishDaemonEndpoint. */
+  handedOverEndpoint?: DaemonSocketIdentity
   entryPath?: string
   appVersion?: string
   spawnerExecPath?: string

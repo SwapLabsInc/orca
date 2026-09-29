@@ -56,17 +56,26 @@ function readCurrentDaemonIdentity(): DaemonEndpointIdentity | null {
   return provider ? getCurrentDaemonAdapter(provider).getDaemonIdentity() : null
 }
 
-async function collectSessions(adapters: DaemonPtyAdapter[]): Promise<DaemonSessionInfo[]> {
+// Why the owner rides along: a drained daemon shares the current one's protocol version, so the
+// version no longer identifies which adapter holds a session.
+type OwnedDaemonSession = DaemonSessionInfo & { owner: DaemonPtyAdapter }
+
+async function collectOwnedSessions(adapters: DaemonPtyAdapter[]): Promise<OwnedDaemonSession[]> {
   const results = await Promise.allSettled(
     adapters.map(async (adapter) => {
       const sessions = await adapter.listSessions()
-      return sessions.map<DaemonSessionInfo>((s) => ({
+      return sessions.map<OwnedDaemonSession>((s) => ({
         ...s,
-        protocolVersion: adapter.protocolVersion
+        protocolVersion: adapter.protocolVersion,
+        owner: adapter
       }))
     })
   )
   return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+}
+
+async function collectSessions(adapters: DaemonPtyAdapter[]): Promise<DaemonSessionInfo[]> {
+  return (await collectOwnedSessions(adapters)).map(({ owner: _owner, ...session }) => session)
 }
 
 export function registerDaemonManagementHandlers(): void {
@@ -129,7 +138,7 @@ export function registerDaemonManagementHandlers(): void {
     }> => {
       const adapters = getDaemonAdapters()
       // Why: snapshot session IDs up front so mid-kill respawns aren't counted as "remaining".
-      const initial = await collectSessions(adapters)
+      const initial = await collectOwnedSessions(adapters)
       const initialIds = new Set(initial.map((s) => s.sessionId))
       const initialCount = initial.length
 
@@ -140,13 +149,8 @@ export function registerDaemonManagementHandlers(): void {
       // Why: no retry — session.kill() is idempotent and runs its own kill ladder; allSettled so one rejection doesn't abort the rest.
       await Promise.allSettled(
         initial.map(async (session) => {
-          // Why: assumes PROTOCOL_VERSION stays distinct from PREVIOUS_DAEMON_PROTOCOL_VERSIONS (types.ts), else legacy sessions misroute here.
-          const owner = adapters.find((a) => a.protocolVersion === session.protocolVersion)
-          if (!owner) {
-            return
-          }
           // Why: immediate=true only matters to legacy/future adapters; swallow rejections since remainingCount reports stuck sessions.
-          await owner.shutdown(session.sessionId, { immediate: true }).catch(() => {})
+          await session.owner.shutdown(session.sessionId, { immediate: true }).catch(() => {})
         })
       )
 
@@ -185,17 +189,13 @@ export function registerDaemonManagementHandlers(): void {
         return { success: false }
       }
       const adapters = getDaemonAdapters()
-      const sessions = await collectSessions(adapters)
+      const sessions = await collectOwnedSessions(adapters)
       const match = sessions.find((s) => s.sessionId === args.sessionId)
       if (!match) {
         return { success: false }
       }
-      const owner = adapters.find((a) => a.protocolVersion === match.protocolVersion)
-      if (!owner) {
-        return { success: false }
-      }
       try {
-        await owner.shutdown(args.sessionId, { immediate: true })
+        await match.owner.shutdown(args.sessionId, { immediate: true })
         return { success: true }
       } catch {
         return { success: false }

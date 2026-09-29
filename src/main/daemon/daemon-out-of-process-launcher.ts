@@ -24,6 +24,15 @@ import {
 } from './daemon-spawner'
 import { PROTOCOL_VERSION } from './types'
 import { prepareDaemonReplacement } from './daemon-replacement-preflight'
+import {
+  abandonDaemonDrain,
+  isDaemonDrainEnabled,
+  prepareDaemonDrain,
+  recoverUncommittedDaemonDrains,
+  type DaemonDrainHandOver
+} from './daemon-drain'
+import { formatDaemonSocketIdentity } from './daemon-endpoint-ownership'
+import { readVerifiedDaemonPid } from './daemon-pid-identity'
 
 // Why: the adapter decides a runtime resolver replacement, but the launcher completes it — and by
 // then the daemon has usually self-retired (dropping its last authenticated client is enough), so
@@ -52,17 +61,40 @@ function createPreservedDaemonHandle(
   return handle
 }
 
+function abandonUnfinishedDrain(
+  handOver: DaemonDrainHandOver | null,
+  socketPath: string,
+  pidPath: string
+): void {
+  if (handOver && abandonDaemonDrain(handOver, socketPath, pidPath)) {
+    console.warn('[daemon] Drain abandoned: the fresh daemon did not take the endpoint')
+  }
+}
+
 export function createOutOfProcessLauncher(
   runtimeDir: string,
   macosLoginSessionWatch = false
 ): DaemonLauncher {
+  // Why the first launch only: that is the one daemon init follows with discovery of drained
+  // daemons (createLegacyDaemonAdapters). A respawn keeps its router, which would never learn of a
+  // daemon drained under it, stranding every session left there.
+  let drainOnThisLaunch = isDaemonDrainEnabled()
   return async (socketPath, tokenPath, suppliedPidPath, suppliedLaunchNonce) => {
+    const drainAllowed = drainOnThisLaunch
+    drainOnThisLaunch = false
+    // A holder, not a `let`: set inside the preflight's callback, which narrowing cannot see.
+    const drain: { handOver: DaemonDrainHandOver | null } = { handOver: null }
     const entryPath = getDaemonEntryPath()
     // Why here: everything up to the fork is one recovery, so the adoption connect and the
     // preflight's probes share a single absolute budget rather than each carrying its own.
     const recoveryDeadlineMs = Date.now() + DAEMON_RECOVERY_BUDGET_MS
     const pidPath = suppliedPidPath ?? getDaemonPidPath(runtimeDir)
     const launchNonce = suppliedLaunchNonce ?? randomUUID()
+    // Whether or not draining is on now: a drain a killed launch left half done is undone first,
+    // before the adoption and the preflight read the incumbent's PID record.
+    if (recoverUncommittedDaemonDrains(runtimeDir, socketPath, pidPath, PROTOCOL_VERSION) > 0) {
+      console.warn('[daemon] Undid a drain an interrupted launch left unfinished')
+    }
     // One-shot: whichever launch consumes it owns the attribution, so a later unrelated launch can't
     // reuse it. The write in the respawn closure reaches here without an intervening await, which is
     // what makes a bare module-scoped slot safe — keep it that way or a concurrent launch can steal it.
@@ -110,7 +142,26 @@ export function createOutOfProcessLauncher(
         attributedReason,
         releaseAdoptionClient,
         preserveDaemon,
-        launchNonce
+        launchNonce,
+        ...(drainAllowed
+          ? {
+              drainStaleDaemon: async () => {
+                const incumbent = await readVerifiedDaemonPid(runtimeDir, socketPath, tokenPath)
+                drain.handOver = incumbent
+                  ? await prepareDaemonDrain({
+                      runtimeDir,
+                      socketPath,
+                      tokenPath,
+                      pidPath,
+                      protocolVersion: PROTOCOL_VERSION,
+                      pid: incumbent.pid,
+                      launchNonce: incumbent.launchNonce
+                    })
+                  : null
+                return drain.handOver !== null
+              }
+            }
+          : {})
       })
       if (preservedHandle) {
         return preservedHandle
@@ -132,7 +183,12 @@ export function createOutOfProcessLauncher(
           tokenPath,
           pidPath,
           launchNonce,
-          macosLoginSessionWatch
+          macosLoginSessionWatch,
+          ...(drain.handOver
+            ? {
+                handedOverEndpoint: formatDaemonSocketIdentity(drain.handOver.incumbent)
+              }
+            : {})
         })
       } catch (error) {
         if (!(error instanceof DaemonEndpointUnavailableError) || error.reason !== 'occupied') {
@@ -144,6 +200,7 @@ export function createOutOfProcessLauncher(
         console.warn(
           '[daemon] Endpoint was taken by another daemon during startup — adopting it instead'
         )
+        abandonUnfinishedDrain(drain.handOver, socketPath, pidPath)
         // Why pidPath: adopting reconciles the PID record against the identity the daemon
         // reports over hello, repairing a record that names the wrong incarnation. Every other
         // adoption path passes it; this one skipped it, so the incumbent we adopt here was the
@@ -196,6 +253,9 @@ export function createOutOfProcessLauncher(
       }
     } catch (error) {
       releaseAdoptionClient()
+      // Why first: the rescue below adopts whatever answers the endpoint, and an incumbent that
+      // never lost its name must have its PID record back to be adopted like any other.
+      abandonUnfinishedDrain(drain.handOver, socketPath, pidPath)
       // Why: the launcher may now fork onto an endpoint it could not classify, because the
       // publisher is the real guard — and that guard works by refusing to overwrite what it
       // cannot prove dead, so the child exits instead of splitting the brain. Correct, but

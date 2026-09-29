@@ -63,7 +63,9 @@ export type DaemonEndpointPublishOutcome =
 export async function publishDaemonEndpoint(
   boundPath: string,
   canonicalPath: string,
-  probeEndpoint: (path: string) => Promise<SocketProbeOutcome>
+  probeEndpoint: (path: string) => Promise<SocketProbeOutcome>,
+  /** An incumbent the launcher handed over to drain (daemon-drain.ts); null for every other launch. */
+  handedOver: DaemonSocketIdentity | null = null
 ): Promise<DaemonEndpointPublishOutcome> {
   if (process.platform === 'win32') {
     // Named pipes are exclusive by name and vanish with the process; listen is the whole protocol.
@@ -83,6 +85,9 @@ export async function publishDaemonEndpoint(
       const noHardLinks = isLinkUnsupportedError(error)
       if (!isFileExistsError(error) && !noHardLinks) {
         throw error
+      }
+      if (handedOver && takeHandedOverEndpoint(boundPath, canonicalPath, handedOver)) {
+        return confirmPublishedEndpoint(canonicalPath, identity)
       }
       // Without hard links we lose `link`'s exclusivity but not the death proof, the continuity
       // re-check, or the post-publish verification — and that last one is what keeps replacing an
@@ -166,6 +171,42 @@ async function replaceProvenDeadEndpoint(
   return null
 }
 
+/**
+ * Takes the canonical name from a live incumbent the launcher handed over: one it has given a drain
+ * name of its own (so the incumbent's sessions stay reachable) and named here by dev+ino. The only
+ * case in which a publisher replaces a live entry, and still in one `rename`, so the name is never
+ * absent. The drain name holds the inode, so it cannot be recycled while we compare, and a live
+ * entry changes hands only through its daemon's death and a replacement's own death proof — the
+ * same two-syscall residual risk as the proven-dead path. The incumbent then sees its name lost and
+ * retires once its sessions end (daemon-endpoint-lifecycle.ts), which is what drains it.
+ */
+function takeHandedOverEndpoint(
+  boundPath: string,
+  canonicalPath: string,
+  handedOver: DaemonSocketIdentity
+): boolean {
+  const incumbent = readDaemonEndpointEntryIdentity(canonicalPath)
+  if (!incumbent || !isSameInode(incumbent, handedOver)) {
+    return false
+  }
+  renameSync(boundPath, canonicalPath)
+  return true
+}
+
+/** `<dev>:<ino>`, the form the launcher passes to a daemon it hands an endpoint over to. */
+export function formatDaemonSocketIdentity(identity: DaemonSocketIdentity): string {
+  return `${identity.dev}:${identity.ino}`
+}
+
+/** Throws: a hand-over a daemon cannot read would leave it standing down as 'occupied'. */
+export function parseHandedOverEndpoint(value: string): DaemonSocketIdentity {
+  const match = /^(\d+):(\d+)$/.exec(value)
+  if (!match) {
+    throw new Error(`Invalid --handed-over-endpoint: ${value}`)
+  }
+  return { dev: BigInt(match[1]), ino: BigInt(match[2]) }
+}
+
 /** Same directory entry. No birth-time term — see AGENTS.md on why that field cannot carry it. */
 function isSameInode(a: DaemonSocketIdentity, b: DaemonSocketIdentity): boolean {
   return a.dev === b.dev && a.ino === b.ino
@@ -217,7 +258,7 @@ function confirmPublishedEndpoint(
  * The directory entry itself, not what it resolves to. `lstat`, because a dangling symlink occupies
  * the name but `stat` follows it, fails, and reports absent — which reads as "changed hands".
  */
-function readDaemonEndpointEntryIdentity(socketPath: string): DaemonSocketIdentity | null {
+export function readDaemonEndpointEntryIdentity(socketPath: string): DaemonSocketIdentity | null {
   if (process.platform === 'win32') {
     return null
   }

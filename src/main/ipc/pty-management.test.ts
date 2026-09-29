@@ -481,6 +481,23 @@ describe('pty:management IPC handlers', () => {
       expect(current.shutdown).not.toHaveBeenCalled()
     })
 
+    it('routes to a drained daemon that shares the current protocol version', async () => {
+      const current = makeAdapter(5, [makeSession('new-1')])
+      const drained = makeAdapter(5, [makeSession('kept-1')])
+      const { registerDaemonManagementHandlers } = await importFresh()
+      getDaemonProviderMock.mockReturnValue(await makeRouter(current, [drained]))
+      registerDaemonManagementHandlers()
+
+      const handlers = buildHandlerMap()
+      const result = await handlers['pty:management:killOne']({}, { sessionId: 'kept-1' })
+
+      expect(result).toEqual({ success: true })
+      expect(drained.shutdown).toHaveBeenCalledWith('kept-1', {
+        immediate: true
+      })
+      expect(current.shutdown).not.toHaveBeenCalled()
+    })
+
     it('returns success=false for unknown sessionId', async () => {
       const current = makeAdapter(5, [makeSession('new-1')])
       const { registerDaemonManagementHandlers } = await importFresh()
