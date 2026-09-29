@@ -28,6 +28,7 @@ import {
   abandonDaemonDrain,
   isDaemonDrainEnabled,
   prepareDaemonDrain,
+  recoverUncommittedDaemonDrains,
   type DaemonDrainHandOver
 } from './daemon-drain'
 import { formatDaemonSocketIdentity } from './daemon-endpoint-ownership'
@@ -89,6 +90,11 @@ export function createOutOfProcessLauncher(
     const recoveryDeadlineMs = Date.now() + DAEMON_RECOVERY_BUDGET_MS
     const pidPath = suppliedPidPath ?? getDaemonPidPath(runtimeDir)
     const launchNonce = suppliedLaunchNonce ?? randomUUID()
+    // Whether or not draining is on now: a drain a killed launch left half done is undone first,
+    // before the adoption and the preflight read the incumbent's PID record.
+    if (recoverUncommittedDaemonDrains(runtimeDir, socketPath, pidPath, PROTOCOL_VERSION) > 0) {
+      console.warn('[daemon] Undid a drain an interrupted launch left unfinished')
+    }
     // One-shot: whichever launch consumes it owns the attribution, so a later unrelated launch can't
     // reuse it. The write in the respawn closure reaches here without an intervening await, which is
     // what makes a bare module-scoped slot safe — keep it that way or a concurrent launch can steal it.

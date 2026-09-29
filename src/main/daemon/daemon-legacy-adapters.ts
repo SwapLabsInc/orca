@@ -6,7 +6,12 @@ import {
 import { parseDaemonPidFile } from './daemon-pid-file-parse'
 import { DaemonPtyAdapter } from './daemon-pty-adapter'
 import { getDaemonPidPath, getDaemonSocketPath, getDaemonTokenPath } from './daemon-spawner'
-import { listDaemonDrainSlots, removeDeadDaemonDrainSlot } from './daemon-drain'
+import {
+  listDaemonDrainSlots,
+  readDaemonDrainSlotIdentity,
+  removeDeadDaemonDrainSlot
+} from './daemon-drain'
+import { readDaemonEndpointEntryIdentity } from './daemon-endpoint-ownership'
 import { PREVIOUS_DAEMON_PROTOCOL_VERSIONS, PROTOCOL_VERSION } from './types'
 
 function legacyDaemonProcessMayBeAlive(runtimeDir: string, protocolVersion: number): boolean {
@@ -76,10 +81,21 @@ async function createDrainedDaemonAdapters(
   historyPath: string
 ): Promise<DaemonPtyAdapter[]> {
   const adapters: DaemonPtyAdapter[] = []
+  // Why by inode: a name aliasing one already registered (the current endpoint, after a drain a
+  // killed launch never finished, or another slot) is the same daemon, and registering it twice
+  // would report every session twice and leave its owner unresolvable.
+  const seen = [readDaemonEndpointEntryIdentity(getDaemonSocketPath(runtimeDir))]
   for (const slot of listDaemonDrainSlots(runtimeDir)) {
+    const identity = readDaemonDrainSlotIdentity(slot)
+    if (
+      identity &&
+      seen.some((other) => other?.dev === identity.dev && other.ino === identity.ino)
+    ) {
+      continue
+    }
     const speaksProtocol =
       slot.protocolVersion === PROTOCOL_VERSION ||
-      (PREVIOUS_DAEMON_PROTOCOL_VERSIONS as readonly number[]).includes(slot.protocolVersion)
+      PREVIOUS_DAEMON_PROTOCOL_VERSIONS.some((version) => version === slot.protocolVersion)
     if (!speaksProtocol || !(await probeSocket(slot.socketPath))) {
       await removeDeadDaemonDrainSlot(slot)
       continue
@@ -96,6 +112,7 @@ async function createDrainedDaemonAdapters(
         draining: true
       })
     )
+    seen.push(identity)
   }
   return adapters
 }

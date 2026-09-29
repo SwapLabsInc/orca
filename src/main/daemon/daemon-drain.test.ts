@@ -9,6 +9,7 @@ import {
   isDaemonDrainEnabled,
   listDaemonDrainSlots,
   prepareDaemonDrain,
+  recoverUncommittedDaemonDrains,
   removeDeadDaemonDrainSlot,
   type DaemonDrainHandOver
 } from './daemon-drain'
@@ -266,6 +267,32 @@ describe('draining a stale daemon', () => {
     })
     expect(abandonDaemonDrain(again, socketPath, pidPath)).toBe(false)
     expect(listDaemonDrainSlots(dir)).toEqual([again.slot])
+  })
+
+  unixIt(
+    'undoes a drain a killed launch never finished, and never registers its alias',
+    async () => {
+      await startDaemon('old', createMockSubprocess())
+      const handOver = (await drain())!
+      // Killed here: the PID record moved, and no fresh daemon ever took the name.
+      expect((await createLegacyDaemonAdapters(dir, join(dir, 'history'))).length).toBe(0)
+
+      expect(recoverUncommittedDaemonDrains(dir, socketPath, pidPath, PROTOCOL_VERSION)).toBe(1)
+
+      expect(readFileSync(pidPath, 'utf8')).toContain('"launchNonce":"old"')
+      expect(listDaemonDrainSlots(dir)).toEqual([])
+      expect(existsSync(handOver.slot.tokenPath)).toBe(false)
+      expect(recoverUncommittedDaemonDrains(dir, socketPath, pidPath, PROTOCOL_VERSION)).toBe(0)
+    }
+  )
+
+  unixIt('leaves a committed drain alone', async () => {
+    await startDaemon('old', createMockSubprocess())
+    const handOver = (await drain())!
+    await startDaemon('new', createMockSubprocess(), { handedOverEndpoint: handOver.incumbent })
+
+    expect(recoverUncommittedDaemonDrains(dir, socketPath, pidPath, PROTOCOL_VERSION)).toBe(0)
+    expect(listDaemonDrainSlots(dir)).toEqual([handOver.slot])
   })
 
   it('has nothing to drain without an endpoint', async () => {

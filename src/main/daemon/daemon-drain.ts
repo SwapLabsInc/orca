@@ -200,13 +200,52 @@ export function abandonDaemonDrain(
   return true
 }
 
+/**
+ * Finishes undoing a drain a killed launch left half done: a slot still aliasing the canonical
+ * entry means the fresh daemon never took the name, so the incumbent is still the current daemon.
+ * Run before anything reads the PID record: it gets its record back, and the alias is removed —
+ * left, init would find the same sessions twice and could settle no owner for them.
+ */
+export function recoverUncommittedDaemonDrains(
+  runtimeDir: string,
+  socketPath: string,
+  pidPath: string,
+  protocolVersion: number
+): number {
+  const canonical = readDaemonEndpointEntryIdentity(socketPath)
+  if (!canonical) {
+    return 0
+  }
+  let recovered = 0
+  for (const slot of listDaemonDrainSlots(runtimeDir)) {
+    if (
+      slot.protocolVersion === protocolVersion &&
+      sameEntry(readDaemonEndpointEntryIdentity(slot.socketPath), canonical)
+    ) {
+      restorePidRecord(slot, pidPath)
+      removeSlot(slot)
+      recovered++
+    }
+  }
+  return recovered
+}
+
+/** The endpoint entry a slot names, for telling one daemon's names apart from another's. */
+export function readDaemonDrainSlotIdentity(slot: DaemonDrainSlot): DaemonSocketIdentity | null {
+  return readDaemonEndpointEntryIdentity(slot.socketPath)
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code
+}
+
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
   } catch (error) {
     // EPERM: alive, someone else's.
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
+    return hasErrorCode(error, 'EPERM')
   }
 }
 
@@ -223,7 +262,7 @@ export async function removeDeadDaemonDrainSlot(slot: DaemonDrainSlot): Promise<
   try {
     content = readFileSync(slot.pidPath, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    if (!hasErrorCode(error, 'ENOENT')) {
       return false
     }
     content = ''

@@ -489,11 +489,9 @@ describe('pty:management IPC handlers', () => {
       registerDaemonManagementHandlers()
 
       const handlers = buildHandlerMap()
-      const result = (await handlers['pty:management:killOne']({}, { sessionId: 'kept-1' })) as {
-        success: boolean
-      }
+      const result = await handlers['pty:management:killOne']({}, { sessionId: 'kept-1' })
 
-      expect(result.success).toBe(true)
+      expect(result).toEqual({ success: true })
       expect(drained.shutdown).toHaveBeenCalledWith('kept-1', {
         immediate: true
       })

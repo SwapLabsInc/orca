@@ -20,6 +20,7 @@ const {
 const drainMocks = vi.hoisted(() => ({
   isDaemonDrainEnabled: vi.fn(() => true),
   prepareDaemonDrain: vi.fn(),
+  recoverUncommittedDaemonDrains: vi.fn(() => 0),
   abandonDaemonDrain: vi.fn(() => false),
   listDaemonDrainSlots: vi.fn(() => []),
   removeDeadDaemonDrainSlot: vi.fn(async () => false),
@@ -49,6 +50,7 @@ vi.mock('../ipc/pty', () => moduleFactories.ipcPty())
 vi.mock('./daemon-drain', () => ({
   isDaemonDrainEnabled: drainMocks.isDaemonDrainEnabled,
   prepareDaemonDrain: drainMocks.prepareDaemonDrain,
+  recoverUncommittedDaemonDrains: drainMocks.recoverUncommittedDaemonDrains,
   abandonDaemonDrain: drainMocks.abandonDaemonDrain,
   listDaemonDrainSlots: drainMocks.listDaemonDrainSlots,
   removeDeadDaemonDrainSlot: drainMocks.removeDeadDaemonDrainSlot
@@ -112,6 +114,7 @@ describe('daemon-init: draining a stale daemon with live sessions', () => {
   async function firstLauncher(): Promise<Launcher> {
     const mod = await importFresh()
     await mod.initDaemonPtyProvider()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the harness records the launcher createOutOfProcessLauncher built, whose signature Launcher narrows.
     return spawnerInstances.at(-1)!.launcher as Launcher
   }
 
@@ -134,6 +137,10 @@ describe('daemon-init: draining a stale daemon with live sessions', () => {
     )
     expect(killStaleDaemonMock).not.toHaveBeenCalled()
     expect(trackDaemonReplacedMock).not.toHaveBeenCalled()
+    // An interrupted drain is undone before the incumbent's record is read for this one.
+    expect(drainMocks.recoverUncommittedDaemonDrains.mock.invocationCallOrder[0]).toBeLessThan(
+      drainMocks.prepareDaemonDrain.mock.invocationCallOrder[0]
+    )
     expect(forkMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.arrayContaining(['--handed-over-endpoint', '64769:1234']),

@@ -71,3 +71,5 @@ It is the one sanctioned exception to "only replace an entry proven dead", and i
   would strand every session left on a daemon drained beneath it.
 - **Undo while nothing changed.** If the fresh daemon never takes the name, the launcher puts the
   PID record back and removes the drain names, but only while the incumbent still holds the name.
+  A launch killed mid-drain leaves a slot aliasing the canonical inode: every launch undoes such a
+  slot first, and discovery never registers a name aliasing one it already has.

@@ -7,7 +7,7 @@ import { PROTOCOL_VERSION } from './daemon-protocol-version'
 
 // Only what routing a spawn touches: spawning, and the inventory that settles ownership.
 function createAdapter(label: string, sessions: string[] = [], draining = false): DaemonPtyAdapter {
-  return {
+  const double = {
     protocolVersion: PROTOCOL_VERSION,
     draining,
     spawn: vi.fn(async (opts: PtySpawnOptions): Promise<PtySpawnResult> => {
@@ -18,7 +18,9 @@ function createAdapter(label: string, sessions: string[] = [], draining = false)
     listProcesses: vi.fn(async () => sessions.map((id) => ({ id, cwd: '', title: label }))),
     onData: vi.fn(() => () => {}),
     onExit: vi.fn(() => () => {})
-  } as unknown as DaemonPtyAdapter
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a partial double; the spawn routing under test touches only the members stubbed here.
+  return double as unknown as DaemonPtyAdapter
 }
 
 describe('DaemonPtyRouter with a drained daemon', () => {
