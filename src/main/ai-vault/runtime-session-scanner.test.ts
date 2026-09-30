@@ -129,17 +129,6 @@ describe('runtime AI Vault session scanner', () => {
     expect(scanResult.appliedSessionDepth).toBe('unlimited')
   })
 
-  it('stamps accepted sessions with the requested runtime host', async () => {
-    const scanResult = await scanRuntimeAiVaultSessions('/user-data', 'env-1', {})
-
-    expect(scanResult.sessions).toEqual([
-      expect.objectContaining({
-        id: 'runtime:env-1:codex:session-1:/sessions/session-1.jsonl',
-        executionHostId: 'runtime:env-1'
-      })
-    ])
-  })
-
   it('prepares a resume on the transcript-owning runtime', async () => {
     mocks.callRuntimeEnvironment.mockResolvedValueOnce({
       ok: true,

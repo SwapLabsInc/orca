@@ -153,6 +153,13 @@ describe('per-job path classification', () => {
     expectClassification(['src/main/codex/codex-index-heal-binary-contract.test.ts'], {
       codex_index_heal_contract: true
     })
+    for (const file of ['src/main/agent-trust-presets.ts', 'src/main/codex/config-toml-trust.ts']) {
+      expectClassification([file], {
+        codex_index_heal_contract: true,
+        package: true,
+        package_windows: true
+      })
+    }
     // Keep the real-binary gate live when a transport or launch dependency changes.
     for (const file of [
       'src/main/codex/codex-app-server-capability-signal.ts',
@@ -187,7 +194,7 @@ describe('per-job path classification', () => {
   })
 
   it('runs native package jobs only for the platform that ships the changed native', () => {
-    expectClassification(['native/windows-cli-launcher/OrcaCliLauncher.cs'], {
+    expectClassification(['native/windows-cli-launcher/src/main.rs'], {
       package_windows: true
     })
     expectClassification(['native/computer-use-linux/runtime.py'], {
