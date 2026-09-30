@@ -8,3 +8,4 @@ src/main/runtime/orca-runtime-resolve-worktree-removal-target.ts 1 attributes
 src/main/runtime/runtime-worktree-agent-startup.ts 3 attributes
 src/main/runtime/orca-runtime-get-agent-session-execution-namespace.ts 1 resume
 src/main/runtime/orca-runtime-resolve-mobile-session-terminal-command.ts 1 mobile-followup
+src/main/runtime/host-pane-agent-resume.ts 1 resume

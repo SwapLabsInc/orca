@@ -9,7 +9,7 @@ import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-
 import type { AgentStatusIpcPayload } from '../../shared/agent-status-types'
 import type { StructuredAgentSessionStatusSink } from '../native-chat/agent-session-wire/structured-agent-session-status-feed'
 import type { ObservedAgentStatusPaneIdentity } from '../ipc/agent-status-ipc-boundary'
-import type { AgentHookAuthorityAttestation } from '../agent-hooks/server'
+import type { AgentHookAuthorityAttestation, TerminalLossAgentResume } from '../agent-hooks/server'
 import type {
   AiVaultPrepareSessionResumeArgs,
   AiVaultPrepareSessionResumeResult
@@ -83,6 +83,11 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
       }) => AgentHookAuthorityAttestation | null
       retireAgentHookCompatibilityAuthority?: (paneKey: string) => void
       reconcileAgentStatusForEndedProcess?: (paneKeys: Iterable<string>) => void
+      /** The agent session the host store lets a re-created pane resume after its terminal was lost. */
+      selectTerminalLossAgentResume?: (
+        paneKey: string,
+        isPaneTerminalLive: (paneKey: string) => boolean
+      ) => TerminalLossAgentResume | null
       canRecoverPersistentLocalPtys?: () => boolean
       // Why: the device registry lives on the RPC server, which is constructed with this runtime;
       // a closure defers the lookup past that ordering instead of inverting ownership.
@@ -233,6 +238,7 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
     this.retireAgentHookCompatibilityAuthorityFn =
       deps?.retireAgentHookCompatibilityAuthority ?? null
     this.reconcileAgentStatusForEndedProcessFn = deps?.reconcileAgentStatusForEndedProcess ?? null
+    this.selectTerminalLossAgentResumeFn = deps?.selectTerminalLossAgentResume ?? null
     this.canRecoverPersistentLocalPtysFn = deps?.canRecoverPersistentLocalPtys ?? (() => true)
     this.getPairedDeviceNameFn = deps?.getPairedDeviceName ?? (() => null)
     // Why: configure the shared AiVault scan cache from a serve-mode-reachable
