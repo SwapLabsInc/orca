@@ -198,6 +198,15 @@ function sigtermDaemons(userDataDir: string): void {
   }
 }
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Serve and its daemon both die, as a host reboot takes them. */
 async function rebootHost(journey: Journey): Promise<void> {
   await journey.host.restartServeProcess({
@@ -210,11 +219,13 @@ async function rebootHost(journey: Journey): Promise<void> {
   forwardElectronProcessLogs(journey.host.app, journey.testInfo)
 }
 
-/** Nudges each client the way the OS does when a host comes back, until `done` holds. */
+/** Nudges each client the way the OS does when a host comes back, until `done` holds. Without
+ *  `nudge` it only waits: a daemon dying under a running host raises no network event. */
 async function nudgeClientsUntil(
   journey: Journey,
   done: () => boolean | Promise<boolean>,
-  timeoutMs = RESUME_TIMEOUT_MS
+  timeoutMs = RESUME_TIMEOUT_MS,
+  nudge = true
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!(await done())) {
@@ -241,7 +252,7 @@ async function nudgeClientsUntil(
         })}`
       )
     }
-    for (const client of journey.clients) {
+    for (const client of nudge ? journey.clients : []) {
       await client.page
         .evaluate((environmentId) => {
           void window.__store?.getState().refreshRuntimeEnvironmentStatus(environmentId)
@@ -351,9 +362,15 @@ function recordEvidence(testInfo: TestInfo, journey: Journey, extra: unknown): v
 async function expectResumedInPlace(
   journey: Journey,
   launch: FakeClaudeLaunch,
-  testInfo: TestInfo
+  testInfo: TestInfo,
+  options: { nudgeClients?: boolean } = {}
 ): Promise<void> {
-  await nudgeClientsUntil(journey, () => resumesOf(journey, launch.paneKey).length > 0)
+  await nudgeClientsUntil(
+    journey,
+    () => resumesOf(journey, launch.paneKey).length > 0,
+    RESUME_TIMEOUT_MS,
+    options.nudgeClients ?? true
+  )
   const [resumed] = resumesOf(journey, launch.paneKey)
   expect(resumed!.argv.slice(-2)).toEqual(['--resume', launch.sessionId])
   expect(resumed!.sessionId).toBe(launch.sessionId)
@@ -429,7 +446,7 @@ test.describe('paired host resumes an agent after losing its terminal', () => {
   })
 
   for (const mode of ['idle', 'working'] as const) {
-    test(`a replaced daemon under a running host resumes a ${mode} Claude`, async ({
+    test(`a replaced daemon under a running host resumes a ${mode} Claude on the pane's next activation`, async ({
       testRepoPath
     }, testInfo) => {
       test.setTimeout(JOURNEY_TIMEOUT_MS)
@@ -439,7 +456,12 @@ test.describe('paired host resumes an agent after losing its terminal', () => {
         const daemonPids = readDaemonPidFiles(journey.host.userDataDir)
         expect(daemonPids.length).toBeGreaterThan(0)
         sigtermDaemons(journey.host.userDataDir)
-        await expectResumedInPlace(journey, launch, testInfo)
+        await expect.poll(() => daemonPids.some(isProcessAlive), { timeout: 30_000 }).toBe(false)
+        // Why: the host does not tell an idle client that its terminal died with the daemon, and
+        // no network event fires, so the pane comes back when the user next selects it. A client
+        // may still re-activate on its own first; nothing guarantees it (see the PR's follow-up).
+        await activateHostPane(journey, journey.clients[0]!, launch.paneKey)
+        await expectResumedInPlace(journey, launch, testInfo, { nudgeClients: false })
         expect(journey.agent.launches()).toHaveLength(2)
         expect(readDaemonPidFiles(journey.host.userDataDir)).not.toEqual(daemonPids)
       } finally {
