@@ -189,7 +189,9 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       // stable pane, so the rebind cannot land on a legacy key.
       this.observations.rebind(paneKey)
     }
-    const previousStatus = this.state.lastStatusByPaneKey.get(paneKey)
+    const storedStatus = this.state.lastStatusByPaneKey.get(paneKey)
+    // Why: a retained resume identity is what a retired pane leaves behind, not a row to complete.
+    const previousStatus = storedStatus?.providerSessionOnly ? undefined : storedStatus
     let acceptedCompactCompletion = false
     if (hookEventName === 'PreCompact' || hookEventName === 'PostCompact') {
       // Why: PreCompact is never registered and proves nothing (an aborted compact emits it alone);

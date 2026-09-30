@@ -440,7 +440,8 @@ call it.
   one agent-status store; OSC, hooks, and structured sessions write it, while
   desktop, `worktree ps`, and mobile only project it. Dismissal, certified PTY
   exit, and provider-generation replacement remove the same row everywhere;
-  transport loss alone removes nothing.
+  transport loss alone removes nothing. Removing a row keeps its resume
+  identity (see "Resume identity after terminal loss").
 - **Failure source:** the deleted runtime row store duplicated OSC observations,
   keyed them by a different terminal identity, and outlived a dismissal from the
   hook store. Relay replay could also make old evidence look fresh when readers
@@ -486,6 +487,33 @@ call it.
   the retained store restored.
 - Live: the parity check from #19217 (working, done, close, reload) repeated
   against the merged store, with both surfaces read from the one row.
+
+## Resume identity after terminal loss
+
+A paired host re-creates a pane after a reboot, a daemon replacement or any
+other loss of its terminal, so losing the terminal is not the agent ending.
+PTY teardown (`clearPaneState`, a certified exit through
+`reconcileEndedProcessForPaneKeys`, the boot sweep for a PTY that died while
+Orca was down) removes the live row and every latch, but keeps the row's
+provider session as a hidden `providerSessionOnly` remnant marked
+`resumeAfterTerminalLoss`. The mark is persisted and hydrated with the row.
+
+An identity kept after the agent itself ended never carries the mark: the
+confirmed-shell route and a Claude `SessionEnd` whose reason is
+`prompt_input_exit` or `logout` keep a plain remnant, for a manual resume only.
+`SessionEnd` with `other` is how a signalled agent reports, so it changes
+nothing; `/clear` needs nothing because its `SessionStart` replaces the
+session. A plain remnant stays plain through later teardowns, and closing the
+tab still drops everything.
+
+When the host materializes a pane (`session.tabs.activate` on a pane whose
+session is gone) and no launch was resolved for it, it reads the one store
+through `selectTerminalLossResume` and resumes that session with its own agent
+settings. Only a local pane qualifies (a relay can outlive its client), and
+one conversation belongs to one pane: a pane whose terminal still runs it
+keeps it, and otherwise the pane that reported it last does. A remnant's
+status fields are placeholders, so the next event in the pane never inherits
+its agent type, permission hold, verdict, compact ownership or terminal.
 
 ## Retired OMP pane recovery
 
