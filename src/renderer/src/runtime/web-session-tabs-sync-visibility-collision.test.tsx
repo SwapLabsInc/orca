@@ -365,7 +365,11 @@ describe('useWebSessionTabsSync visibility collision recovery', () => {
 
     expect(mocks.recoverSnapshot).not.toHaveBeenCalled()
     expect(useAppStore.getState().tabsByWorktree).toBe(tabsByWorktree)
-    expect(listener).toHaveBeenCalledWith({ surfacePresent: true, terminalHandle: 'terminal-a' })
+    expect(listener).toHaveBeenCalledWith({
+      surfacePresent: true,
+      terminalHandle: 'terminal-a',
+      incarnationId: null
+    })
     unsubscribe()
     hook.unmount()
   })

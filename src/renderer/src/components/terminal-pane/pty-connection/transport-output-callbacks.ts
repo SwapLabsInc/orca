@@ -1,3 +1,4 @@
+import { POST_REPLAY_MODE_RESET } from '../../../../../shared/terminal-mode-reset-profiles'
 import { createTerminalStartupTiming } from '../terminal-startup-timing'
 import type { PtyReplayDataMeta } from '../pty-transport'
 import type { PtyTransportRecoveryState } from '../pty-transport-types'
@@ -56,6 +57,12 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
         onStreamRecovered: (): void => {
           if (isCurrent()) {
             session.markHiddenOutputRestoreNeeded()
+          }
+        },
+        onProcessReplaced: (): void => {
+          if (isCurrent()) {
+            // Why: same reset a cold restore writes; the replacement's own bytes follow it.
+            session.writeInputModeGround(POST_REPLAY_MODE_RESET)
           }
         },
         onData: (data: string, meta?: PtyDataMeta): void => {
