@@ -36,7 +36,7 @@ export function useTitlebarAppVersion(): TitlebarAppVersion | null {
           setAppVersion(parseTitlebarAppVersion(version))
         }
       })
-      // Why: without a version the label stays "Orca (SwapLabs)" rather than failing the titlebar.
+      // Why: without a version the label stays "Forca (SwapLabs)" rather than failing the titlebar.
       .catch(() => {})
     return () => {
       cancelled = true

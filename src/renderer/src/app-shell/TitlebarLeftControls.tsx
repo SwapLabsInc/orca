@@ -33,7 +33,7 @@ export function TitlebarLeftControls({ layout }: { layout: AppChromeLayout }): R
   const historyBackShortcutLabel = useShortcutLabel('worktree.history.back')
   const historyForwardShortcutLabel = useShortcutLabel('worktree.history.forward')
   const appVersion = useTitlebarAppVersion()
-  const appName = translate('auto.App.5096cbbc86', 'Orca{{value0}} (SwapLabs{{value1}})', {
+  const appName = translate('auto.App.5096cbbc86', 'Forca{{value0}} (SwapLabs{{value1}})', {
     value0: appVersion ? ` ${appVersion.upstream}` : '',
     value1: appVersion?.revision ? `/${appVersion.revision}` : ''
   })
