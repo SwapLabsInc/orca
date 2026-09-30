@@ -137,7 +137,9 @@ describe('reconcileEndedProcessForPaneKeys', () => {
     }
   })
 
-  it('takes the resume identity too on a certified PTY exit, where no pane is left to resume into', async () => {
+  it('keeps a dismissed identity through a certified PTY exit without making it resumable', async () => {
+    // A paired host re-creates a pane whose PTY ended, so the identity outlives the PTY; the agent
+    // had already ended, so a re-created pane must not bring it back.
     const server = await startServer()
     try {
       resumableClaudeRow(server)
@@ -145,7 +147,11 @@ describe('reconcileEndedProcessForPaneKeys', () => {
 
       expect(server.reconcileEndedProcessForPaneKeys([PANE])).toBe(1)
 
-      expect(paneState(server)).toBe('missing')
+      expect(server.getStatusSnapshotForPane(PANE)[0]).toMatchObject({
+        providerSessionOnly: true,
+        providerSession: { id: 'resume-me' }
+      })
+      expect(server.selectTerminalLossResume(PANE, () => false)).toBeNull()
     } finally {
       server.stop()
     }

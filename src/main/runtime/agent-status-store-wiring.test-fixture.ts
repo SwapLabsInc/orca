@@ -28,6 +28,7 @@ export function makeAgentStatusStoreWiring(): {
     reconcileAgentStatusForEndedProcess: (
       paneKeys: Parameters<AgentHookServer['reconcileEndedProcessForPaneKeys']>[0]
     ) => void
+    selectTerminalLossAgentResume: AgentHookServer['selectTerminalLossResume']
   }
   /** Call once the runtime exists; returns the republish teardown. */
   attach: (runtime: WiredRuntime) => () => void
@@ -44,7 +45,9 @@ export function makeAgentStatusStoreWiring(): {
         statusStore.getStatusSnapshotForPane(paneKey),
       reconcileAgentStatusForEndedProcess: (paneKeys) => {
         statusStore.reconcileEndedProcessForPaneKeys(paneKeys)
-      }
+      },
+      selectTerminalLossAgentResume: (paneKey, isPaneTerminalLive) =>
+        statusStore.selectTerminalLossResume(paneKey, isPaneTerminalLive)
     },
     attach: (runtime) => installHookStatusSessionTabsRepublish(statusStore, () => runtime)
   }

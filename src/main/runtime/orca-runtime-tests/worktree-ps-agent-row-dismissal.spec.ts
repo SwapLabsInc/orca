@@ -237,7 +237,11 @@ describe('worktree ps follows a dismissal out of the agent-status store', () => 
       expect(
         events[2]?.tabs.every((tab) => tab.type !== 'terminal' || tab.agentStatus === undefined)
       ).toBe(true)
-      expect(statusWiring.statusStore.getStatusSnapshot()).toEqual([])
+      // The dismissed identity outlives the PTY, detached from the terminal that ended.
+      expect(statusWiring.statusStore.getStatusSnapshot()).toEqual([
+        expect.objectContaining({ paneKey: remintedPaneKey, providerSessionOnly: true })
+      ])
+      expect(statusWiring.statusStore.getStatusSnapshot()[0]).not.toHaveProperty('terminalHandle')
     } finally {
       uninstall()
       unsubscribe()

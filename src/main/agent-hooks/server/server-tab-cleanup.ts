@@ -1,6 +1,7 @@
 import { clearPaneCacheState } from '../../../shared/agent-hook-listener/listener-state'
 import { paneCacheKeyMatchesTab } from './server-status-identity'
 import { AgentHookServerCleanup } from './server-cleanup'
+import type { RetainedIdentityCause } from './server-retained-identity'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 
 export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
@@ -100,7 +101,9 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
     }
   }
 
-  clearPaneState(paneKey: string, options?: { emitStatusRowMutation?: boolean }): void {
+  /** PTY teardown: every live claim of the pane goes. Its resume identity stays, resumable unless
+   *  the caller knows the agent ended before its terminal did. */
+  clearPaneState(paneKey: string, options?: { retainIdentity?: RetainedIdentityCause }): void {
     const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
     const paneKeys = new Set([paneKey, resolvedPaneKey])
     // Why: only persist when a status entry was actually evicted; dropping prompt/tool caches doesn't change the file.
@@ -108,6 +111,10 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
       | EnrichedAgentHookEventPayload
       | undefined
     const hadStatus = previousStatus !== undefined
+    const retained = this.toRetainedProviderSessionRow(
+      previousStatus,
+      options?.retainIdentity ?? 'terminal-loss'
+    )
     this.clearAssistantMessageRetry(resolvedPaneKey)
     this.clearTranscriptPoll(resolvedPaneKey)
     clearPaneCacheState(this.state, resolvedPaneKey)
@@ -136,9 +143,10 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
     if (clearedAlias) {
       this.notifyPaneKeyAliasPersistenceListener()
     }
-    if (options?.emitStatusRowMutation !== false) {
-      this.commitStatusRowMutation(previousStatus, undefined)
+    if (retained) {
+      this.admitRetainedIdentity(retained)
     }
+    this.commitStatusRowMutation(previousStatus, retained ?? undefined)
     if (hadStatus || authorityChanged) {
       this.runtimeObservedStatusPaneKeys.delete(resolvedPaneKey)
       this.scheduleStatusPersist()

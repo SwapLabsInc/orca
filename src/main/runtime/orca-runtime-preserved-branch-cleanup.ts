@@ -12,7 +12,7 @@ import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-
 import type { AgentStatusIpcPayload } from '../../shared/agent-status-types'
 import type { StructuredAgentSessionStatusSink } from '../native-chat/agent-session-wire/structured-agent-session-status-feed'
 import type { ObservedAgentStatusPaneIdentity } from '../ipc/agent-status-ipc-boundary'
-import type { AgentHookAuthorityAttestation } from '../agent-hooks/server'
+import type { AgentHookAuthorityAttestation, TerminalLossAgentResume } from '../agent-hooks/server'
 import type { RuntimeDesktopWindowStatus } from '../../shared/runtime-types'
 import type {
   AiVaultPrepareSessionResumeArgs,
@@ -92,6 +92,13 @@ export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTermin
 
   protected readonly reconcileAgentStatusForEndedProcessFn:
     | ((paneKeys: Iterable<string>) => void)
+    | null
+
+  protected readonly selectTerminalLossAgentResumeFn:
+    | ((
+        paneKey: string,
+        isPaneTerminalLive: (paneKey: string) => boolean
+      ) => TerminalLossAgentResume | null)
     | null
 
   protected readonly canRecoverPersistentLocalPtysFn: () => boolean

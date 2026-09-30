@@ -28,6 +28,12 @@ export type EnrichedAgentHookEventPayload = AgentHookEventPayload & {
   restoredUnconfirmed?: true
   /** User-hidden resume identity retained solely for destructive liveness checks. */
   retainedForLiveness?: true
+  /** A retained identity whose terminal was lost while its agent still owned the pane, so the host
+   *  may resume it when it re-creates that pane. Absent on an identity kept after the agent ended. */
+  resumeAfterTerminalLoss?: true
+  /** The relay that produced this row reports a session the user ended, so its row can say whether
+   *  the agent is still owed a resume. Absent on local rows and rows from older relays. */
+  reportsUserEndedSessions?: true
 }
 
 // `claudeRunningNonAgentTask` is persisted on purpose: it is the one child-work fact the row's
@@ -139,6 +145,16 @@ export type AgentPromptSentDedupeEntry = {
 export type NormalizedLocalHook = {
   event: AgentHookEventPayload | null
   onAccepted?: () => void
+  /** A hook with no status row that says the user ended the pane's agent session. */
+  userEndedSession?: UserEndedAgentSession
+}
+
+export type UserEndedAgentSession = {
+  paneKey: string
+  sessionId: string
+  launchToken?: string
+  /** The relay route it arrived on; absent for the local hook server. */
+  connectionId?: string
 }
 
 export type ServerStatusLineListener = ((event: ClaudeStatusLineRateLimits) => void) | null

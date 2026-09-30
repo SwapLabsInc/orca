@@ -237,6 +237,8 @@ async function startOrcadRuntime(
     },
     reconcileAgentStatusForEndedProcess: (paneKeys) =>
       agentHookServer.reconcileEndedProcessForPaneKeys(paneKeys),
+    selectTerminalLossAgentResume: (paneKey, isPaneTerminalLive) =>
+      agentHookServer.selectTerminalLossResume(paneKey, isPaneTerminalLive),
     buildAgentHookPtyEnv: () =>
       isAgentStatusHooksEnabled(profileStore.getSettings()) ? agentHookServer.buildPtyEnv() : {},
     // Why the dedupe here and not in the instance: `apply` closes and reconstructs
