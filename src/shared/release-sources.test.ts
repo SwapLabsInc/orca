@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  ADHOC_PRERELEASE_IDENTIFIER,
-  DAILY_PRERELEASE_IDENTIFIER,
-  HOURLY_PRERELEASE_IDENTIFIER
-} from './release-channel'
+import { RELEASE_CHANNELS, hasDedicatedReleaseRepo } from './release-channel'
 import type * as RegistryModule from './release-sources.js'
 import { setReleaseSourcesLiteralForTest } from './release-sources.fixture'
 import {
@@ -106,12 +102,11 @@ describe('parseReleaseSources', () => {
   })
 
   it('reserves every dev-channel identifier the channel table defines', () => {
-    for (const identifier of [
-      HOURLY_PRERELEASE_IDENTIFIER,
-      DAILY_PRERELEASE_IDENTIFIER,
-      ADHOC_PRERELEASE_IDENTIFIER
-    ]) {
-      expect(RESERVED_PRERELEASE_IDENTIFIERS).toContain(identifier)
+    // A dev channel stamps its versions with its own name: `1.4.0-hourly.<stamp>`.
+    const devChannels = RELEASE_CHANNELS.filter(hasDedicatedReleaseRepo)
+    expect(devChannels.length).toBeGreaterThan(0)
+    for (const channel of devChannels) {
+      expect(RESERVED_PRERELEASE_IDENTIFIERS).toContain(channel)
     }
   })
 })
