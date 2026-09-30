@@ -270,6 +270,30 @@ describe('resuming an agent whose terminal was lost', () => {
     }
   })
 
+  it('resumes a WSL relay row, which runs on this host', async () => {
+    const server = await startServer()
+    try {
+      server.ingestRemote(
+        {
+          paneKey: PANE,
+          tabId: 'tab-1',
+          source: 'claude',
+          hookEventName: 'Stop',
+          providerSession: { key: 'session_id', id: SESSION },
+          payload: { state: 'done', prompt: 'ship it', agentType: 'claude' }
+        },
+        'wsl:Ubuntu'
+      )
+
+      expect(server.selectTerminalLossResume(PANE, notLive)).toEqual({
+        agent: 'claude',
+        providerSession: { key: 'session_id', id: SESSION }
+      })
+    } finally {
+      server.stop()
+    }
+  })
+
   it('does not read a new agent in a pane whose agent was lost as that agent', async () => {
     const server = await startServer()
     try {

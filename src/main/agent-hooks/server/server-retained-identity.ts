@@ -6,6 +6,7 @@ import {
   type ResumableTuiAgent
 } from '../../../shared/agent-session-resume'
 import type { EnrichedAgentHookEventPayload } from './server-types'
+import { isWslHookRelayConnectionId } from '../../../shared/wsl-hook-relay-contract'
 
 /** Why a pane's live row gave way to a retained identity. */
 export type RetainedIdentityCause = 'agent-ended' | 'terminal-loss'
@@ -39,7 +40,9 @@ export function selectTerminalLossAgentResume(
 ): TerminalLossAgentResume | null {
   const candidates = [...rows]
   const row = candidates.find((candidate) => candidate.paneKey === paneKey)
-  if (!row || row.connectionId !== null || row.structuredHost || !isResumableIdentityRow(row)) {
+  // Why: a WSL relay row runs on this host, so only a genuinely remote (SSH) route is excluded.
+  const remote = row?.connectionId != null && !isWslHookRelayConnectionId(row.connectionId)
+  if (!row || remote || row.structuredHost || !isResumableIdentityRow(row)) {
     return null
   }
   const agent = row.payload.agentType
