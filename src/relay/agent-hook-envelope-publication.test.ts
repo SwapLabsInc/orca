@@ -1,11 +1,18 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { RelayDispatcher, type RelayClientSinkOptions } from './dispatcher'
-import { publishAgentHookEnvelope } from './agent-hook-envelope-publication'
+import {
+  publishAgentHookEnvelope,
+  publishAgentHookUserEndedSession
+} from './agent-hook-envelope-publication'
 import {
   AGENT_HOOK_NOTIFICATION_METHOD,
+  AGENT_HOOK_USER_ENDED_SESSION_STATE,
   createShedSubagentsField
 } from '../shared/agent-hook-relay'
-import type { AgentHookRelayEnvelope } from '../shared/agent-hook-relay'
+import type {
+  AgentHookRelayEnvelope,
+  AgentHookRelayUserEndedSessionEnvelope
+} from '../shared/agent-hook-relay'
 import type { AgentSubagentSnapshot } from '../shared/agent-status-types'
 
 type BoundedClient = {
@@ -635,6 +642,64 @@ describe('publishAgentHookEnvelope redelivery', () => {
 
       vi.advanceTimersByTime(10_000)
       expect(decodeEnvelopes(primary)).toHaveLength(1)
+    } finally {
+      dispatcher.dispose()
+    }
+  })
+})
+
+describe('publishAgentHookUserEndedSession', () => {
+  const notice: AgentHookRelayUserEndedSessionEnvelope = {
+    source: 'claude',
+    paneKey: 'tab-1:4f1b0f4e-0000-4000-8000-000000000001',
+    connectionId: null,
+    hookEventName: 'SessionEnd',
+    userEndedSessionId: 'session-1',
+    reportsUserEndedSessions: true,
+    payload: { state: AGENT_HOOK_USER_ENDED_SESSION_STATE }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("supersedes the pane's waiting snapshot, which would otherwise land after it", () => {
+    const primary = makeBoundedClient(16384)
+    const dispatcher = new RelayDispatcher(primary.write, primary.options)
+    try {
+      saturateProducerQueue(dispatcher, primary)
+      const done = makeEnvelope({})
+      done.payload.state = 'done'
+      publishAgentHookEnvelope(dispatcher, done)
+
+      primary.blocked = false
+      primary.drain()
+      publishAgentHookUserEndedSession(dispatcher, notice)
+      vi.advanceTimersByTime(10_000)
+
+      expect(decodeEnvelopes(primary)).toEqual([expect.objectContaining(notice)])
+    } finally {
+      dispatcher.dispose()
+    }
+  })
+
+  it('is redelivered when the producer queue rejects it', () => {
+    const primary = makeBoundedClient(16384)
+    const dispatcher = new RelayDispatcher(primary.write, primary.options)
+    try {
+      saturateProducerQueue(dispatcher, primary)
+      publishAgentHookUserEndedSession(dispatcher, notice)
+      expect(decodeEnvelopes(primary)).toHaveLength(0)
+
+      primary.blocked = false
+      primary.drain()
+      vi.advanceTimersByTime(250)
+
+      expect(decodeEnvelopes(primary)).toEqual([expect.objectContaining(notice)])
     } finally {
       dispatcher.dispose()
     }

@@ -259,6 +259,7 @@ describe('resuming an agent whose terminal was lost', () => {
           source: 'claude',
           hookEventName: 'Stop',
           providerSession: { key: 'session_id', id: SESSION },
+          reportsUserEndedSessions: true,
           payload: { state: 'done', prompt: 'ship it', agentType: 'claude' }
         },
         'ssh-conn'
@@ -270,25 +271,31 @@ describe('resuming an agent whose terminal was lost', () => {
     }
   })
 
-  it('resumes a WSL relay row, which runs on this host', async () => {
+  it('resumes a WSL row only from a relay that reports user-ended sessions', async () => {
     const server = await startServer()
+    const stop = (reportsUserEndedSessions?: true) => ({
+      paneKey: PANE,
+      tabId: 'tab-1',
+      source: 'claude',
+      hookEventName: 'Stop',
+      providerSession: { key: 'session_id', id: SESSION },
+      ...(reportsUserEndedSessions ? { reportsUserEndedSessions } : {}),
+      payload: { state: 'done', prompt: 'ship it', agentType: 'claude' }
+    })
+    const resume = { agent: 'claude', providerSession: { key: 'session_id', id: SESSION } }
     try {
-      server.ingestRemote(
-        {
-          paneKey: PANE,
-          tabId: 'tab-1',
-          source: 'claude',
-          hookEventName: 'Stop',
-          providerSession: { key: 'session_id', id: SESSION },
-          payload: { state: 'done', prompt: 'ship it', agentType: 'claude' }
-        },
-        'wsl:Ubuntu'
-      )
+      server.ingestRemote(stop(), 'wsl:Ubuntu')
+      expect(server.selectTerminalLossResume(PANE, notLive)).toBeNull()
 
-      expect(server.selectTerminalLossResume(PANE, notLive)).toEqual({
-        agent: 'claude',
-        providerSession: { key: 'session_id', id: SESSION }
-      })
+      server.ingestRemote(stop(true), 'wsl:Ubuntu')
+      expect(server.selectTerminalLossResume(PANE, notLive)).toEqual(resume)
+
+      // The stamp is persisted with the row, so a host reboot still resumes it.
+      server.flushStatusPersistSync()
+      server.stop()
+      const restarted = await startServer()
+      expect(restarted.selectTerminalLossResume(PANE, notLive)).toEqual(resume)
+      restarted.stop()
     } finally {
       server.stop()
     }

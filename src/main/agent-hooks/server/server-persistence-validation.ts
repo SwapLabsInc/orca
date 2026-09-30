@@ -171,6 +171,7 @@ export function sanitizeHydratedEntry(
     retainedForLiveness: retainedForLiveness ? true : undefined,
     resumeAfterTerminalLoss:
       validRetainedIdentity && record.resumeAfterTerminalLoss === true ? true : undefined,
+    reportsUserEndedSessions: record.reportsUserEndedSessions === true ? true : undefined,
     payload,
     receivedAt,
     stateStartedAt,

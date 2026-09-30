@@ -23,7 +23,10 @@ import {
   AGENT_HOOK_INSTALL_PLUGINS_METHOD,
   AGENT_HOOK_REQUEST_REPLAY_METHOD
 } from '../shared/agent-hook-relay'
-import { publishAgentHookEnvelope } from './agent-hook-envelope-publication'
+import {
+  publishAgentHookEnvelope,
+  publishAgentHookUserEndedSession
+} from './agent-hook-envelope-publication'
 import {
   sanitizeWslHookInstanceKey,
   WSL_HOOK_RELAY_INSTANCE_ENV,
@@ -68,7 +71,9 @@ async function main(): Promise<void> {
     endpointDir: wslHookRelayEndpointDir(homedir(), instanceKey),
     token,
     preferredPort: windowsPort,
-    forward: (envelope) => publishAgentHookEnvelope(dispatcher, envelope)
+    forward: (envelope) => publishAgentHookEnvelope(dispatcher, envelope),
+    // Why: the host resumes a WSL pane after its terminal is lost, so it must learn which agents the user quit.
+    forwardUserEndedSession: (envelope) => publishAgentHookUserEndedSession(dispatcher, envelope)
   })
   new PreflightHandler(dispatcher)
 

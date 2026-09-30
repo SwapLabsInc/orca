@@ -3,7 +3,7 @@ import {
   selectTerminalLossAgentResume,
   type TerminalLossAgentResume
 } from './server-retained-identity'
-import type { EnrichedAgentHookEventPayload, NormalizedLocalHook } from './server-types'
+import type { EnrichedAgentHookEventPayload, UserEndedAgentSession } from './server-types'
 import { hashLaunchToken } from './server-status-identity'
 
 export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
@@ -23,14 +23,15 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
 
   /** The agent reported that the user ended its session: the pane keeps the identity for a manual
    *  resume, but a later loss of its terminal must not bring the agent back. */
-  protected retireUserEndedSession(
-    ended: NonNullable<NormalizedLocalHook['userEndedSession']>,
-    isReplay: boolean
-  ): void {
+  protected retireUserEndedSession(ended: UserEndedAgentSession, isReplay: boolean): void {
     const paneKey = this.resolvePaneKeyAlias(ended.paneKey)
     const row = this.state.lastStatusByPaneKey.get(paneKey)
-    // Why: a nested CLI inherits the pane key, so only the session the row names may retire it.
-    if (row?.providerSession?.id !== ended.sessionId) {
+    // Why: a nested CLI inherits the pane key, so only the session the row names may retire it,
+    // and only the route that produced the row may speak for it.
+    if (
+      row?.providerSession?.id !== ended.sessionId ||
+      (row.connectionId ?? null) !== (ended.connectionId ?? null)
+    ) {
       return
     }
     // Why: a resume keeps the session id under a new launch token, so a late SessionEnd from the

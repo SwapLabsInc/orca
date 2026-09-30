@@ -2,7 +2,8 @@ import {
   AGENT_HOOK_NOTIFICATION_METHOD,
   AGENT_HOOK_SHED_FIELDS_KEY,
   createShedSubagentsField,
-  type AgentHookRelayEnvelope
+  type AgentHookRelayEnvelope,
+  type AgentHookRelayUserEndedSessionEnvelope
 } from '../shared/agent-hook-relay'
 import type { RelayDispatcher } from './dispatcher'
 
@@ -221,6 +222,25 @@ export function publishAgentHookEnvelope(
       field === 'subagents' ? createShedSubagentsField(candidate.payload.subagents ?? []) : field
     delete candidate.payload[field]
     shedFields.push(shedField)
+  }
+}
+
+/** Publishes a user-ended-session notice through the pane's latest-wins redelivery slot, so a
+ *  status snapshot still waiting there can never reach the host after it. */
+export function publishAgentHookUserEndedSession(
+  dispatcher: RelayDispatcher,
+  envelope: AgentHookRelayUserEndedSessionEnvelope
+): void {
+  const clientIds = dispatcher.activeClientIds()
+  if (clientIds.length === 0) {
+    return
+  }
+  const params: Record<string, unknown> = { ...envelope }
+  const rejected = publishToClients(dispatcher, params, clientIds)
+  if (rejected.length === 0) {
+    clearPendingEnvelope(dispatcher, envelope.paneKey)
+  } else {
+    setPendingEnvelope(dispatcher, envelope.paneKey, params, rejected)
   }
 }
 

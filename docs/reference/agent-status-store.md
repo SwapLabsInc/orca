@@ -509,7 +509,11 @@ tab still drops everything.
 When the host materializes a pane (`session.tabs.activate` on a pane whose
 session is gone) and no launch was resolved for it, it reads the one store
 through `selectTerminalLossResume` and resumes that session with its own agent
-settings. Only a local pane qualifies (a relay can outlive its client), and
+settings. Only a local pane qualifies (an SSH relay can outlive its client).
+A WSL pane qualifies when its row carries `reportsUserEndedSessions`, which a
+WSL relay stamps on every envelope once it forwards `SessionEnd` as a
+`userEndedSessionId` notice (a payload state no host admits, so an older host
+drops it); a row from an older relay cannot prove the user kept the agent. And
 one conversation belongs to one pane: a pane whose terminal still runs it
 keeps it, and otherwise the pane that reported it last does. A remnant's
 status fields are placeholders, so the next event in the pane never inherits

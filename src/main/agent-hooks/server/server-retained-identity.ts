@@ -40,9 +40,12 @@ export function selectTerminalLossAgentResume(
 ): TerminalLossAgentResume | null {
   const candidates = [...rows]
   const row = candidates.find((candidate) => candidate.paneKey === paneKey)
-  // Why: a WSL relay row runs on this host, so only a genuinely remote (SSH) route is excluded.
-  const remote = row?.connectionId != null && !isWslHookRelayConnectionId(row.connectionId)
-  if (!row || remote || row.structuredHost || !isResumableIdentityRow(row)) {
+  // Why: an SSH relay can outlive its client. A WSL relay runs on this host, but only one that
+  // reports user-ended sessions can prove its agent was not quit.
+  const route = row?.connectionId
+  const resumableRoute =
+    route == null || (isWslHookRelayConnectionId(route) && row?.reportsUserEndedSessions === true)
+  if (!row || !resumableRoute || row.structuredHost || !isResumableIdentityRow(row)) {
     return null
   }
   const agent = row.payload.agentType
