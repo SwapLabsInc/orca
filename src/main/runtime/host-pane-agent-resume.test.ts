@@ -96,6 +96,18 @@ describe('HostPaneAgentResumes', () => {
     expect(await resumes.prepare(inputs())).not.toBeNull()
   })
 
+  it('claims Pi sessions by their transcript, so two sharing an id both resume', async () => {
+    const resumes = new HostPaneAgentResumes()
+    const pi = (transcriptPath: string): TerminalLossAgentResume => ({
+      agent: 'pi',
+      providerSession: { key: 'session_id', id: 'shared-id', transcriptPath }
+    })
+    const first = await resumes.prepare(inputs({ selectResume: () => pi('/s/a.jsonl') }))
+    expect(first).not.toBeNull()
+    expect(await resumes.prepare(inputs({ selectResume: () => pi('/s/b.jsonl') }))).not.toBeNull()
+    expect(await resumes.prepare(inputs({ selectResume: () => pi('/s/a.jsonl') }))).toBeNull()
+  })
+
   it('shares one in-flight re-creation per pane and forgets it once settled', async () => {
     const resumes = new HostPaneAgentResumes()
     let settle!: () => void

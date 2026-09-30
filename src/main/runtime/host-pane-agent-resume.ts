@@ -6,6 +6,7 @@ import type {
 import { makePaneKey } from '../../shared/stable-pane-id'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import {
+  agentProviderSessionIdentityKey,
   agentProviderSessionsEqual,
   type AgentProviderSessionMetadata,
   type ResumableTuiAgent,
@@ -50,7 +51,7 @@ export type HostPaneAgentResumeInputs = {
 }
 
 function providerSessionKey(resume: TerminalLossAgentResume): string {
-  return `${resume.agent}\0${resume.providerSession.key}\0${resume.providerSession.id}`
+  return agentProviderSessionIdentityKey(resume.agent, resume.providerSession)
 }
 
 /**

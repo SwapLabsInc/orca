@@ -4,6 +4,7 @@ import {
   type TerminalLossAgentResume
 } from './server-retained-identity'
 import type { EnrichedAgentHookEventPayload, NormalizedLocalHook } from './server-types'
+import { hashLaunchToken } from './server-status-identity'
 
 export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
   /** The agent session the execution host may resume when it re-creates `paneKey`'s terminal. */
@@ -30,6 +31,16 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     const row = this.state.lastStatusByPaneKey.get(paneKey)
     // Why: a nested CLI inherits the pane key, so only the session the row names may retire it.
     if (row?.providerSession?.id !== ended.sessionId) {
+      return
+    }
+    // Why: a resume keeps the session id under a new launch token, so a late SessionEnd from the
+    // previous process must not retire the one that replaced it.
+    const endedToken = ended.launchToken?.trim()
+    const rowToken = row.launchToken?.trim()
+    const rowTokenHash = rowToken
+      ? hashLaunchToken(rowToken)
+      : this.hydratedLaunchTokenHashByPaneKey.get(paneKey)
+    if (endedToken && rowTokenHash && hashLaunchToken(endedToken) !== rowTokenHash) {
       return
     }
     const disposition = this.getAgentStatusDisposition(paneKey, {

@@ -36,7 +36,8 @@ async function startServer(): Promise<AgentHookServer> {
 async function postClaude(
   server: AgentHookServer,
   payload: Record<string, unknown>,
-  paneKey = PANE
+  paneKey = PANE,
+  launchToken?: string
 ): Promise<void> {
   const env = server.buildPtyEnv()
   const tabId = paneKey.split(':')[0]
@@ -49,7 +50,7 @@ async function postClaude(
     body: JSON.stringify(
       buildBody(
         { session_id: SESSION, transcript_path: TRANSCRIPT, ...payload },
-        { paneKey, tabId }
+        { paneKey, tabId, ...(launchToken ? { launchToken } : {}) }
       )
     )
   })
@@ -156,6 +157,44 @@ describe('resuming an agent whose terminal was lost', () => {
       const restarted = await startServer()
       expect(restarted.selectTerminalLossResume(PANE, notLive)).toBeNull()
       restarted.stop()
+    } finally {
+      server.stop()
+    }
+  })
+
+  it('ignores a late SessionEnd from the launch a resume replaced', async () => {
+    const server = await startServer()
+    try {
+      const session = { session_id: SESSION }
+      await postClaude(
+        server,
+        { hook_event_name: 'SessionStart', source: 'startup', ...session },
+        PANE,
+        'launch-old'
+      )
+      await postClaude(
+        server,
+        { hook_event_name: 'SessionStart', source: 'resume', ...session },
+        PANE,
+        'launch-new'
+      )
+      await postClaude(server, { hook_event_name: 'Stop', ...session }, PANE, 'launch-new')
+      await postClaude(
+        server,
+        { hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' },
+        PANE,
+        'launch-old'
+      )
+
+      expect(server.selectTerminalLossResume(PANE, notLive)).toEqual(RESUME)
+
+      await postClaude(
+        server,
+        { hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' },
+        PANE,
+        'launch-new'
+      )
+      expect(server.selectTerminalLossResume(PANE, notLive)).toBeNull()
     } finally {
       server.stop()
     }
