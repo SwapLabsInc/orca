@@ -41,11 +41,9 @@ export type HostPaneAgentResumeInputs = {
   selectResume: () => TerminalLossAgentResume | null
   getSettings: () => AgentStartupSettings & { disabledTuiAgents?: readonly TuiAgent[] }
   resolveWorkspace: () => Promise<{
-    path: string
     connectionId: string | null
     platform: NodeJS.Platform
   }>
-  markWorkspaceTrusted: (agent: ResumableTuiAgent, workspacePath: string) => Promise<void>
   /** The pane still exists, is still bound to the lost session, and nothing re-created it yet. */
   isStillPending: () => boolean
 }
@@ -108,7 +106,6 @@ export class HostPaneAgentResumes {
       if (!plan) {
         return null
       }
-      await inputs.markWorkspaceTrusted(resume.agent, workspace.path)
       launch = {
         agent: resume.agent,
         providerSession: resume.providerSession,
@@ -155,11 +152,6 @@ export type HostPaneAgentResumeRuntime = {
   getHostPaneAgentResumes: () => HostPaneAgentResumes
   resolveTerminalWorkspaceLaunchScope: (selector: string) => Promise<TerminalWorkspaceLaunchScope>
   getAgentLaunchPlatformForWorkspace: (scope: TerminalWorkspaceLaunchScope) => NodeJS.Platform
-  markWorkspaceTrustedForAgent: (
-    agent: TuiAgent,
-    connectionId: string | null,
-    workspacePath: string
-  ) => Promise<void>
 }
 
 /** The resume launch for a pane whose terminal the host is re-creating, when its agent never ended. */
@@ -183,13 +175,10 @@ export function prepareHostPaneAgentResume(
     resolveWorkspace: async () => {
       const workspace = await runtime.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
       return {
-        path: workspace.path,
         connectionId: workspace.connectionId,
         platform: runtime.getAgentLaunchPlatformForWorkspace(workspace)
       }
     },
-    markWorkspaceTrusted: (agent, workspacePath) =>
-      runtime.markWorkspaceTrustedForAgent(agent, null, workspacePath),
     isStillPending: () => {
       const current = runtime.mobileSessionTabsByWorktree
         .get(worktreeId)

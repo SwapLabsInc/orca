@@ -16,8 +16,7 @@ function inputs(overrides: Partial<HostPaneAgentResumeInputs> = {}): HostPaneAge
       agentDefaultEnv: { claude: { CLAUDE_TEST_ENV: '1' } },
       disabledTuiAgents: []
     }),
-    resolveWorkspace: async () => ({ path: '/repo', connectionId: null, platform: 'linux' }),
-    markWorkspaceTrusted: async () => {},
+    resolveWorkspace: async () => ({ connectionId: null, platform: 'linux' }),
     isStillPending: () => true,
     ...overrides
   }
@@ -25,8 +24,7 @@ function inputs(overrides: Partial<HostPaneAgentResumeInputs> = {}): HostPaneAge
 
 describe('HostPaneAgentResumes', () => {
   it("builds the resume from the host's own launch settings", async () => {
-    const markWorkspaceTrusted = vi.fn(async () => {})
-    const prepared = await new HostPaneAgentResumes().prepare(inputs({ markWorkspaceTrusted }))
+    const prepared = await new HostPaneAgentResumes().prepare(inputs())
 
     expect(prepared?.launch).toMatchObject({
       agent: 'claude',
@@ -36,7 +34,6 @@ describe('HostPaneAgentResumes', () => {
     expect(prepared?.launch.command).toBe(
       "claude '--dangerously-skip-permissions' '--model' 'opus' '--effort' 'max' '--resume' 'c0ffee00-0000-4000-8000-000000000001'"
     )
-    expect(markWorkspaceTrusted).toHaveBeenCalledWith('claude', '/repo')
   })
 
   it('opens a plain shell for a disabled agent or an SSH workspace', async () => {
@@ -47,11 +44,7 @@ describe('HostPaneAgentResumes', () => {
     expect(
       await resumes.prepare(
         inputs({
-          resolveWorkspace: async () => ({
-            path: '/repo',
-            connectionId: 'ssh-1',
-            platform: 'linux'
-          })
+          resolveWorkspace: async () => ({ connectionId: 'ssh-1', platform: 'linux' })
         })
       )
     ).toBeNull()
@@ -61,8 +54,8 @@ describe('HostPaneAgentResumes', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const prepared = await new HostPaneAgentResumes().prepare(
       inputs({
-        markWorkspaceTrusted: async () => {
-          throw new Error('trust store locked')
+        resolveWorkspace: async () => {
+          throw new Error('workspace not found')
         }
       })
     )
