@@ -218,7 +218,7 @@ export async function closeElectronAppForE2E(app: ElectronApplication): Promise<
   }
 }
 
-export function readDaemonPidFiles(userDataDir: string): number[] {
+function readDaemonPidFiles(userDataDir: string): number[] {
   const daemonDir = path.join(userDataDir, 'daemon')
   if (!existsSync(daemonDir)) {
     return []

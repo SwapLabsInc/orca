@@ -50,10 +50,6 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       /** Payload fields the relay dropped to fit an oversized frame; validated below. */
       shedFields?: unknown
       claudeRunningNonAgentTask?: unknown
-      /** Set on a relay's notice that the user ended the pane's Claude session; it carries no status. */
-      userEndedSessionId?: unknown
-      /** The relay reports user-ended sessions, so its rows may be resumed after terminal loss. */
-      reportsUserEndedSessions?: unknown
       /** The producing peer's advertised run-capability set — a property of the peer/connection that built this envelope, not an orthogonal call parameter. Absent (older relay/HTTP paths) defaults to the unadvertised-legacy-peer set. */
       advertisedAgentStatusCapabilities?: readonly string[]
       payload: unknown
@@ -106,26 +102,6 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       if (expectedLaunchTokenHash && actualLaunchTokenHash !== expectedLaunchTokenHash) {
         return
       }
-    }
-    if (envelope.userEndedSessionId !== undefined) {
-      // Why: the local server reads this off the raw SessionEnd hook; a relay forwards it instead.
-      if (
-        envelope.source === 'claude' &&
-        typeof envelope.userEndedSessionId === 'string' &&
-        envelope.userEndedSessionId.length > 0 &&
-        trimmedConnectionId !== null
-      ) {
-        this.retireUserEndedSession(
-          {
-            paneKey: physicalPaneKey,
-            sessionId: envelope.userEndedSessionId,
-            launchToken: envelope.launchToken,
-            connectionId: trimmedConnectionId
-          },
-          envelope.isReplay === true
-        )
-      }
-      return
     }
     if (envelope.tabId !== undefined && typeof envelope.tabId !== 'string') {
       return
@@ -213,9 +189,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       // stable pane, so the rebind cannot land on a legacy key.
       this.observations.rebind(paneKey)
     }
-    const storedStatus = this.state.lastStatusByPaneKey.get(paneKey)
-    // Why: a retained resume identity is what a retired pane leaves behind, not a row to complete.
-    const previousStatus = storedStatus?.providerSessionOnly ? undefined : storedStatus
+    const previousStatus = this.state.lastStatusByPaneKey.get(paneKey)
     let acceptedCompactCompletion = false
     if (hookEventName === 'PreCompact' || hookEventName === 'PostCompact') {
       // Why: PreCompact is never registered and proves nothing (an aborted compact emits it alone);
@@ -280,10 +254,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       env: envelope.env,
       expectedEnv: this.env
     })
-    const event: AgentHookEventPayload & {
-      authorityRestartId?: string
-      reportsUserEndedSessions?: true
-    } = {
+    const event: AgentHookEventPayload & { authorityRestartId?: string } = {
       paneKey,
       source: effectiveSource,
       ...(restartedAuthority?.authorityRestartId
@@ -310,7 +281,6 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
         typeof envelope.claudeRunningNonAgentTask === 'boolean'
           ? envelope.claudeRunningNonAgentTask
           : undefined,
-      ...(envelope.reportsUserEndedSessions === true ? { reportsUserEndedSessions: true } : {}),
       payload: normalizedPayload
     }
     this.recordCurrentAuthorityObservation(event)

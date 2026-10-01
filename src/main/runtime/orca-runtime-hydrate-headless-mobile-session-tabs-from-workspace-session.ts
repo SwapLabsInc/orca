@@ -28,9 +28,6 @@ import {
 import { headlessMobileSnapshotContentUnchanged } from './mobile-session-snapshot-equality'
 
 export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession extends OrcaRuntimeWithWaitForSessionTabsInventoryPublication {
-  /** Worktrees whose headless snapshot a runtime-only hydrate built before any full hydrate ran. */
-  protected readonly runtimeOnlyHydratedWorktreeIds = new Set<string>()
-
   protected hydrateHeadlessMobileSessionTabsFromWorkspaceSession(
     worktreeId?: string,
     options: {
@@ -100,20 +97,11 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
         }
       }
       const existing = this.mobileSessionTabsByWorktree.get(entryWorktreeId)
-      // Why: a runtime-only hydrate that ran first lists only serve/SSH tabs; the full hydrate
-      // must still add the rest, or whichever request reaches a fresh host first decides which
-      // persisted tabs exist (and a lost agent pane is never re-created to resume).
-      const completesRuntimeOnlySnapshot =
-        options.onlyRuntimeOwnedTerminals !== true &&
-        this.runtimeOnlyHydratedWorktreeIds.delete(entryWorktreeId) &&
-        existing !== undefined &&
-        this.isHeadlessBuiltMobileSessionPublicationBase(existing.publicationEpoch)
       if (
         existing &&
         existing.tabs.length > 0 &&
         options.force !== true &&
-        options.onlyRuntimeOwnedTerminals !== true &&
-        !completesRuntimeOnlySnapshot
+        options.onlyRuntimeOwnedTerminals !== true
       ) {
         // Why: terminals are stable/persisted so we normally skip a rebuild, but
         // offscreen browser tabs are live and may have been created/closed since.
@@ -147,10 +135,10 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
         ...browserTabs.map((tab) => tab.id)
       ]
       const groupId = getHeadlessMobileSessionGroupId(entryWorktreeId)
-      const mergesIntoExisting =
-        options.onlyRuntimeOwnedTerminals === true || completesRuntimeOnlySnapshot
       const mergedTabs =
-        mergesIntoExisting && existing ? mergeMobileSessionSnapshotTabs(existing.tabs, tabs) : tabs
+        options.onlyRuntimeOwnedTerminals === true && existing
+          ? mergeMobileSessionSnapshotTabs(existing.tabs, tabs)
+          : tabs
       const mergedActiveTab =
         existing?.tabs.find((tab) => tab.id === existing.activeTabId) ??
         activeTab ??
@@ -194,7 +182,7 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
             // browser's persisted group forward instead of coalescing left.
             collectBrowserGroupAssignment(persistedGroups, mergedBrowserOrder)
           )
-        : mergesIntoExisting && existing?.tabGroups
+        : options.onlyRuntimeOwnedTerminals === true && existing?.tabGroups
           ? appendBrowserTabOrder(
               mergeMobileSessionTabGroups(
                 entryWorktreeId,
@@ -247,9 +235,6 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
       // pure no-op and unchanged runtime/browser worktrees never fan out.
       if (existing && headlessMobileSnapshotContentUnchanged(existing, nextSnapshot)) {
         continue
-      }
-      if (options.onlyRuntimeOwnedTerminals === true && !existing) {
-        this.runtimeOnlyHydratedWorktreeIds.add(entryWorktreeId)
       }
       this.storeMobileSessionSnapshot(entryWorktreeId, nextSnapshot)
     }

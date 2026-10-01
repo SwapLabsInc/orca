@@ -16,7 +16,6 @@ export type {
   AgentHookStatusFreshnessObservation,
   EnrichedAgentHookEventPayload
 } from './server/server-types'
-export type { TerminalLossAgentResume } from './server/server-retained-identity'
 export type { AgentHookSource }
 export {
   CLOSED_AGENT_STATUS_TAB_IDS_MAX,

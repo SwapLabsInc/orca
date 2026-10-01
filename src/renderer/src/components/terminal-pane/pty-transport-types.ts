@@ -119,9 +119,6 @@ type PtyCallbacks = {
   /** A stream re-established after loss carries only new bytes, so the pane must
    *  re-pull the host's retained buffer or an idle/exited pane paints nothing. */
   onStreamRecovered?: () => void
-  /** Recovery bound the pane to a different process than the one it last showed, so the modes
-   *  that process armed (mouse, focus, paste) describe nothing running any more. */
-  onProcessReplaced?: () => void
   onDisconnect?: () => void
   onData?: (data: string, meta?: PtyDataMeta) => void
   onReplayData?: (data: string, meta?: PtyReplayDataMeta) => void

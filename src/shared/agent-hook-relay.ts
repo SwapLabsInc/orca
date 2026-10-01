@@ -113,9 +113,6 @@ export type AgentHookRelayEnvelope = {
   isReplay?: boolean
   /** Claude background-work evidence for input-interrupt inference on the receiving host. */
   claudeRunningNonAgentTask?: boolean
-  /** Stamped by a relay that forwards user-ended sessions: only its rows prove the user did not
-   *  quit the agent, so only they may be resumed after the pane's terminal is lost. */
-  reportsUserEndedSessions?: true
   /** Forwarded from the agent CLI POST body. The relay default is `remote`,
    *  which marks transport location rather than dev/prod build env. */
   env?: string
@@ -125,26 +122,6 @@ export type AgentHookRelayEnvelope = {
   /** Pre-normalized status payload from the relay's `normalizeHookPayload`.
    *  Orca's `ingestRemote` validates it again at the SSH trust boundary. */
   payload: ParsedAgentStatusPayload
-}
-
-/** Payload state of a user-ended-session notice. No host admits it as a status, so a host that
- *  predates the notice drops it at payload validation instead of applying it. */
-export const AGENT_HOOK_USER_ENDED_SESSION_STATE = 'user-ended-session' as const
-
-/** Relay → Orca notice that the user ended a pane's Claude session. Claude reports that only in
- *  `SessionEnd`, which yields no status row, so it rides `agent.hook` as its own envelope. */
-export type AgentHookRelayUserEndedSessionEnvelope = {
-  source: 'claude'
-  paneKey: string
-  launchToken?: string
-  connectionId: null
-  hookEventName: 'SessionEnd'
-  userEndedSessionId: string
-  reportsUserEndedSessions: true
-  isReplay?: true
-  env?: string
-  version?: string
-  payload: { state: typeof AGENT_HOOK_USER_ENDED_SESSION_STATE }
 }
 
 /** JSON-RPC notification method name carried over the relay control channel. */

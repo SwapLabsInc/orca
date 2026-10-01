@@ -45,8 +45,6 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     ) {
       return
     }
-    // Before the drops below: a keystroke the pane refuses to deliver still means the user is here.
-    session.markRealUserTerminalInput(data, wasUserInput)
     const currentPtyId = session.transport.getPtyId()
     // Why: after a Codex account switch, the runtime auth has already moved to
     // the newly selected account. Stale panes must not keep sending input until
@@ -209,9 +207,14 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     )
   }
 
-  // Why: hidden-tab layout churn is not authoritative; visible resume
-  // owns correction, and hidden SIGWINCH can reset full-screen TUIs.
-  session.isRendererPtyResizeAuthoritative = (): boolean => session.deps.isVisibleRef.current
+  session.isRendererPtyResizeAuthoritative = (): boolean => {
+    if (session.deps.isVisibleRef.current) {
+      return true
+    }
+    // Why: hidden-tab layout churn is not authoritative; visible resume
+    // owns correction, and hidden SIGWINCH can reset full-screen TUIs.
+    return false
+  }
 
   session.forwardPtyResize = (cols: number, rows: number): void => {
     if (!session.isRendererPtyResizeAuthoritative()) {

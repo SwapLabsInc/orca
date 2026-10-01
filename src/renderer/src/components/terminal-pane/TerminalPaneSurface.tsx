@@ -12,7 +12,6 @@ import { TerminalSessionStateSaveFailureDialog } from './TerminalSessionStateSav
 import { LinkActionPopover } from '@/components/link-actions/LinkActionPopover'
 import { TerminalAgentSessionForkDialog } from './TerminalAgentSessionForkDialog'
 import { SessionRestoredBannerPortals } from './SessionRestoredBannerPortals'
-import { AgentResumeChooserPortals } from './AgentResumeChooserPortals'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 import { TerminalQuickCommandEditorDialog } from './TerminalQuickCommandEditorDialog'
 import { TerminalPaneNativeChatPortal } from './TerminalPaneNativeChatPortal'
@@ -223,11 +222,6 @@ export function TerminalPaneSurface({
         panes={managerRef.current?.getPanes() ?? []}
         paneIds={sessionRestoredBannerPaneIds}
       />
-      {/* Only the active tab: the chooser is an app-modal Dialog now, and an inactive tab's
-          pending choice would otherwise follow the user onto whatever tab they switched to. */}
-      {isActive && (
-        <AgentResumeChooserPortals tabId={tabId} panes={managerRef.current?.getPanes() ?? []} />
-      )}
       <TerminalPaneNativeChatPortal controller={controller} />
       <TerminalContextMenu
         open={contextMenu.open}

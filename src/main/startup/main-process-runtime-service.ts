@@ -118,8 +118,6 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
       agentHookServer.retirePaneAuthority(paneKey),
     reconcileAgentStatusForEndedProcess: (paneKeys) =>
       agentHookServer.reconcileEndedProcessForPaneKeys(paneKeys),
-    selectTerminalLossAgentResume: (paneKey, isPaneTerminalLive) =>
-      agentHookServer.selectTerminalLossResume(paneKey, isPaneTerminalLive),
     canRecoverPersistentLocalPtys: () => getDaemonProvider() !== null,
     // Why: evaluated per call, not captured — the RPC server that owns the device registry is
     // constructed with this runtime and does not exist yet at this point.

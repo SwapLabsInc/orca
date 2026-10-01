@@ -51,8 +51,7 @@ describe('accepted web-session terminal handle events', () => {
     expect(listener).toHaveBeenCalledOnce()
     expect(listener).toHaveBeenCalledWith({
       surfacePresent: true,
-      terminalHandle: 'terminal-replacement',
-      incarnationId: null
+      terminalHandle: 'terminal-replacement'
     })
     expect(getWebSessionTerminalHandleSubscriberCountForTests()).toBe(1)
     unsubscribe()
@@ -86,8 +85,8 @@ describe('accepted web-session terminal handle events', () => {
     await Promise.resolve()
 
     expect(listener.mock.calls).toEqual([
-      [{ surfacePresent: true, terminalHandle: null, incarnationId: null }],
-      [{ surfacePresent: false, terminalHandle: null, incarnationId: null }]
+      [{ surfacePresent: true, terminalHandle: null }],
+      [{ surfacePresent: false, terminalHandle: null }]
     ])
     unsubscribe()
   })
@@ -116,8 +115,7 @@ describe('accepted web-session terminal handle events', () => {
     expect(listener).toHaveBeenCalledOnce()
     expect(listener).toHaveBeenCalledWith({
       surfacePresent: true,
-      terminalHandle: 'terminal-current',
-      incarnationId: null
+      terminalHandle: 'terminal-current'
     })
     unsubscribe()
   })

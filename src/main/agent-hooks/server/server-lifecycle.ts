@@ -96,9 +96,6 @@ export abstract class AgentHookServerLifecycle extends AgentHookServerRuntimeEnv
         trackEmptyPaneKeyHook(hookBody)
         const aliasedBody = this.normalizeHookBodyPaneKeyAlias(hookBody)
         const normalized = this.normalizeLocalHookPayload(source, aliasedBody)
-        if (normalized.userEndedSession) {
-          this.retireUserEndedSession(normalized.userEndedSession, false)
-        }
         const statusDisposition = normalized.event
           ? this.getAgentStatusDisposition(normalized.event.paneKey, {
               source,

@@ -1,8 +1,5 @@
 import type { useAppStore } from '@/store'
-import {
-  agentProviderSessionIdentityKey,
-  type SleepingAgentSessionRecord
-} from '../../../shared/agent-session-resume'
+import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
 import { agentTurnEndedUncleanly } from '../../../shared/agent-main-agent-verdict'
 import type {
   TerminalLayoutSnapshot,
@@ -15,7 +12,10 @@ import { isWebTerminalSurfaceTabId } from '../../../shared/terminal-surface-id'
 type AppStoreState = ReturnType<typeof useAppStore.getState>
 
 export function getProviderSessionClaimKey(record: SleepingAgentSessionRecord): string {
-  return `${record.worktreeId}\0${agentProviderSessionIdentityKey(record.agent, record.providerSession)}`
+  const base = `${record.worktreeId}\0${record.agent}\0${record.providerSession.key}\0${record.providerSession.id}`
+  return record.agent === 'pi' || record.agent === 'prime-agent'
+    ? `${base}\0${record.providerSession.transcriptPath ?? ''}`
+    : base
 }
 
 // Why live+done counts (#16308): workspace activation must not resume a finished turn's idle anchor.

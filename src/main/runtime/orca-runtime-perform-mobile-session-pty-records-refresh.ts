@@ -6,7 +6,6 @@ import type { RuntimeNavigationTarget } from '../../shared/runtime-navigation'
 import type { TabActivationIntent } from '../../shared/tab-activation-intent'
 import type {
   RuntimeMobileSessionTabsResult,
-  RuntimeMobileSessionTabsSnapshot,
   RuntimeMobileSessionTerminalTab
 } from '../../shared/runtime-types'
 import type { ResolvedWorktree } from './runtime-worktree-path-identity'
@@ -16,8 +15,6 @@ import { parseWorkspaceKey } from '../../shared/workspace-scope'
 import { navigationTargetsHost } from '../../shared/runtime-navigation'
 import { isAutomaticTabActivation } from '../../shared/tab-activation-intent'
 import { parseAppSshPtyId } from '../../shared/ssh-pty-id'
-import { makePaneKey } from '../../shared/stable-pane-id'
-import { HostPaneAgentResumes, prepareHostPaneAgentResume } from './host-pane-agent-resume'
 
 export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs {
   protected async performMobileSessionPtyRecordsRefresh(
@@ -152,17 +149,52 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
           !this.notifier?.focusTerminal ||
           this.shouldMaterializeHeadlessMobileSessionTab(snapshot!, tab))
       if (shouldMaterializePendingTerminal) {
-        const paneId = `${worktreeId}\0${tab.parentTabId}\0${tab.leafId}`
-        const inFlight = this.getHostPaneAgentResumes().inFlight(paneId)
-        if (inFlight) {
-          // Why: a concurrent activation is already re-creating this pane; a second spawn would race it.
-          await inFlight.catch(() => undefined)
-          return this.activateMobileSessionTab(worktreeSelector, tabId, leafId, opts)
+        const sessionId = tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
+        const targetGroupId = snapshot?.tabGroups?.find((group) =>
+          group.tabOrder.includes(tab.parentTabId)
+        )?.id
+        // Why: a pending agent tab may exist without its startup command ever
+        // having been delivered (the create's renderer stalled, #7587), so a
+        // bare materialize would put a plain shell under the agent icon.
+        // Re-resolve the launch like the create path; providers skip startup
+        // commands when attaching to live sessions, so this cannot double-launch.
+        let agentStartup: Awaited<
+          ReturnType<OrcaRuntimeService['resolveMobileSessionTerminalCommand']>
+        > = {}
+        if (tab.launchAgent) {
+          try {
+            const workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
+            agentStartup = await this.resolveMobileSessionTerminalCommand(workspace, {
+              agent: tab.launchAgent
+            })
+          } catch {
+            // Why: a disabled or unresolvable agent must not make the tab
+            // untappable; fall back to the plain-shell materialize.
+          }
         }
-        await this.getHostPaneAgentResumes().track(
-          paneId,
-          this.materializePendingMobileSessionTerminal(worktreeId, tab, snapshot, targetsHost)
-        )
+        try {
+          await this.createRuntimeOwnedMobileSessionTerminal(worktreeId, targetsHost, undefined, {
+            identity: {
+              tabId: tab.parentTabId,
+              leafId: tab.leafId,
+              sessionId
+            },
+            cwd: tab.startupCwd,
+            command: agentStartup.command,
+            env: agentStartup.env,
+            startupCommandDelivery: agentStartup.startupCommandDelivery,
+            launchConfig: agentStartup.launchConfig,
+            launchAgent: tab.launchAgent,
+            targetGroupId
+          })
+        } catch (err) {
+          if (sessionId && parseAppSshPtyId(sessionId)) {
+            // Why: an expired SSH reattach clears durable bindings in the store,
+            // but this in-memory headless snapshot can still carry the old id.
+            this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, { force: true })
+          }
+          throw err
+        }
         return this.applyMobileSessionTabNavigation(
           this.getMobileSessionTabsForWorktree(worktreeId),
           tab.id,
@@ -217,80 +249,5 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
       navigation,
       opts.clientNavigationId
     )
-  }
-
-  protected getHostPaneAgentResumes(): HostPaneAgentResumes {
-    this.hostPaneAgentResumes ??= new HostPaneAgentResumes()
-    return this.hostPaneAgentResumes
-  }
-
-  protected async materializePendingMobileSessionTerminal(
-    worktreeId: string,
-    tab: RuntimeMobileSessionTerminalTab,
-    snapshot: RuntimeMobileSessionTabsSnapshot,
-    targetsHost: boolean
-  ): Promise<void> {
-    const sessionId = tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
-    const targetGroupId = snapshot?.tabGroups?.find((group) =>
-      group.tabOrder.includes(tab.parentTabId)
-    )?.id
-    const paneKey = makePaneKey(tab.parentTabId, tab.leafId)
-    const resume = await prepareHostPaneAgentResume(this, worktreeId, tab, sessionId)
-    // Why: a pending agent tab may exist without its startup command ever having been delivered
-    // (the create's renderer stalled, #7587), so a bare materialize would put a plain shell under
-    // the agent icon. Once the agent has reported in this pane, only its resume identity may bring
-    // it back. Providers skip startup commands when attaching to live sessions.
-    let agentStartup: Awaited<
-      ReturnType<OrcaRuntimeService['resolveMobileSessionTerminalCommand']>
-    > = resume?.launch ?? {}
-    if (
-      !resume &&
-      tab.launchAgent &&
-      (this.getAgentProviderSessionRowsForPaneFn?.(paneKey) ?? []).length === 0
-    ) {
-      try {
-        const workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
-        agentStartup = await this.resolveMobileSessionTerminalCommand(workspace, {
-          agent: tab.launchAgent
-        })
-      } catch {
-        // Why: a disabled or unresolvable agent must not make the tab
-        // untappable; fall back to the plain-shell materialize.
-      }
-    }
-    const create = (startup: typeof agentStartup, resumed = resume?.launch): Promise<unknown> =>
-      this.createRuntimeOwnedMobileSessionTerminal(worktreeId, targetsHost, undefined, {
-        identity: { tabId: tab.parentTabId, leafId: tab.leafId, sessionId },
-        cwd: tab.startupCwd,
-        command: startup.command,
-        env: startup.env,
-        startupCommandDelivery: startup.startupCommandDelivery,
-        launchConfig: startup.launchConfig,
-        launchAgent: resumed?.agent ?? tab.launchAgent,
-        ...(resumed ? { resumeProviderSession: resumed.providerSession } : {}),
-        targetGroupId
-      })
-    try {
-      try {
-        await create(agentStartup)
-      } catch (err) {
-        if (!resume) {
-          throw err
-        }
-        // Why: a launch-only refusal (auth switch, env conflict) must still leave a usable shell;
-        // the pane keeps its resume identity for the next time its terminal is re-created.
-        console.warn(`[host-pane-resume] resume spawn failed for ${paneKey}; opening a shell:`, err)
-        await create({}, undefined)
-      }
-    } catch (err) {
-      if (sessionId && parseAppSshPtyId(sessionId)) {
-        // Why: an expired SSH reattach clears durable bindings in the store,
-        // but this in-memory headless snapshot can still carry the old id.
-        this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, { force: true })
-      }
-      throw err
-    } finally {
-      resume?.release()
-    }
   }
 }

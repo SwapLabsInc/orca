@@ -419,7 +419,7 @@ describe('headless hook agent-status projection (#11761)', () => {
     statusWiring.statusStore.stop()
   })
 
-  it('detaches a dismissed handle-joined remnant from its terminal on certified PTY exit', async () => {
+  it('evicts a dismissed handle-joined remnant on certified PTY exit', async () => {
     const statusWiring = makeAgentStatusStoreWiring()
     const runtime = await createRuntimeWithHookRows([], statusWiring)
     const terminal = (await runtime.listTerminals()).terminals[0]
@@ -449,10 +449,7 @@ describe('headless hook agent-status projection (#11761)', () => {
 
     runtime.onPtyExit(PTY_ID, 0)
 
-    expect(statusWiring.statusStore.getStatusSnapshot()).toEqual([
-      expect.objectContaining({ paneKey: priorPaneKey, providerSessionOnly: true })
-    ])
-    expect(statusWiring.statusStore.getStatusSnapshot()[0]).not.toHaveProperty('terminalHandle')
+    expect(statusWiring.statusStore.getStatusSnapshot()).toEqual([])
     statusWiring.statusStore.stop()
   })
 
