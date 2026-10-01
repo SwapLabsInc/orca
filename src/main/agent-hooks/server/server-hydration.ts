@@ -120,10 +120,9 @@ export abstract class AgentHookServerHydration extends AgentHookServerReaping {
           )
         }
         // Why: restore live child hierarchy immediately; provider-specific reconciliation reaps stale seeds.
-        // A retained identity asserts no state, so it has no children to restore.
-        if (!entry.providerSessionOnly && entry.payload.agentType === 'codex') {
+        if (entry.payload.agentType === 'codex') {
           seedCodexStateFromSnapshot(this.state, resolvedPaneKey, entry.payload)
-        } else if (!entry.providerSessionOnly && entry.payload.agentType === 'claude') {
+        } else if (entry.payload.agentType === 'claude') {
           seedClaudeLeadTurnFromPersistedStatus(this.state, resolvedPaneKey, entry)
           if (entry.payload.subagents) {
             seedClaudeSubagentRosterFromSnapshots(

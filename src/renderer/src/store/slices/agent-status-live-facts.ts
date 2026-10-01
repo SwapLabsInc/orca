@@ -121,8 +121,7 @@ export function deriveAgentStatusLiveFacts(args: AgentStatusLiveFactsArgs): Agen
         worktreeId: liveRecoveryWorktreeId,
         capturedAt: updatedAt,
         launchConfig: launchConfigSource,
-        origin: 'live',
-        ...(existingSleepingRecord ? { priorRecord: existingSleepingRecord } : {})
+        origin: 'live'
       })
     : null
   const migrationUnsupported = pruneMigrationUnsupportedEntries(

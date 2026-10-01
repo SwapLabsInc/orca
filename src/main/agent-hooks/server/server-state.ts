@@ -46,7 +46,6 @@ import type {
   StatusFreshnessListener,
   StatusRowMutationListener
 } from './server-types'
-import type { RetainedIdentityCause } from './server-retained-identity'
 
 /** Shared mutable state for the layered hook-server implementation. */
 export abstract class AgentHookServerState {
@@ -253,13 +252,12 @@ export abstract class AgentHookServerState {
     hasActiveCron: boolean
   ): void
   protected abstract toRetainedProviderSessionRow(
-    entry: EnrichedAgentHookEventPayload | null | undefined,
-    cause?: RetainedIdentityCause
+    entry: EnrichedAgentHookEventPayload | null | undefined
   ): EnrichedAgentHookEventPayload | null
   protected abstract hasLiveClaimsForPaneKey(paneKey: string): boolean
   protected abstract clearPaneState(
     paneKey: string,
-    options?: { retainIdentity?: RetainedIdentityCause }
+    options?: { emitStatusRowMutation?: boolean }
   ): void
   protected abstract deleteStatusEntry(
     paneKey: string,

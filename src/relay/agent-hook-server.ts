@@ -29,19 +29,20 @@ import {
   isHookRequestTruncatedError
 } from '../shared/agent-hook-transport-interference'
 import {
+  isAgentHookSource,
   REMOTE_AGENT_HOOK_ENV,
   type AgentHookRelayEnvelope,
   type AgentHookSource
 } from '../shared/agent-hook-relay'
+import {
+  buildSpoolHookBody,
+  drainAgentHookSpool,
+  type SpoolRecord
+} from '../shared/agent-hook-spool'
 import { buildRelayHookPtyEnv, defaultEndpointDir } from './agent-hook-endpoint-coordinates'
 import { buildRelayHookEnvelope, hookBodyEnv, hookBodyVersion } from './agent-hook-envelope-build'
 import { AgentHookResultRetryScheduler } from './agent-hook-result-retry-scheduler'
 import { MAX_CACHED_PANES, selectReplayableCachedPanes } from './agent-hook-cached-pane-status'
-import { replayRelayHookSpool } from './agent-hook-spool-replay'
-import {
-  RelayUserEndedSessionReporter,
-  type RelayUserEndedSessionForward
-} from './agent-hook-user-ended-session'
 
 export type RelayHookForward = (envelope: AgentHookRelayEnvelope) => void
 
@@ -62,8 +63,6 @@ export type RelayHookServerOptions = {
    * with no PTY handler behind it (the WSL relay) keeps forwarding everything.
    */
   isPaneSurfaceRetired?: (paneKey: string) => boolean
-  /** Where a user-ended Claude session goes; set only where the host may resume this relay's panes. */
-  forwardUserEndedSession?: RelayUserEndedSessionForward
 }
 
 export type RelayHookServerStartOptions = {
@@ -90,7 +89,6 @@ export class RelayAgentHookServer {
   >()
   private forward: RelayHookForward
   private isPaneSurfaceRetired: (paneKey: string) => boolean
-  private userEndedSessions: RelayUserEndedSessionReporter | null
   private fixedToken: string | undefined
   private preferredPort: number
   private portFallbackApplied = false
@@ -102,16 +100,8 @@ export class RelayAgentHookServer {
     this.endpointFilePath = join(this.endpointDir, getEndpointFileName())
     this.fixedToken = options.token
     this.preferredPort = options.preferredPort ?? 0
+    this.forward = options.forward
     this.isPaneSurfaceRetired = options.isPaneSurfaceRetired ?? (() => false)
-    this.userEndedSessions = options.forwardUserEndedSession
-      ? new RelayUserEndedSessionReporter(options.forwardUserEndedSession, {
-          state: this.state,
-          env: this.env,
-          isPaneSurfaceRetired: this.isPaneSurfaceRetired,
-          clearPaneState: (paneKey) => this.clearPaneState(paneKey)
-        })
-      : null
-    this.forward = this.userEndedSessions?.stampEach(options.forward) ?? options.forward
     this.retryScheduler = new AgentHookResultRetryScheduler({
       state: this.state,
       env: this.env,
@@ -129,7 +119,19 @@ export class RelayAgentHookServer {
     this.token = this.fixedToken ?? randomUUID()
     this.endpointFileWritten = false
     this.portFallbackApplied = false
-    replayRelayHookSpool(this.endpointDir, (source, body) => this.ingestSpoolRecord(source, body))
+    try {
+      drainAgentHookSpool({
+        endpointDir: this.endpointDir,
+        getPersistedLaunchTokenHash: () => undefined,
+        ingest: (record) => this.ingestSpoolRecord(record)
+      })
+    } catch (err) {
+      // Why: a downstream relay failure must not prevent the loopback listener from starting;
+      // the untruncated spool file remains available for retry on the next restart.
+      process.stderr.write(
+        `[relay-hook-server] spool replay failed: ${err instanceof Error ? err.message : String(err)}\n`
+      )
+    }
     try {
       await this.listenOn(this.preferredPort)
     } catch (err) {
@@ -283,8 +285,6 @@ export class RelayAgentHookServer {
         this.applyEvent(event, source, env, version)
         this.retryScheduler.scheduleAssistantMessageRetry(source, hookBody, event, env, version)
         this.retryScheduler.scheduleTranscriptPoll(source, hookBody, event, env, version)
-      } else {
-        this.userEndedSessions?.report(source, hookBody)
       }
       res.writeHead(204)
       res.end()
@@ -336,15 +336,18 @@ export class RelayAgentHookServer {
     this.forward(buildRelayHookEnvelope(event, source, env, version, options))
   }
 
-  private ingestSpoolRecord(source: AgentHookSource, body: unknown): void {
-    const event = normalizeHookPayload(this.state, source, body, this.env, {
+  private ingestSpoolRecord(record: SpoolRecord): void {
+    if (!isAgentHookSource(record.source)) {
+      return
+    }
+    const body = buildSpoolHookBody(record)
+    const event = normalizeHookPayload(this.state, record.source, body, this.env, {
       deferCompactOwnershipToClient: true
     })
     if (!event) {
-      this.userEndedSessions?.report(source, body, true)
       return
     }
-    this.applyEvent(event, source, hookBodyEnv(body), hookBodyVersion(body), {
+    this.applyEvent(event, record.source, hookBodyEnv(body), hookBodyVersion(body), {
       isReplay: true
     })
   }

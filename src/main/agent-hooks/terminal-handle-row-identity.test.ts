@@ -115,11 +115,7 @@ describe('the terminal handle a status row is stamped with', () => {
       })
     ])
     expect(server.reconcileEndedProcessForPaneKeys([NEW_PANE_KEY])).toBe(1)
-    // The identity outlives the PTY; the handle of the terminal that ended does not.
-    expect(server.getStatusSnapshot()).toEqual([
-      expect.objectContaining({ paneKey: NEW_PANE_KEY, providerSessionOnly: true })
-    ])
-    expect(server.getStatusSnapshot()[0]).not.toHaveProperty('terminalHandle')
+    expect(server.getStatusSnapshot()).toEqual([])
     expect(mutations).toHaveLength(3)
     expect(
       (server as unknown as { paneKeyByTerminalHandle: Map<string, string> })

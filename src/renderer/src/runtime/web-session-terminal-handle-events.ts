@@ -6,8 +6,6 @@ import type {
 export type WebSessionTerminalHandleUpdate = {
   surfacePresent: boolean
   terminalHandle: string | null
-  /** The process behind `terminalHandle`; null when the host does not say. */
-  incarnationId: string | null
 }
 
 type TerminalHandleSubscriber = {
@@ -40,7 +38,7 @@ function resolveSubscriberUpdate(
       (!subscriber.leafId || tab.leafId === subscriber.leafId)
   )
   if (surfaces.length === 0) {
-    return { surfacePresent: false, terminalHandle: null, incarnationId: null }
+    return { surfacePresent: false, terminalHandle: null }
   }
   const mirroredSurfaces = surfaces.filter(
     (surface) => surface.parentTabId === subscriber.hostTabId
@@ -50,8 +48,7 @@ function resolveSubscriberUpdate(
     mirroredSurfaces.find((surface) => surface.status === 'ready')
   return {
     surfacePresent: true,
-    terminalHandle: readySurface?.terminal ?? null,
-    incarnationId: readySurface?.incarnationId ?? null
+    terminalHandle: readySurface?.terminal ?? null
   }
 }
 

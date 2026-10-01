@@ -1,7 +1,5 @@
 import { buildSpoolHookBody, type SpoolRecord } from '../../../shared/agent-hook-spool'
 import { normalizeHookPayload } from '../../../shared/agent-hook-listener'
-import { parseHookEnvelope } from '../../../shared/agent-hook-listener/hook-envelope'
-import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude-session-end'
 import { isAgentHookSource, type AgentHookSource } from '../../../shared/agent-hook-relay'
 import type { NormalizedLocalHook } from './server-types'
 import { AgentHookServerOpenCodeBinder } from './server-opencode-binder'
@@ -48,30 +46,13 @@ export abstract class AgentHookServerIngestNormalization extends AgentHookServer
     const nextRunningTask = this.state.claudeRunningNonAgentTaskPaneKeys.has(paneKey)
     const nextActiveCron = this.state.claudeActiveSessionCronPaneKeys.has(paneKey)
     this.setClaudeBackgroundEvidence(paneKey, previousRunningTask, previousActiveCron)
-    if (!event) {
-      const userEndedSession = this.readClaudeUserEndedSession(body)
-      return userEndedSession ? { event, userEndedSession } : { event }
-    }
-    if (event.paneKey !== paneKey) {
+    if (!event || event.paneKey !== paneKey) {
       return { event }
     }
     // Why: nested CLIs may inherit the pane key; only accepted statuses may mutate its background-work gate.
     return {
       event,
       onAccepted: () => this.setClaudeBackgroundEvidence(paneKey, nextRunningTask, nextActiveCron)
-    }
-  }
-
-  private readClaudeUserEndedSession(body: unknown): NormalizedLocalHook['userEndedSession'] {
-    const envelope = parseHookEnvelope(this.state, 'claude', body, this.env)
-    const sessionId = envelope ? readClaudeUserEndedSessionId(envelope) : null
-    if (!envelope || !sessionId) {
-      return undefined
-    }
-    return {
-      paneKey: envelope.paneKey,
-      sessionId,
-      ...(envelope.launchToken ? { launchToken: envelope.launchToken } : {})
     }
   }
 
@@ -82,9 +63,6 @@ export abstract class AgentHookServerIngestNormalization extends AgentHookServer
     }
     const body = this.normalizeHookBodyPaneKeyAlias(buildSpoolHookBody(record))
     const normalized = this.normalizeLocalHookPayload(record.source, body)
-    if (normalized.userEndedSession) {
-      this.retireUserEndedSession(normalized.userEndedSession, true)
-    }
     if (!normalized.event) {
       return
     }

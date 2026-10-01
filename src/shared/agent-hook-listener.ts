@@ -95,9 +95,7 @@ export function normalizeHookPayload(
   ) {
     return null
   }
-  const storedStatus = state.lastStatusByPaneKey.get(paneKey)
-  // Why: a retained resume identity is what a retired pane leaves behind, not a row to complete.
-  const previousStatus = storedStatus?.providerSessionOnly ? undefined : storedStatus
+  const previousStatus = state.lastStatusByPaneKey.get(paneKey)
   // Why: only a MANUAL completion claims anything, so only it may write compact-scoped state. An
   // auto compact runs inside a turn that resumes and emits its own Stop; running the ownership
   // guard for it would burn the pane's consumed-compact slot on an event that maps to nothing.

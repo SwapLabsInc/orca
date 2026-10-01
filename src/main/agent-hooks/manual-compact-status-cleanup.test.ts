@@ -35,10 +35,7 @@ describe('manual compact status cleanup', () => {
     begin()
     server.clearPaneState(PANE_KEY)
     server.ingestRemote(compactEvent('PostCompact', 'done'), 'conn-a')
-    // Only the pane's retained resume identity is left; the late completion revived nothing.
-    expect(server.getStatusSnapshot()).toEqual([
-      expect.objectContaining({ providerSessionOnly: true, state: 'working' })
-    ])
+    expect(server.getStatusSnapshot()).toEqual([])
 
     begin()
     server.dropStatusEntriesByTabPrefix('manual-compact')

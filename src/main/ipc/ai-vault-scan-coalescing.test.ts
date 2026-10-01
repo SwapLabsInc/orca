@@ -44,7 +44,6 @@ vi.mock('./ssh', () => ({
   requestActiveSshAiVaultSessionTitles: mocks.requestActiveSshAiVaultSessionTitles
 }))
 
-const { DEFAULT_AI_VAULT_SCAN_LIMIT } = await import('../../shared/ai-vault-session-depth')
 const { _internals, registerAiVaultHandlers } = await import('./ai-vault')
 const EMPTY_RESULT: AiVaultListResult = {
   sessions: [],
@@ -92,13 +91,7 @@ describe('Agent Session History scan coalescing', () => {
     await expect(first).rejects.toMatchObject({ name: 'AbortError' })
     expect(scan).toHaveBeenCalledTimes(1)
     resolveScan?.(EMPTY_RESULT)
-    // The local leg echoes the depth it scanned under, so a reader can tell a whole answer from a
-    // slice; a mocked remote leg comes back exactly as the mock produced it.
-    await expect(second).resolves.toEqual(
-      scope === 'local'
-        ? { ...EMPTY_RESULT, appliedSessionDepth: DEFAULT_AI_VAULT_SCAN_LIMIT }
-        : EMPTY_RESULT
-    )
+    await expect(second).resolves.toEqual(EMPTY_RESULT)
   })
 
   it('coalesces every all-host leg while isolating caller cancellation', async () => {

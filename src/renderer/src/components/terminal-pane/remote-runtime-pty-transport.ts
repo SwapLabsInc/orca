@@ -1611,17 +1611,6 @@ export function createRemoteRuntimePtyTransport(
     }
   }
 
-  // Why: modes the lost process armed (mouse, focus, paste) would turn input into junk in its
-  // replacement; a same-incarnation rebind is the live process and keeps them.
-  function announceProcessReplacement(
-    previousIncarnationId: string | null,
-    nextIncarnationId: string | null | undefined
-  ): void {
-    if (previousIncarnationId && nextIncarnationId && previousIncarnationId !== nextIncarnationId) {
-      storedCallbacks.onProcessReplaced?.()
-    }
-  }
-
   function waitForPublishedHostSessionHandle(hostTabId: string, previousHandle: string): void {
     if (!worktreeId) {
       return
@@ -1669,9 +1658,7 @@ export function createRemoteRuntimePtyTransport(
           // Why: without a live epoch a failed resubscribe is swallowed as already-latched, leaving a pane with no handle and no way back.
           recovery.begin()
         }
-        const previousIncarnationId = authoritativePtyIncarnationId
-        rebindRemoteTerminalHandle(update.terminalHandle, update.incarnationId)
-        announceProcessReplacement(previousIncarnationId, update.incarnationId)
+        rebindRemoteTerminalHandle(update.terminalHandle)
         const reboundHandle = handle
         const reboundPtyId = remotePtyId
         void subscribeToHandle().catch((error) => {
@@ -1758,7 +1745,6 @@ export function createRemoteRuntimePtyTransport(
     replacementPolicy: HostHandleReplacementPolicy,
     recoveryEpoch: number
   ): Promise<void> {
-    const previousIncarnationId = authoritativePtyIncarnationId
     if (tabId && isWebTerminalSurfaceTabId(tabId)) {
       const hostTabId = toHostSessionTabId(tabId)
       const inventoryWindow = beginResubscribeInventoryWindow(recoveryEpoch)
@@ -1815,12 +1801,9 @@ export function createRemoteRuntimePtyTransport(
       if (effectivePolicy === 'require-replacement' && nextHandle === previousHandle) {
         return
       }
-      // Why: the wait above recorded the incarnation behind the handle it found.
-      const nextIncarnationId = authoritativePtyIncarnationId
       if (nextHandle !== previousHandle) {
-        rebindRemoteTerminalHandle(nextHandle, nextIncarnationId)
+        rebindRemoteTerminalHandle(nextHandle)
       }
-      announceProcessReplacement(previousIncarnationId, nextIncarnationId)
       clearPublishedHandleWait()
       await subscribeToHandle(
         recoveryEpoch,
@@ -1848,7 +1831,6 @@ export function createRemoteRuntimePtyTransport(
         adoptExecutionMetadata(resolved)
         rebindRemoteTerminalHandle(resolved.handle, resolved.incarnationId ?? null)
       }
-      announceProcessReplacement(previousIncarnationId, resolved.incarnationId)
       clearPublishedHandleWait()
       await subscribeToHandle(
         recoveryEpoch,

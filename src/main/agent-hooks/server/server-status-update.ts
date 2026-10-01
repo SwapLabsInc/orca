@@ -36,13 +36,10 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
       this.activeHookTurnCompletedAtByPaneKey.delete(payload.paneKey)
     }
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Main admits enriched legacy rows; the shared view declares their base event type.
-    const storedRow = this.state.lastStatusByPaneKey.get(payload.paneKey) as
+    const previous = this.state.lastStatusByPaneKey.get(payload.paneKey) as
       | EnrichedAgentHookEventPayload
       | undefined
-    const rowBefore = mutationBefore ?? storedRow
-    // Why: a retained identity's status fields are placeholders from an agent that is gone; a new
-    // event must not inherit its agent type, permission hold, verdict or terminal.
-    const previous = storedRow?.providerSessionOnly ? undefined : storedRow
+    const rowBefore = mutationBefore ?? previous
     const terminalHandle =
       payload.terminalHandle ??
       (previous?.terminalHandle && this.sameTerminalOwner(previous, payload)
@@ -59,9 +56,7 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
       ? this.connectionTimestampWatermarkById.get(terminalOwnedPayload.connectionId)
       : undefined
     // Why: renderer ordering rejects older rows; live evidence must sort after reconnect clears and restored rows across clock rollback.
-    const restoredStatusWatermark = storedRow?.restoredUnconfirmed
-      ? storedRow.receivedAt
-      : undefined
+    const restoredStatusWatermark = previous?.restoredUnconfirmed ? previous.receivedAt : undefined
     const now = Math.max(
       Date.now(),
       (connectionClearWatermark ?? -1) + 1,

@@ -1,5 +1,4 @@
 import type { Terminal } from '@xterm/xterm'
-import { isXtermMouseReport } from './terminal-pointer-input-sequences'
 
 // Why: xterm's public onData stream mixes real user input (keyboard, IME,
 // paste, mouse reports) with parser-generated auto-replies (focus in/out
@@ -43,11 +42,6 @@ export function subscribeToTerminalUserInput(
   } catch {
     return null
   }
-}
-
-/** Keystrokes, IME and paste. xterm flags mouse reports as user input too, so they are told apart by shape. */
-export function isRealUserTerminalInput(data: string, wasUserInput: boolean): boolean {
-  return wasUserInput && !isXtermMouseReport(data)
 }
 
 /** Preserve xterm's input provenance across deferred PTY forwarding. */
