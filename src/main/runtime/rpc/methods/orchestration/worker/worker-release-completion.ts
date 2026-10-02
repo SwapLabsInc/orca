@@ -11,7 +11,6 @@ import {
 } from '../../../../orchestration/worker-output-archive'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import { describeUnconfirmedAgentStop } from '../../../../../../shared/pty-liveness-verdict'
-import { inspectWorkerTerminal } from './worker-observation'
 import { orchestrationTimestampToMs } from './worker-output'
 import { archiveSummary } from './worker-terminal-resource-presentation'
 import { classifyWorkerTerminalCloseError } from './worker-release-close-error'
@@ -19,7 +18,10 @@ import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 import { resolveStructuredWorkerForDispatch } from '../../orchestration-structured-worker-lifecycle'
 import { stopStructuredWorkerForRelease } from './structured-worker-release-stop'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
-import { awaitReleaseClosingTurn, noteClosingTurnInArchive } from './worker-release-closing-turn'
+import {
+  noteClosingTurnInArchive,
+  observeWorkerAfterClosingTurn
+} from './worker-release-closing-turn'
 
 export {
   archiveSummary,
@@ -120,9 +122,7 @@ async function completeWorkerTerminalReleaseOnce(
       archive: archiveSummary(retained)
     }
   }
-  // Before the identity checks, so they judge the terminal the closing turn left behind.
-  const closingTurn = await awaitReleaseClosingTurn(args, resource.terminal_handle)
-  const observation = await inspectWorkerTerminal(runtime, db, dispatchId)
+  const { closingTurn, observation } = await observeWorkerAfterClosingTurn(args)
   // The live handle to act on: the durable one, or a handle re-minted from the recorded process
   // incarnation when the durable handle went stale (inspectWorkerTerminal proved it live).
   const terminalHandle = observation.terminalHandle ?? resource.terminal_handle

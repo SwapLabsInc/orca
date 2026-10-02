@@ -2,6 +2,7 @@ import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerOutputArchiveCapture } from '../../../../orchestration/worker-output-archive'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
+import { inspectWorkerTerminal } from './worker-observation'
 
 /** Fits the 30 s a coordinator gives a federated release (and the CLI's 60 s) beside capture and stop. */
 export const WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS = 15_000
@@ -58,6 +59,30 @@ export function awaitReleaseClosingTurn(
     return Promise.resolve('not_observed')
   }
   return awaitWorkerClosingTurn(args.runtime, terminalHandle)
+}
+
+// Why observe first: the durable handle can go stale while its process lives, and inspection
+// re-mints the live one; waiting on the stale handle would skip the wait the live process needs.
+export async function observeWorkerAfterClosingTurn(args: {
+  runtime: OrcaRuntimeService
+  db: OrchestrationDb
+  dispatchId: string
+  mode?: 'interactive' | 'recovery'
+}): Promise<{
+  closingTurn: WorkerClosingTurn
+  observation: Awaited<ReturnType<typeof inspectWorkerTerminal>>
+}> {
+  const before = await inspectWorkerTerminal(args.runtime, args.db, args.dispatchId)
+  const closingTurn =
+    before.status === 'live'
+      ? await awaitReleaseClosingTurn(args, before.terminalHandle)
+      : 'not_observed'
+  // After a wait, the identity checks must judge the terminal the closing turn left behind.
+  const observation =
+    closingTurn === 'not_observed'
+      ? before
+      : await inspectWorkerTerminal(args.runtime, args.db, args.dispatchId)
+  return { closingTurn, observation }
 }
 
 // An unreadable store still gets the wait; reporting the read failure stays with the release.

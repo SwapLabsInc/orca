@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import { OrchestrationDb } from '../../../../orchestration/db'
 import { createOrchestrationWorkerReleaseHarness } from './worker-release.test-support'
+import { makePaneKey } from '../../../../../../shared/stable-pane-id'
 import {
   awaitReleaseClosingTurn,
   WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING,
@@ -95,6 +96,46 @@ describe('worker release waits for the closing turn', () => {
     await expect(release).resolves.toMatchObject({ state: 'retained', reason: 'user_requested' })
     expect(h.runtime.closeTerminal).not.toHaveBeenCalled()
     expect(h.db.getWorkerTerminalArchive(dispatchId)).toBeUndefined()
+  })
+
+  it('waits on the re-minted handle when the durable one went stale', async () => {
+    h.setup()
+    const { dispatchId } = await h.startSettledWorker()
+    const runtime = h.runtime
+    for (const spy of [
+      runtime.showTerminal,
+      runtime.getTerminalPaneKey,
+      runtime.getTerminalProcessIncarnation,
+      runtime.getOrchestrationDispatchAuthority,
+      runtime.closeTerminal
+    ]) {
+      vi.mocked(spy).mockRestore()
+    }
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+    runtime.registerPty('runtime_test:term_worker', 'repo::worktree', null, {
+      tabId: 'tab_worker',
+      leafId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      incarnationId: '1'
+    })
+    // Only the live process answers as an agent; the stale durable handle resolves nowhere.
+    vi.mocked(runtime.isTerminalRunningAgent).mockImplementation(
+      async (handle) => handle !== 'term_worker'
+    )
+    vi.mocked(runtime.waitForTerminal).mockReset().mockResolvedValue(IDLE)
+
+    await expect(
+      h.call('orchestration.workerRelease', { dispatch: dispatchId })
+    ).resolves.toMatchObject({ state: 'released' })
+
+    const [[waitedHandle]] = vi.mocked(runtime.waitForTerminal).mock.calls
+    expect(waitedHandle).not.toBe('term_worker')
+    expect(runtime.getTerminalPaneKey(waitedHandle)).toBe(
+      makePaneKey('tab_worker', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+    )
   })
 
   it('treats a closing turn parked on a human-only prompt as cut off', async () => {
