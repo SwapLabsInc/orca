@@ -1,3 +1,4 @@
+import type { AgentProcessPresence } from '../../../shared/agent-process-presence'
 import {
   admitLegacyAgentStatus,
   deleteLegacyAgentStatus,
@@ -39,10 +40,12 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
       }
     }
     // Why: losing the terminal is not the agent ending, but an identity already kept for an agent
-    // that ended stays ended. The handle goes with the terminal it named.
+    // that ended stays ended. The handle goes with the terminal it named, and so does the process
+    // presence: kept, a later probe would find it gone and retire the identity as agent-ended.
     const resumable = !entry.structuredHost && isResumableIdentityRow(entry)
+    const { agentPresence: _agentPresence, ...terminalIdentity } = resumeIdentity
     return {
-      ...resumeIdentity,
+      ...terminalIdentity,
       providerSessionOnly: true,
       retainedForLiveness: true,
       ...(resumable ? { resumeAfterTerminalLoss: true as const } : {})
@@ -148,12 +151,20 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
   reconcileEndedProcessForPaneKeys(
     paneKeys: Iterable<string>,
     options?: {
-      /** The pane's PTY outlived its agent (a confirmed shell foreground, or the agent reporting
-       *  its own end): keep the identity for a manual resume, never an automatic one. Without it
-       *  the PTY itself ended, which a paired host re-creates, so the identity stays resumable. */
+      /** The owner's process, marked ended: its own exit hook, or a probe that found it gone. */
+      endedPresence?: AgentProcessPresence
+      /** The pane's PTY outlived its agent (a confirmed shell foreground): keep the identity for a
+       *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
+       *  host re-creates, so the identity stays resumable. */
       preserveResumeIdentity?: boolean
     }
   ): number {
+    // Why: an exit only the process proves cannot tell a lost terminal from an ended agent. Claude
+    // reports `other` when a signal ends it, and a probe after a restart finds every agent of a
+    // lost terminal gone, so such an exit stays resumable. A session the user ended was already
+    // retired as agent-ended, and a shell that outlived the agent retires it on confirmation.
+    const retainIdentity =
+      options?.preserveResumeIdentity && !options.endedPresence ? 'agent-ended' : 'terminal-loss'
     let cleared = 0
     for (const paneKey of paneKeys) {
       const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
@@ -161,7 +172,8 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
         continue
       }
       this.clearPaneState(resolvedPaneKey, {
-        retainIdentity: options?.preserveResumeIdentity ? 'agent-ended' : 'terminal-loss'
+        retainIdentity,
+        endedPresence: options?.endedPresence
       })
       cleared += 1
     }

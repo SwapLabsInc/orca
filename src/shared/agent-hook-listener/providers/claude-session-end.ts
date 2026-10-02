@@ -5,9 +5,12 @@ import { readString } from '../tool-input-preview'
 
 // Why an allowlist: Claude reports `other` when a signal ends it, which is how a lost terminal
 // looks. `clear` needs nothing here: the SessionStart that follows it replaces the pane's session.
+// `bypass_permissions_disabled` is Claude quitting a mode it may not run in; resuming it would
+// only quit again.
 const USER_ENDED_CLAUDE_SESSION_REASONS: ReadonlySet<string> = new Set([
   'prompt_input_exit',
-  'logout'
+  'logout',
+  'bypass_permissions_disabled'
 ])
 
 /** The session a Claude `SessionEnd` hook says the user ended, or null for any other hook. */

@@ -2,6 +2,7 @@ import { clearPaneCacheState } from '../../../shared/agent-hook-listener/listene
 import { paneCacheKeyMatchesTab } from './server-status-identity'
 import { AgentHookServerCleanup } from './server-cleanup'
 import type { RetainedIdentityCause } from './server-retained-identity'
+import type { AgentProcessPresence } from '../../../shared/agent-process-presence'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 
 export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
@@ -103,7 +104,10 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
 
   /** PTY teardown: every live claim of the pane goes. Its resume identity stays, resumable unless
    *  the caller knows the agent ended before its terminal did. */
-  clearPaneState(paneKey: string, options?: { retainIdentity?: RetainedIdentityCause }): void {
+  clearPaneState(
+    paneKey: string,
+    options?: { retainIdentity?: RetainedIdentityCause; endedPresence?: AgentProcessPresence }
+  ): void {
     const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
     const paneKeys = new Set([paneKey, resolvedPaneKey])
     // Why: only persist when a status entry was actually evicted; dropping prompt/tool caches doesn't change the file.
@@ -111,10 +115,15 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
       | EnrichedAgentHookEventPayload
       | undefined
     const hadStatus = previousStatus !== undefined
-    const retained = this.toRetainedProviderSessionRow(
+    const retainedIdentity = this.toRetainedProviderSessionRow(
       previousStatus,
       options?.retainIdentity ?? 'terminal-loss'
     )
+    // Why: an ended owner stops answering probes, and its late hooks cannot claim the pane again.
+    const retained =
+      retainedIdentity && options?.endedPresence
+        ? { ...retainedIdentity, agentPresence: options.endedPresence }
+        : retainedIdentity
     this.clearAssistantMessageRetry(resolvedPaneKey)
     this.clearTranscriptPoll(resolvedPaneKey)
     clearPaneCacheState(this.state, resolvedPaneKey)

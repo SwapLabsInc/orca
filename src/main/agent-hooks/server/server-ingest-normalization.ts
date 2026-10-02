@@ -3,6 +3,7 @@ import { normalizeHookPayload } from '../../../shared/agent-hook-listener'
 import { parseHookEnvelope } from '../../../shared/agent-hook-listener/hook-envelope'
 import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude-session-end'
 import { isAgentHookSource, type AgentHookSource } from '../../../shared/agent-hook-relay'
+import { isOpenCodeSharedServerPost } from '../../../shared/agent-hook-listener/opencode-session-registry'
 import type { NormalizedLocalHook } from './server-types'
 import { AgentHookServerOpenCodeBinder } from './server-opencode-binder'
 
@@ -29,8 +30,8 @@ export abstract class AgentHookServerIngestNormalization extends AgentHookServer
       const event = normalizeHookPayload(this.state, source, body, this.env)
       if (
         event &&
-        (source === 'opencode' || source === 'mimo-code') &&
-        event.hookEventName === 'SessionStart'
+        event.hookEventName === 'SessionStart' &&
+        isOpenCodeSharedServerPost(source, body)
       ) {
         // Why: a birth just arrived; bind it now instead of waiting out the poll interval.
         this.kickOpenCodeBinder()
@@ -48,7 +49,9 @@ export abstract class AgentHookServerIngestNormalization extends AgentHookServer
     const nextRunningTask = this.state.claudeRunningNonAgentTaskPaneKeys.has(paneKey)
     const nextActiveCron = this.state.claudeActiveSessionCronPaneKeys.has(paneKey)
     this.setClaudeBackgroundEvidence(paneKey, previousRunningTask, previousActiveCron)
-    if (!event) {
+    // Why: an identified owner's SessionEnd also arrives as its exit; only the user's reason
+    // read here keeps that exit from leaving the session resumable after a terminal loss.
+    if (!event || event.agentPresence?.ended) {
       const userEndedSession = this.readClaudeUserEndedSession(body)
       return userEndedSession ? { event, userEndedSession } : { event }
     }

@@ -1,3 +1,7 @@
+import type {
+  AgentProcessPresence,
+  AgentProcessVerdict
+} from '../../../shared/agent-process-presence'
 import type { createServer } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 
@@ -257,9 +261,20 @@ export abstract class AgentHookServerState {
     cause?: RetainedIdentityCause
   ): EnrichedAgentHookEventPayload | null
   protected abstract hasLiveClaimsForPaneKey(paneKey: string): boolean
+  abstract checkAgentPresence(paneKey: string): Promise<AgentProcessVerdict | null>
+  abstract checkAgentPresenceAfterHook(
+    event: AgentHookEventPayload,
+    row: AgentHookEventPayload
+  ): void
+
+  abstract reconcileEndedProcessForPaneKeys(
+    paneKeys: Iterable<string>,
+    options?: { preserveResumeIdentity?: boolean; endedPresence?: AgentProcessPresence }
+  ): number
+
   protected abstract clearPaneState(
     paneKey: string,
-    options?: { retainIdentity?: RetainedIdentityCause }
+    options?: { retainIdentity?: RetainedIdentityCause; endedPresence?: AgentProcessPresence }
   ): void
   protected abstract deleteStatusEntry(
     paneKey: string,

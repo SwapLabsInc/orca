@@ -21,6 +21,33 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     )
   }
 
+  /** A relay's notice that the user ended its Claude session; the local server reads the raw hook. */
+  protected retireRelayUserEndedSession(
+    notice: {
+      source?: unknown
+      userEndedSessionId?: unknown
+      launchToken?: string
+      isReplay?: boolean
+    },
+    paneKey: string,
+    connectionId: string | null
+  ): void {
+    const sessionId = notice.userEndedSessionId
+    if (
+      notice.source !== 'claude' ||
+      typeof sessionId !== 'string' ||
+      !sessionId ||
+      !connectionId
+    ) {
+      return
+    }
+    const { launchToken, isReplay } = notice
+    this.retireUserEndedSession(
+      { paneKey, sessionId, launchToken, connectionId },
+      isReplay === true
+    )
+  }
+
   /** The agent reported that the user ended its session: the pane keeps the identity for a manual
    *  resume, but a later loss of its terminal must not bring the agent back. */
   protected retireUserEndedSession(ended: UserEndedAgentSession, isReplay: boolean): void {
@@ -50,8 +77,14 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
       isReplay,
       launchToken: ended.launchToken
     })
-    if (disposition === 'accept') {
-      this.reconcileEndedProcessForPaneKeys([paneKey], { preserveResumeIdentity: true })
+    if (disposition === 'accept' && this.hasLiveClaimsForPaneKey(paneKey)) {
+      // Why: the exit hook that follows finds no owner and is dropped, so record the ended
+      // process here: nothing probes it again, and its late hooks cannot bring the row back.
+      const presence = row.agentPresence
+      this.clearPaneState(paneKey, {
+        retainIdentity: 'agent-ended',
+        ...(presence ? { endedPresence: { ...presence, ended: true as const } } : {})
+      })
     }
   }
 }
