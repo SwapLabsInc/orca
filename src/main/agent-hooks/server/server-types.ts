@@ -145,7 +145,7 @@ export type AgentPromptSentDedupeEntry = {
 export type NormalizedLocalHook = {
   event: AgentHookEventPayload | null
   onAccepted?: () => void
-  /** A hook with no status row that says the user ended the pane's agent session. */
+  /** A hook that says the user ended the pane's agent session: no status row, or the owner's exit. */
   userEndedSession?: UserEndedAgentSession
 }
 

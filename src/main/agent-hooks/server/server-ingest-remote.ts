@@ -1,3 +1,4 @@
+import { readAgentProcessPresence } from '../../../shared/agent-process-presence'
 import { track } from '../../telemetry/client'
 import { normalizeAgentStatusPayload } from '../../../shared/agent-status-types'
 import { restoreShedStatusFields } from '../../../shared/agent-hook-relay'
@@ -35,6 +36,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       launchToken?: string
       hasExplicitPrompt?: boolean
       promptInteractionKey?: string
+      agentPresence?: unknown
       hookEventName?: string
       source?: unknown
       providerPromptId?: unknown
@@ -108,23 +110,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       }
     }
     if (envelope.userEndedSessionId !== undefined) {
-      // Why: the local server reads this off the raw SessionEnd hook; a relay forwards it instead.
-      if (
-        envelope.source === 'claude' &&
-        typeof envelope.userEndedSessionId === 'string' &&
-        envelope.userEndedSessionId.length > 0 &&
-        trimmedConnectionId !== null
-      ) {
-        this.retireUserEndedSession(
-          {
-            paneKey: physicalPaneKey,
-            sessionId: envelope.userEndedSessionId,
-            launchToken: envelope.launchToken,
-            connectionId: trimmedConnectionId
-          },
-          envelope.isReplay === true
-        )
-      }
+      this.retireRelayUserEndedSession(envelope, physicalPaneKey, trimmedConnectionId)
       return
     }
     if (envelope.tabId !== undefined && typeof envelope.tabId !== 'string') {
@@ -180,6 +166,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
     )
     if (
       envelope.providerSessionOnly === true &&
+      !readAgentProcessPresence(envelope.agentPresence)?.ended &&
       !isValidPiProviderSessionOnly(providerSession, normalizedPayload.agentType)
     ) {
       return
@@ -285,6 +272,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       reportsUserEndedSessions?: true
     } = {
       paneKey,
+      agentPresence: readAgentProcessPresence(envelope.agentPresence),
       source: effectiveSource,
       ...(restartedAuthority?.authorityRestartId
         ? { authorityRestartId: restartedAuthority.authorityRestartId }
