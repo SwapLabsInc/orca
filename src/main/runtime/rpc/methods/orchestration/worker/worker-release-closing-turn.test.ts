@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
+import { OrchestrationDb } from '../../../../orchestration/db'
 import { createOrchestrationWorkerReleaseHarness } from './worker-release.test-support'
 import {
+  awaitReleaseClosingTurn,
   WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING,
   WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS
 } from './worker-release-closing-turn'
@@ -93,6 +95,37 @@ describe('worker release waits for the closing turn', () => {
     await expect(release).resolves.toMatchObject({ state: 'retained', reason: 'user_requested' })
     expect(h.runtime.closeTerminal).not.toHaveBeenCalled()
     expect(h.db.getWorkerTerminalArchive(dispatchId)).toBeUndefined()
+  })
+
+  it('treats a closing turn parked on a human-only prompt as cut off', async () => {
+    h.setup()
+    const { dispatchId } = await h.startSettledWorker()
+    vi.mocked(h.runtime.waitForTerminal)
+      .mockReset()
+      .mockResolvedValue({ ...IDLE, satisfied: false, blockedReason: 'codex-interactive-prompt' })
+
+    await expect(
+      h.call('orchestration.workerRelease', { dispatch: dispatchId })
+    ).resolves.toMatchObject({ state: 'released' })
+
+    expect(archiveWarnings(h, dispatchId)).toContain(WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING)
+  })
+
+  it('still waits when the archive store cannot be read, leaving that failure to the release', async () => {
+    const db = new OrchestrationDb(':memory:')
+    db.db.exec('DROP TABLE worker_terminal_archives')
+    const runtime = {
+      isTerminalRunningAgent: vi.fn().mockResolvedValue(true),
+      waitForTerminal: vi.fn().mockResolvedValue(IDLE)
+    }
+    try {
+      await expect(
+        awaitReleaseClosingTurn({ runtime, db, dispatchId: 'ctx_store_down' }, 'term_worker')
+      ).resolves.toBe('settled')
+      expect(runtime.waitForTerminal).toHaveBeenCalledTimes(1)
+    } finally {
+      db.close()
+    }
   })
 
   it('does not wait on a terminal that is not running an agent', async () => {

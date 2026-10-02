@@ -27,9 +27,12 @@ export async function awaitWorkerClosingTurn(
     return 'not_observed'
   }
   try {
-    // Idle, a human-only prompt, and exit all end the turn; waiting longer would add nothing.
-    await runtime.waitForTerminal(terminalHandle, { condition: 'tui-idle', timeoutMs })
-    return 'settled'
+    const result = await runtime.waitForTerminal(terminalHandle, {
+      condition: 'tui-idle',
+      timeoutMs
+    })
+    // Idle and exit end the turn; a prompt only a human can answer ends the wait but not the turn.
+    return result.satisfied ? 'settled' : 'cut_off'
   } catch (error) {
     // A stale or vanished handle is the identity checks' to judge; it is not a cut-off turn.
     return error instanceof Error && error.message === 'timeout' ? 'cut_off' : 'not_observed'
@@ -57,12 +60,12 @@ export function awaitReleaseClosingTurn(
   return awaitWorkerClosingTurn(args.runtime, terminalHandle)
 }
 
-// An unreadable archive store is the release's to report, so it skips the wait rather than throw.
+// An unreadable store still gets the wait; reporting the read failure stays with the release.
 function hasStoredArchive(db: OrchestrationDb, dispatchId: string): boolean {
   try {
     return Boolean(db.getWorkerTerminalArchive(dispatchId))
   } catch {
-    return true
+    return false
   }
 }
 
