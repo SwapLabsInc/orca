@@ -1,11 +1,10 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerOutputArchiveCapture } from '../../../../orchestration/worker-output-archive'
-import type { WorkerTerminalResourceRow } from '../../../../orchestration/worker-terminal-ownership'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
 
-/** Fits inside the CLI's 60 s request budget beside archive capture and the PTY stop. */
-export const WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS = 20_000
+/** Fits the 30 s a coordinator gives a federated release (and the CLI's 60 s) beside capture and stop. */
+export const WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS = 15_000
 
 export const WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING =
   'The worker was still finishing the turn that sent worker_done when it was released; its closing message may be missing.'
@@ -37,22 +36,34 @@ export async function awaitWorkerClosingTurn(
   }
 }
 
-export function awaitReleaseClosingTurn(args: {
-  runtime: ClosingTurnRuntime
-  db: OrchestrationDb
-  dispatchId: string
-  resource: Pick<WorkerTerminalResourceRow, 'terminal_handle'>
-  mode?: 'interactive' | 'recovery'
-}): Promise<WorkerClosingTurn> {
+export function awaitReleaseClosingTurn(
+  args: {
+    runtime: ClosingTurnRuntime
+    db: OrchestrationDb
+    dispatchId: string
+    mode?: 'interactive' | 'recovery'
+  },
+  terminalHandle: string | null
+): Promise<WorkerClosingTurn> {
   // Recovery must not stall startup; a stored archive or a structured worker leaves no turn to wait on.
   if (
+    !terminalHandle ||
     args.mode === 'recovery' ||
-    isStructuredWorkerHandle(args.resource.terminal_handle) ||
-    args.db.getWorkerTerminalArchive(args.dispatchId)
+    isStructuredWorkerHandle(terminalHandle) ||
+    hasStoredArchive(args.db, args.dispatchId)
   ) {
     return Promise.resolve('not_observed')
   }
-  return awaitWorkerClosingTurn(args.runtime, args.resource.terminal_handle)
+  return awaitWorkerClosingTurn(args.runtime, terminalHandle)
+}
+
+// An unreadable archive store is the release's to report, so it skips the wait rather than throw.
+function hasStoredArchive(db: OrchestrationDb, dispatchId: string): boolean {
+  try {
+    return Boolean(db.getWorkerTerminalArchive(dispatchId))
+  } catch {
+    return true
+  }
 }
 
 export function noteClosingTurnInArchive(

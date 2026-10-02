@@ -1,9 +1,6 @@
 import { describeUnconfirmedAgentStop } from '../../../../../../shared/pty-liveness-verdict'
 import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/types'
-import type {
-  WorkerTerminalResourceRow,
-  WorkerTerminalRetainedReason
-} from '../../../../orchestration/worker-terminal-ownership'
+import type { WorkerTerminalResourceRow } from '../../../../orchestration/worker-terminal-ownership'
 import {
   captureWorkerOutputArchive,
   summarizeWorkerOutputArchive
@@ -13,8 +10,13 @@ import { readArchivedWorkerOutput } from '../worker/worker-archive-read'
 import {
   archiveSummary,
   releaseUnknownRecovery,
+  retainedReason,
   type WorkerReleaseReceipt
 } from '../worker/worker-release-completion'
+import {
+  noteClosingTurnInArchive,
+  type WorkerClosingTurn
+} from '../worker/worker-release-closing-turn'
 import { orchestrationTimestampToMs } from '../worker/worker-output'
 import type { inspectRemoteAttachment } from './federation-attachment-observation'
 import {
@@ -57,6 +59,7 @@ export async function releaseRemoteAttachment(args: {
   attachment: RemoteDispatchAttachmentRow
   observation: Awaited<ReturnType<typeof inspectRemoteAttachment>>
   mode?: 'interactive' | 'recovery'
+  closingTurn?: WorkerClosingTurn
 }): Promise<WorkerReleaseReceipt & { output?: unknown }> {
   const { runtime, attachment, observation } = args
   const db = runtime.getOrchestrationDb()
@@ -148,12 +151,15 @@ export async function releaseRemoteAttachment(args: {
   try {
     archive = storedArchive
     if (!archive) {
-      const captured = await captureWorkerOutputArchive({
-        runtime,
-        dispatchId: attachment.dispatch_id,
-        terminalHandle: observation.terminal.handle,
-        attachedAtMs: orchestrationTimestampToMs(attachment.created_at)
-      })
+      const captured = noteClosingTurnInArchive(
+        await captureWorkerOutputArchive({
+          runtime,
+          dispatchId: attachment.dispatch_id,
+          terminalHandle: observation.terminal.handle,
+          attachedAtMs: orchestrationTimestampToMs(attachment.created_at)
+        }),
+        args.closingTurn ?? 'not_observed'
+      )
       db.storeWorkerTerminalArchive({
         dispatchId: attachment.dispatch_id,
         resourceId: resource.id,
@@ -286,16 +292,6 @@ function remoteAttachmentLeaseIsCurrent(
     }) &&
     !db.workerTerminalResourceHasIdentityConflict(resource.id)
   )
-}
-
-function retainedReason(resource: WorkerTerminalResourceRow): WorkerTerminalRetainedReason {
-  if (resource.retained_reason) {
-    return resource.retained_reason as WorkerTerminalRetainedReason
-  }
-  if (resource.ownership_state === 'user_owned') {
-    return 'user_takeover'
-  }
-  return 'identity_unproven'
 }
 
 function projectArchivedOutputLiveness<

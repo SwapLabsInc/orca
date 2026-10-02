@@ -99,7 +99,7 @@ export const ORCHESTRATION_WORKER_COMMAND_SPECS: CommandSpec[] = [
       'Post-completion cleanup for a settled (succeeded or failed) worker; closes only the exact coordinator-owned agent terminal of that worker.',
       'A settled Dispatch created by orchestration dispatch has no owned terminal resource and is reported retained without process action.',
       'An inspectable output archive is preserved before the terminal closes, so worker-read still returns output afterwards.',
-      'Waits up to 20 seconds for a running agent to finish the turn that sent worker_done; if it is still working, release continues and the archive notes the cut-off turn.',
+      'Waits up to 15 seconds for a running agent to finish the turn that sent worker_done; if it is still working, release continues and the archive notes the cut-off turn.',
       'Never closes setup terminals, configured tabs, reused or pre-existing terminals, user-taken-over terminals, or unproven identities.',
       'Idempotent: repeating the call reports already_released. Only release_unknown exits 1; retained, release_pending, and already_released exit 0.'
     ]

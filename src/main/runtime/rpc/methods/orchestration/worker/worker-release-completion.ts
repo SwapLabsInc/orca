@@ -121,7 +121,7 @@ async function completeWorkerTerminalReleaseOnce(
     }
   }
   // Before the identity checks, so they judge the terminal the closing turn left behind.
-  const closingTurn = await awaitReleaseClosingTurn(args)
+  const closingTurn = await awaitReleaseClosingTurn(args, resource.terminal_handle)
   const observation = await inspectWorkerTerminal(runtime, db, dispatchId)
   // The live handle to act on: the durable one, or a handle re-minted from the recorded process
   // incarnation when the durable handle went stale (inspectWorkerTerminal proved it live).
@@ -325,7 +325,7 @@ export function releaseUnknownRecovery(dispatchId: string): string {
   return `Inspect with: orca orchestration worker-show --dispatch ${dispatchId} --json — then retry worker-release with a fresh request ID (omit --retry-request to let the CLI generate one). Reusing the prior request ID only replays this release_unknown receipt. Never substitute a broad terminal close.`
 }
 
-function retainedReason(resource: WorkerTerminalResourceRow): WorkerTerminalRetainedReason {
+export function retainedReason(resource: WorkerTerminalResourceRow): WorkerTerminalRetainedReason {
   if (resource.retained_reason) {
     return resource.retained_reason as WorkerTerminalRetainedReason
   }
