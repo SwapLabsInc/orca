@@ -19,6 +19,7 @@ import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 import { resolveStructuredWorkerForDispatch } from '../../orchestration-structured-worker-lifecycle'
 import { stopStructuredWorkerForRelease } from './structured-worker-release-stop'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
+import { awaitReleaseClosingTurn, noteClosingTurnInArchive } from './worker-release-closing-turn'
 
 export {
   archiveSummary,
@@ -119,6 +120,8 @@ async function completeWorkerTerminalReleaseOnce(
       archive: archiveSummary(retained)
     }
   }
+  // Before the identity checks, so they judge the terminal the closing turn left behind.
+  const closingTurn = await awaitReleaseClosingTurn(args)
   const observation = await inspectWorkerTerminal(runtime, db, dispatchId)
   // The live handle to act on: the durable one, or a handle re-minted from the recorded process
   // incarnation when the durable handle went stale (inspectWorkerTerminal proved it live).
@@ -208,13 +211,16 @@ async function completeWorkerTerminalReleaseOnce(
   let capturedArchive: { kind: WorkerTerminalArchiveKind; content: string } | undefined
   const structured = resolveStructuredWorkerForDispatch(db, dispatchId)
   if (!archive) {
-    const captured = await captureWorkerOutputArchive({
-      runtime,
-      dispatchId,
-      terminalHandle,
-      attachedAtMs: orchestrationTimestampToMs(worker.created_at),
-      structuredWorker: structured
-    })
+    const captured = noteClosingTurnInArchive(
+      await captureWorkerOutputArchive({
+        runtime,
+        dispatchId,
+        terminalHandle,
+        attachedAtMs: orchestrationTimestampToMs(worker.created_at),
+        structuredWorker: structured
+      }),
+      closingTurn
+    )
     capturedArchive = { kind: captured.kind, content: JSON.stringify(captured.content) }
     archiveSource = captured.kind === 'terminal_tail' ? 'terminal' : 'transcript'
     archiveStatus = captured.status
