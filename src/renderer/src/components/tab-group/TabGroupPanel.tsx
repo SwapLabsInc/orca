@@ -14,6 +14,8 @@ import TabBar from '../tab-bar/TabBar'
 
 import { TabBarQuickCommandsButton } from '../tab-bar/TabBarQuickCommandsButton'
 import { useTabGroupWorkspaceModel } from './useTabGroupWorkspaceModel'
+import { TabGroupEmptyState } from './TabGroupEmptyState'
+import { shouldShowTabGroupEmptyState } from './tab-group-empty-state-visibility'
 import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { resolveGroupTabFromVisibleId } from './tab-group-visible-id'
 import { getTabPaneBodyDroppableId, type HoveredTabInsertion } from './useTabDragSplit'
@@ -82,6 +84,14 @@ export default function TabGroupPanel({
       ) === groupId
   )
   const worktreeClientHostedRows = useClientHostedBrowserRows(worktreeId)
+  const showEmptyState = useAppStore((state) =>
+    shouldShowTabGroupEmptyState({
+      workspaceSessionReady: state.workspaceSessionReady,
+      tabsByWorktree: state.tabsByWorktree,
+      worktreeId,
+      groupTabCount: model.groupTabs.length
+    })
+  )
   const clientHostedRows = ownsClientHostedRows
     ? worktreeClientHostedRows
     : EMPTY_CLIENT_HOSTED_ROWS
@@ -362,6 +372,7 @@ export default function TabGroupPanel({
             data-contextual-tour-target="workspace-agent-terminal-tip"
           />
         ) : null}
+        {showEmptyState ? <TabGroupEmptyState onNewTerminal={commands.newTerminalTab} /> : null}
         {activeTab &&
           activeTab.contentType !== 'terminal' &&
           activeTab.contentType !== 'agent-session' &&

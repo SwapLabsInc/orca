@@ -9,6 +9,7 @@ import {
   readRemoteAttachmentArchive,
   releaseRemoteAttachment
 } from './federated-worker-release-host'
+import { awaitReleaseClosingTurn } from '../worker/worker-release-closing-turn'
 import {
   FederationDispatchParams,
   FederationFleetSnapshotParams,
@@ -48,8 +49,13 @@ export const ORCHESTRATION_FEDERATION_CONTROL_METHODS = [
         params.dispatchId,
         authenticatedCallerFingerprint
       )
+      // Before observation, so the release judges the terminal the closing turn left behind.
+      const closingTurn = await awaitReleaseClosingTurn(
+        { runtime, db: runtime.getOrchestrationDb(), dispatchId: params.dispatchId },
+        attachment.stage === 'released' ? null : attachment.terminal_handle
+      )
       const observation = await inspectRemoteAttachment(runtime, params.dispatchId)
-      return releaseRemoteAttachment({ runtime, attachment, observation })
+      return releaseRemoteAttachment({ runtime, attachment, observation, closingTurn })
     }
   }),
   defineMethod({

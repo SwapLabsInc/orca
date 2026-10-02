@@ -1,4 +1,5 @@
 import { ORCHESTRATION_FEDERATION_RELEASE_ARCHIVE_RUNTIME_CAPABILITY } from '../../../../../../shared/protocol-version'
+import { WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS } from '../worker/worker-release-closing-turn'
 import type { RuntimeStatus } from '../../../../../../shared/runtime-types'
 import { z } from 'zod'
 import { getOrchestrationPeerCapabilityCache } from '../../../../orchestration/orchestration-peer-capability-cache'
@@ -10,6 +11,9 @@ import {
   type WorkerReleaseReceipt
 } from '../worker/worker-release-completion'
 import type { resolvePinnedFederatedServer } from '../worker/worker-observation'
+
+// Leaves the host 25 s for capture and close after a full closing-turn wait, inside the CLI's 60 s.
+const FEDERATED_RELEASE_TIMEOUT_MS = WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS + 25_000
 
 type RemoteReleaseReceipt = Omit<WorkerReleaseReceipt, 'archive'> & {
   archive?: WorkerReleaseReceipt['archive']
@@ -75,7 +79,7 @@ export async function releaseFederatedWorker(args: {
         args.server.environmentId,
         'orchestration.federationRelease',
         { dispatchId: args.dispatchId },
-        30_000,
+        FEDERATED_RELEASE_TIMEOUT_MS,
         { orchestrationRequestId: args.requestId },
         { expectedEnvironmentPairingRevision: args.server.pairingRevision }
       ),

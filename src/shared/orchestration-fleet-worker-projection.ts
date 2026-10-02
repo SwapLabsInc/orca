@@ -144,7 +144,10 @@ export function projectFleetNextAction(
   // A settled worker still owning its terminal owes the release decision. Pointing it at
   // worker-show was a self-loop: the command that reported the settlement.
   if (SETTLED_WORKER_STATES.has(worker.workerState) && worker.resource) {
-    return worker.resource.ownershipState === 'owned' && worker.resource.releaseState !== 'released'
+    // Retained is a settled answer (user request or unproven identity); releasing it undoes it.
+    return worker.resource.ownershipState === 'owned' &&
+      worker.resource.releaseState !== 'released' &&
+      worker.resource.releaseState !== 'retained'
       ? {
           kind: 'release',
           argv: ['orchestration', 'worker-release', '--dispatch', worker.dispatchId]

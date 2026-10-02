@@ -625,4 +625,33 @@ describe('fleet liveness and attention after a host verdict', () => {
 
     expect(projected.workers[0]!.nextAction).toEqual({ kind: 'none', argv: [] })
   })
+
+  // worker-retain keeps ownership 'owned'; a nextAction of worker-release would undo the
+  // user's explicit retention, and for identity_unproven it would loop on the same retain.
+  it('owes no release for a settled worker whose owned terminal was retained', () => {
+    const projected = projectOrchestrationFleet({
+      workers: [
+        worker('1', {
+          workerState: 'succeeded',
+          dispatchStatus: 'completed',
+          workerStage: 'settled',
+          terminalState: 'retained',
+          resource: {
+            id: 'resource-1',
+            ownerDispatchId: '1',
+            worktreeId: 'workspace-1',
+            paneKey: 'tab-1:leaf-1',
+            hostScope: null,
+            ownershipState: 'owned',
+            releaseState: 'retained',
+            updatedAt: '2026-09-04T00:00:00.000Z'
+          }
+        })
+      ],
+      statuses: [],
+      now: 10_000
+    })
+
+    expect(projected.workers[0]!.nextAction).toEqual({ kind: 'none', argv: [] })
+  })
 })
