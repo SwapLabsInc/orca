@@ -60,8 +60,14 @@ describe('Git binary compatibility PR gate', () => {
     // in whichever boundary case is running rather than as a slow build.
     expect(steps[matrixIndex].run).not.toContain('make -C')
     expect(baselineSteps[cacheIndex].with.path).toBe(BASELINE_DIR)
+    // Why the OS release in the key: a baseline linked against a newer image's glibc
+    // fails to load on an older runner while ubuntu-latest rolls over gradually.
+    const scopeIndex = names.indexOf('Resolve Git cache scope')
+    expect(scopeIndex).toBeGreaterThanOrEqual(0)
+    expect(scopeIndex).toBeLessThan(cacheIndex)
+    expect(baselineSteps[scopeIndex].run).toContain('. /etc/os-release')
     expect(baselineSteps[cacheIndex].with.key).toBe(
-      'git-compat-baseline-${{ runner.os }}-${{ runner.arch }}-2.25.5'
+      'git-compat-baseline-${{ runner.os }}-${{ steps.git-cache-scope.outputs.scope }}-${{ runner.arch }}-2.25.5'
     )
   })
 

@@ -4,13 +4,25 @@ description: Restore or build the pinned Linux Git binary for the compatibility 
 runs:
   using: composite
   steps:
+    # Same scope as install-node-dependencies: a binary linked on a newer image's glibc fails on an older one.
+    - name: Resolve Git cache scope
+      id: git-cache-scope
+      shell: bash
+      run: |
+        scope="${ImageOS:-$RUNNER_OS}"
+        if [ -r /etc/os-release ]; then
+          . /etc/os-release
+          scope="${ID:-linux}-${VERSION_ID:-unknown}"
+        fi
+        echo "scope=$scope" >> "$GITHUB_OUTPUT"
+
     # The default-branch warmer shares this key across PRs; a PR save is private to its merge ref.
     # Cache eviction remains possible, so keep the checksum-verified cold build below.
     - name: Cache baseline Git build
       uses: actions/cache@v5
       with:
         path: ~/.cache/orca-git-compat/git-2.25.5
-        key: git-compat-baseline-${{ runner.os }}-${{ runner.arch }}-2.25.5
+        key: git-compat-baseline-${{ runner.os }}-${{ steps.git-cache-scope.outputs.scope }}-${{ runner.arch }}-2.25.5
 
     # Finish the CPU-heavy build before any timed compatibility lanes start.
     - name: Build the baseline Git binary
