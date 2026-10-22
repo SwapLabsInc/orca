@@ -63,7 +63,7 @@ describe('swaplabs fork build triggers and guards', () => {
       expect(runner).not.toMatch(/blacksmith|windows/i)
     }
     expect(runners).toEqual(
-      expect.arrayContaining(['ubuntu-latest', 'ubuntu-24.04-arm', 'macos-15'])
+      expect.arrayContaining(['ubuntu-latest', 'ubuntu-24.04-arm', 'macos-15', 'macos-15-intel'])
     )
     for (const job of Object.values(jobs)) {
       expect(commandsOf(job)).not.toMatch(/--win\b|windows-setup/)
@@ -158,12 +158,25 @@ describe('swaplabs fork build identity', () => {
 
   // Why --publish never everywhere: the orca-fork-ops tag is not `v<version>`,
   // which is the only tag electron-builder's publisher can upload into.
+  // Packaging boots each slice's signed terminal host; an x64 slice under Rosetta on a
+  // hosted arm64 runner misses that boot window, so every slice builds on its own CPU.
+  it('builds each macOS slice on a runner of its own architecture', () => {
+    const mac = jobs['build-mac']
+    expect(mac['runs-on']).toBe('${{ matrix.runner }}')
+    expect(mac.strategy['fail-fast']).toBe(false)
+    expect(mac.strategy.matrix.include).toEqual([
+      { arch: 'x64', runner: 'macos-15-intel', app: 'dist/mac/Orca.app' },
+      { arch: 'arm64', runner: 'macos-15', app: 'dist/mac-arm64/Orca.app' }
+    ])
+    expect(mac.env.MAC_ARCH).toBe('${{ matrix.arch }}')
+  })
+
   it('packages with --publish never and uploads into the draft with gh', () => {
     const linuxPackage = stepNamed(jobs['build-linux'], 'Package Linux artifacts').with.command
     expect(linuxPackage).toContain('--linux AppImage deb rpm --${{ matrix.arch }} --publish never')
     expect(linuxPackage).not.toContain('--publish always')
     const macPackage = stepNamed(jobs['build-mac'], 'Package macOS artifacts').with.command
-    expect(macPackage).toContain('--mac dmg --x64 --arm64 --publish never')
+    expect(macPackage).toContain('--mac dmg --${{ matrix.arch }} --publish never')
     for (const [name, upload] of [
       ['build-linux', 'Upload Linux artifacts'],
       ['build-mac', 'Upload macOS artifacts']

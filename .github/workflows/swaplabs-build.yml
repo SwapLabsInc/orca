@@ -428,12 +428,27 @@ jobs:
   # exists, so electron-updater never tries Squirrel.Mac on a fork build.
   build-mac:
     needs: [preflight, draft]
-    runs-on: macos-15
+    strategy:
+      # Each leg ships and verifies only its own slice, so one failure never hides the other.
+      fail-fast: false
+      matrix:
+        # Why a native runner per slice: packaging boots each slice's signed terminal host and
+        # requires a PTY within 20 s (upstream #27021). Under Rosetta on a hosted arm64 runner
+        # the x64 host misses that window (run 23); upstream's faster Blacksmith runners don't.
+        include:
+          - arch: x64
+            runner: macos-15-intel
+            app: dist/mac/Orca.app
+          - arch: arm64
+            runner: macos-15
+            app: dist/mac-arm64/Orca.app
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
       contents: write
     env:
       NODE_OPTIONS: --max-old-space-size=4096
+      MAC_ARCH: ${{ matrix.arch }}
       ORCA_LOCAL_BUILD_VERSION: ${{ needs.preflight.outputs.version }}
       ORCA_BUILD_COMMIT: ${{ needs.preflight.outputs.commit }}
       ORCA_DIAGNOSTICS_TOKEN_URL: https://www.onorca.dev/diagnostics/token
@@ -495,9 +510,9 @@ jobs:
           path: |
             ~/Library/Caches/electron
             ~/Library/Caches/electron-builder
-          key: electron-builder-mac-${{ hashFiles('pnpm-lock.yaml') }}
+          key: electron-builder-mac-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            electron-builder-mac-
+            electron-builder-mac-${{ matrix.arch }}-
 
       # Why a throwaway keychain, like the iOS release: the .p12 is imported into a
       # keychain that exists only for this job, unlocked with a random password
@@ -548,8 +563,8 @@ jobs:
             echo "SWAPLABS_SIGNING_CERT_PEM=$cert_pem"
           } >>"$GITHUB_ENV"
 
-      # Why both CPUs: the mac config packages x64 and arm64 from this arm64
-      # runner, so the install must carry both variants of the native optional deps.
+      # Why install:release on a native leg: it is the install upstream's release packaging
+      # is written and guarded for; the extra CPU variant costs only download time.
       - name: Install dependencies
         uses: nick-fields/retry@v4
         with:
@@ -583,9 +598,9 @@ jobs:
           timeout_minutes: 30
           max_attempts: 2
           retry_wait_seconds: 30
-          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac dmg --x64 --arm64 --publish never
+          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac dmg --${{ matrix.arch }} --publish never
 
-      # Per arch: zip the signed bundle the DMG was built from, then write the
+      # This leg's slice: zip the signed bundle the DMG was built from, then write the
       # manifest (size, sha512, designated-requirement hash) and sign it. The
       # manifest script refuses an ad-hoc bundle, so a silently unsigned build can
       # never ship as installable. The local verify runs with the public key the
@@ -596,29 +611,28 @@ jobs:
         shell: bash
         env:
           SWAPLABS_UPDATE_SIGNING_KEY: ${{ secrets.SWAPLABS_UPDATE_SIGNING_KEY }}
+          APP: ${{ matrix.app }}
         run: |
           set -euo pipefail
-          for arch in x64 arm64; do
-            app="dist/mac/Orca.app"
-            [[ "$arch" == "arm64" ]] && app="dist/mac-arm64/Orca.app"
-            if [[ ! -d "$app" ]]; then
-              echo "::error::electron-builder left no $app; the $arch bundle was not packaged."
-              exit 1
-            fi
-            zip="dist/orca-macos-$arch.zip"
-            rm -f "$zip"
-            # Why ditto: the updater extracts with `ditto -x -k`, and the framework
-            # symlinks and the code signature must survive the round trip.
-            ditto -c -k --keepParent "$app" "$zip"
-            node config/scripts/swaplabs-mac-update-manifest.mjs emit \
-              --arch "$arch" --app "$app" --zip "$zip" \
-              --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT" --out-dir dist
-            node config/scripts/swaplabs-mac-update-manifest.mjs verify \
-              --arch "$arch" --zip "$zip" \
-              --manifest "dist/swaplabs-update-mac-$arch.json" \
-              --signature "dist/swaplabs-update-mac-$arch.json.sig" \
-              --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT"
-          done
+          arch="$MAC_ARCH"
+          app="$APP"
+          if [[ ! -d "$app" ]]; then
+            echo "::error::electron-builder left no $app; the $arch bundle was not packaged."
+            exit 1
+          fi
+          zip="dist/orca-macos-$arch.zip"
+          rm -f "$zip"
+          # Why ditto: the updater extracts with `ditto -x -k`, and the framework
+          # symlinks and the code signature must survive the round trip.
+          ditto -c -k --keepParent "$app" "$zip"
+          node config/scripts/swaplabs-mac-update-manifest.mjs emit \
+            --arch "$arch" --app "$app" --zip "$zip" \
+            --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT" --out-dir dist
+          node config/scripts/swaplabs-mac-update-manifest.mjs verify \
+            --arch "$arch" --zip "$zip" \
+            --manifest "dist/swaplabs-update-mac-$arch.json" \
+            --signature "dist/swaplabs-update-mac-$arch.json.sig" \
+            --version "$ORCA_LOCAL_BUILD_VERSION" --commit "$ORCA_BUILD_COMMIT"
 
       - name: Confirm the release still exists
         shell: bash
@@ -660,7 +674,7 @@ jobs:
           timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 30
-          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/orca-macos-x64.zip dist/orca-macos-arm64.zip
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/orca-macos-$MAC_ARCH.zip"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
@@ -673,7 +687,7 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 30
           # One file per call, in order: gh uploads several files concurrently.
-          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-x64.json && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json.sig && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/swaplabs-update-mac-arm64.json
+          command: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/swaplabs-update-mac-$MAC_ARCH.json.sig" && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/swaplabs-update-mac-$MAC_ARCH.json"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
@@ -705,8 +719,8 @@ jobs:
             --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
           echo "Uploaded assets:"
           echo "$assets"
-          if ! grep -q '\.dmg$' <<<"$assets"; then
-            echo "::error::Fork release $TAG is missing a DMG."
+          if ! grep -qx "orca-macos-$MAC_ARCH.dmg" <<<"$assets"; then
+            echo "::error::Fork release $TAG is missing orca-macos-$MAC_ARCH.dmg."
             exit 1
           fi
           if grep -qx 'latest-mac.yml' <<<"$assets"; then
@@ -718,17 +732,15 @@ jobs:
               echo "::error::Fork release $TAG carries an update manifest although this build is ad-hoc signed and download-only."
               exit 1
             fi
-            echo "Download-only macOS assets verified."
+            echo "Download-only $MAC_ARCH macOS assets verified."
             exit 0
           fi
           failed=0
-          for arch in x64 arm64; do
-            for required in "orca-macos-$arch.zip" "swaplabs-update-mac-$arch.json" "swaplabs-update-mac-$arch.json.sig"; do
-              if ! grep -qx "$required" <<<"$assets"; then
-                echo "::error::Fork release $TAG is missing $required."
-                failed=1
-              fi
-            done
+          for required in "orca-macos-$MAC_ARCH.zip" "swaplabs-update-mac-$MAC_ARCH.json" "swaplabs-update-mac-$MAC_ARCH.json.sig"; do
+            if ! grep -qx "$required" <<<"$assets"; then
+              echo "::error::Fork release $TAG is missing $required."
+              failed=1
+            fi
           done
           downloads="$RUNNER_TEMP/swaplabs-mac-verify"
           outcome="did not verify"
@@ -740,32 +752,30 @@ jobs:
             downloaded=0
             for attempt in 1 2 3; do
               (( attempt == 1 )) || sleep 10
-              if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'orca-macos-*.zip' --pattern 'swaplabs-update-mac-*' --dir "$downloads" --clobber; then
+              if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "orca-macos-$MAC_ARCH.zip" --pattern "swaplabs-update-mac-$MAC_ARCH.json*" --dir "$downloads" --clobber; then
                 downloaded=1
                 break
               fi
               echo "::warning::Attempt $attempt could not download the macOS update assets of $TAG for verification."
             done
             if (( downloaded )); then
-              for arch in x64 arm64; do
-                node config/scripts/swaplabs-mac-update-manifest.mjs verify \
-                  --arch "$arch" --zip "$downloads/orca-macos-$arch.zip" \
-                  --manifest "$downloads/swaplabs-update-mac-$arch.json" \
-                  --signature "$downloads/swaplabs-update-mac-$arch.json.sig" \
-                  --version "$VERSION" --commit "$COMMIT" || failed=1
-              done
+              node config/scripts/swaplabs-mac-update-manifest.mjs verify \
+                --arch "$MAC_ARCH" --zip "$downloads/orca-macos-$MAC_ARCH.zip" \
+                --manifest "$downloads/swaplabs-update-mac-$MAC_ARCH.json" \
+                --signature "$downloads/swaplabs-update-mac-$MAC_ARCH.json.sig" \
+                --version "$VERSION" --commit "$COMMIT" || failed=1
             else
               outcome="could not be downloaded from the release for verification"
               failed=1
             fi
           fi
           if (( failed )); then
-            # Every manifest or signature still attached, in any upload state; a
-            # listing failure is an unknown, never an empty result.
+            # This slice's manifest or signature still attached, in any upload state; the
+            # other leg owns its own. A listing failure is an unknown, never an empty result.
             stray_manifests() {
               local names
               names="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')" || return 1
-              grep -E '^swaplabs-update-mac-.*\.json(\.sig)?$' <<<"$names" || true
+              grep -xF -e "swaplabs-update-mac-$MAC_ARCH.json" -e "swaplabs-update-mac-$MAC_ARCH.json.sig" <<<"$names" || true
             }
             live="unknown"
             attached=0
@@ -782,17 +792,17 @@ jobs:
               [[ -n "$live" ]] || break
             done
             if [[ "$live" == "unknown" ]]; then
-              echo "::error::Fork release $TAG: the macOS update manifests $outcome, and whether they were removed could not be confirmed; check the release's assets by hand."
+              echo "::error::Fork release $TAG: the $MAC_ARCH macOS update manifests $outcome, and whether they were removed could not be confirmed; check the release's assets by hand."
             elif [[ -n "$live" ]]; then
-              echo "::error::Fork release $TAG: the macOS update manifests $outcome and could not be removed; still attached: ${live//$'\n'/ }. Delete them by hand before an installed build fetches them."
+              echo "::error::Fork release $TAG: the $MAC_ARCH macOS update manifests $outcome and could not be removed; still attached: ${live//$'\n'/ }. Delete them by hand before an installed build fetches them."
             elif (( attached )); then
-              echo "::error::Fork release $TAG: the macOS update manifests $outcome and were removed; the DMGs stay as download-only assets."
+              echo "::error::Fork release $TAG: the $MAC_ARCH macOS update manifests $outcome and were removed; its DMG stays as a download-only asset."
             else
-              echo "::error::Fork release $TAG: the macOS update manifests $outcome; none was attached, so the DMGs stay as download-only assets."
+              echo "::error::Fork release $TAG: the $MAC_ARCH macOS update manifests $outcome; none was attached, so its DMG stays as a download-only asset."
             fi
             exit 1
           fi
-          echo "Signed macOS update assets verified for $VERSION."
+          echo "Signed $MAC_ARCH macOS update assets verified for $VERSION."
 
       # The VM is discarded anyway; this keeps the key from outliving the job if
       # that ever changes. Why no trust removal: every signed run (36462741113,

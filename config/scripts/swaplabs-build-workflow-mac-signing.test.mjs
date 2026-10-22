@@ -161,13 +161,16 @@ describe('swaplabs fork build macOS signing', () => {
     const produce = stepNamed(mac, 'Produce the update zips and signed manifests')
     expect(produce.if).toBe(SIGNING_GATE)
     expect(produce.env).toEqual({
-      [SWAPLABS_UPDATE_SIGNING_KEY_ENV]: `\${{ secrets.${SWAPLABS_SIGNING_SECRETS.signingKey} }}`
+      [SWAPLABS_UPDATE_SIGNING_KEY_ENV]: `\${{ secrets.${SWAPLABS_SIGNING_SECRETS.signingKey} }}`,
+      APP: '${{ matrix.app }}'
     })
     expect(index(produce.name)).toBeGreaterThan(index('Package macOS artifacts'))
     expect(index(produce.name)).toBeLessThan(index('Confirm the release still exists'))
-    expect(produce.run).toContain('for arch in x64 arm64; do')
+    // One slice per leg: the matrix names the arch and the bundle electron-builder left.
+    expect(produce.run).toContain('arch="$MAC_ARCH"')
+    expect(produce.run).toContain('app="$APP"')
+    expect(produce.run).not.toMatch(/for arch in/)
     expect(produce.run).toContain('ditto -c -k --keepParent "$app" "$zip"')
-    expect(produce.run).toContain('dist/mac-arm64/Orca.app')
     expect(produce.run).toContain('swaplabs-mac-update-manifest.mjs emit')
     expect(produce.run).toContain('--app "$app" --zip "$zip"')
     expect(produce.run).toContain(
@@ -205,18 +208,21 @@ describe('swaplabs fork build macOS signing', () => {
       expect(step.with.command).not.toContain('latest-mac.yml')
     }
     expect(zips.with.command).toBe(
-      'gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/orca-macos-x64.zip dist/orca-macos-arm64.zip'
+      'gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/orca-macos-$MAC_ARCH.zip"'
     )
     const uploads = manifests.with.command.split(' && ')
+    // Signature first: a manifest the app can see always has its signature.
     expect(uploads).toEqual(
-      MAC_ARCHES.flatMap((arch) => {
-        const names = swaplabsMacUpdateAssetNames(arch)
-        // Signature first: a manifest the app can see always has its signature.
-        return [names.signature, names.manifest].map(
-          (name) => `gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/${name}`
-        )
-      })
+      ['swaplabs-update-mac-$MAC_ARCH.json.sig', 'swaplabs-update-mac-$MAC_ARCH.json'].map(
+        (name) => `gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/${name}"`
+      )
     )
+    for (const arch of MAC_ARCHES) {
+      const names = swaplabsMacUpdateAssetNames(arch)
+      expect(names.manifest).toBe(`swaplabs-update-mac-${arch}.json`)
+      expect(names.signature).toBe(`swaplabs-update-mac-${arch}.json.sig`)
+      expect(names.zip).toBe(`orca-macos-${arch}.zip`)
+    }
     expect(verify.env).toMatchObject({
       VERSION: '${{ needs.preflight.outputs.version }}',
       COMMIT: '${{ needs.preflight.outputs.commit }}',
@@ -371,6 +377,7 @@ describe('swaplabs fork build macOS asset verification', () => {
         VERSION: version,
         COMMIT: commit,
         SIGNING_ENABLED: 'true',
+        MAC_ARCH: 'arm64',
         ASSETS: signedAssets.join(' '),
         FIXTURES: fixtures.directory,
         [SWAPLABS_UPDATE_PUBLIC_KEY_ENV]: fixtures.publicKey,
@@ -378,33 +385,42 @@ describe('swaplabs fork build macOS asset verification', () => {
       }
     })
 
-  it('passes when the uploaded zips, manifests and signatures verify against the compiled-in key', async () => {
-    const fixtures = await signedFixtures()
-    try {
-      const result = await check(fixtures)
-      expect(result.exitCode, `${result.stdout} ${result.stderr}`).toBe(0)
-      expect(result.stdout).toContain(`Signed macOS update assets verified for ${version}`)
-      expect(result.stdout).not.toContain('deleted')
-    } finally {
-      fixtures.cleanup()
+  it.each(MAC_ARCHES)(
+    'passes the %s leg when its zip, manifest and signature verify against the compiled-in key',
+    async (arch) => {
+      const fixtures = await signedFixtures()
+      try {
+        const result = await check(fixtures, { MAC_ARCH: arch })
+        expect(result.exitCode, `${result.stdout} ${result.stderr}`).toBe(0)
+        expect(result.stdout).toContain(
+          `Signed ${arch} macOS update assets verified for ${version}`
+        )
+        expect(result.stdout).not.toContain('deleted')
+      } finally {
+        fixtures.cleanup()
+      }
     }
-  })
+  )
 
   // The reconciliation the plan requires: a manifest that does not verify must
   // not stay where a live release's updater can fetch it.
-  it('removes both manifests and their signatures when an uploaded zip does not match', async () => {
+  // Each leg owns its slice: a bad arm64 upload costs arm64 its manifest and leaves the
+  // x64 leg's verified one alone.
+  it('removes its own manifest and signature, leaving the other slice alone, when its zip does not match', async () => {
     const fixtures = await signedFixtures()
     try {
       writeFileSync(join(fixtures.directory, 'orca-macos-arm64.zip'), 'corrupted upload')
       const result = await check(fixtures)
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toContain('sha512 does not match')
-      for (const arch of MAC_ARCHES) {
-        const names = swaplabsMacUpdateAssetNames(arch)
-        expect(result.stdout).toContain(`deleted ${names.manifest}`)
-        expect(result.stdout).toContain(`deleted ${names.signature}`)
-      }
+      const names = swaplabsMacUpdateAssetNames('arm64')
+      expect(result.stdout).toContain(`deleted ${names.manifest}`)
+      expect(result.stdout).toContain(`deleted ${names.signature}`)
+      expect(result.stdout).not.toContain('deleted swaplabs-update-mac-x64')
       expect(result.stdout).toContain('did not verify and were removed')
+      const x64 = await check(fixtures, { MAC_ARCH: 'x64' })
+      expect(x64.exitCode, `${x64.stdout} ${x64.stderr}`).toBe(0)
+      expect(x64.stdout).not.toContain('deleted')
     } finally {
       fixtures.cleanup()
     }
@@ -414,31 +430,39 @@ describe('swaplabs fork build macOS asset verification', () => {
     const fixtures = await signedFixtures()
     try {
       const other = exportSwaplabsUpdatePublicKey(generateKeyPairSync('ed25519').privateKey)
-      const result = await check(fixtures, { [SWAPLABS_UPDATE_PUBLIC_KEY_ENV]: other })
+      const result = await check(fixtures, {
+        MAC_ARCH: 'x64',
+        [SWAPLABS_UPDATE_PUBLIC_KEY_ENV]: other
+      })
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toContain('signature does not verify')
       expect(result.stdout).toContain('deleted swaplabs-update-mac-x64.json')
+      expect(result.stdout).not.toContain('deleted swaplabs-update-mac-arm64')
     } finally {
       fixtures.cleanup()
     }
   })
 
   it.each(signedAssets.filter((name) => !name.endsWith('.dmg')))(
-    'fails, removing the manifests that did upload, when %s never uploaded',
+    'fails, removing the manifests of this slice that did upload, when %s never uploaded',
     async (missing) => {
       const fixtures = await signedFixtures()
       try {
+        const arch = MAC_ARCHES.find((candidate) => missing.includes(`-${candidate}.`))
         const result = await check(fixtures, {
+          MAC_ARCH: arch,
           ASSETS: signedAssets.filter((name) => name !== missing).join(' ')
         })
         expect(result.exitCode).not.toBe(0)
         expect(result.stdout).toContain(`missing ${missing}`)
-        // Only what the release holds is deleted: a missing name is already gone.
+        // Only what the release holds is deleted, and only this slice's: a missing name is
+        // already gone, and the other leg owns its own.
+        const names = swaplabsMacUpdateAssetNames(arch)
         const deleted = result.stdout.split('\n').filter((line) => line.startsWith('deleted '))
         expect(new Set(deleted)).toEqual(
           new Set(
-            signedAssets
-              .filter((name) => /\.json(\.sig)?$/.test(name) && name !== missing)
+            [names.manifest, names.signature]
+              .filter((name) => name !== missing)
               .map((name) => `deleted ${name}`)
           )
         )
@@ -485,11 +509,12 @@ describe('swaplabs fork build macOS asset verification', () => {
         '::warning::Attempt 3 could not delete swaplabs-update-mac-arm64.json'
       )
       expect(result.stdout).toContain(
-        '::error::Fork release swaplabs-v1.4.197+202609241530: the macOS update manifests did not verify and could not be removed; still attached: swaplabs-update-mac-arm64.json.'
+        '::error::Fork release swaplabs-v1.4.197+202609241530: the arm64 macOS update manifests did not verify and could not be removed; still attached: swaplabs-update-mac-arm64.json.'
       )
       expect(result.stdout).not.toContain('were removed')
-      // The other three were removed and are not reported as attached.
-      expect(result.stdout).toContain('deleted swaplabs-update-mac-x64.json')
+      // Its signature was removed and is not reported as attached; x64 is not this leg's.
+      expect(result.stdout).toContain('deleted swaplabs-update-mac-arm64.json.sig')
+      expect(result.stdout).not.toContain('deleted swaplabs-update-mac-x64')
       expect(result.stdout).not.toContain('still attached: swaplabs-update-mac-x64')
     } finally {
       fixtures.cleanup()
@@ -516,12 +541,12 @@ describe('swaplabs fork build macOS asset verification', () => {
   it('reports that no manifest was attached when the uploads never got that far', async () => {
     const fixtures = await signedFixtures()
     try {
-      const result = await check(fixtures, { ASSETS: dmgs.join(' ') })
+      const result = await check(fixtures, { MAC_ARCH: 'x64', ASSETS: dmgs.join(' ') })
       expect(result.exitCode).not.toBe(0)
       expect(result.stdout).toContain('missing orca-macos-x64.zip')
       expect(result.stdout).not.toContain('deleted')
       expect(result.stdout).toContain(
-        'did not verify; none was attached, so the DMGs stay as download-only assets.'
+        'the x64 macOS update manifests did not verify; none was attached, so its DMG stays as a download-only asset.'
       )
       expect(result.stdout).not.toContain('were removed')
     } finally {
@@ -537,7 +562,7 @@ describe('swaplabs fork build macOS asset verification', () => {
       expect(result.stdout).toContain(
         '::warning::Attempt 1 could not download the macOS update assets of swaplabs-v1.4.197+202609241530 for verification.'
       )
-      expect(result.stdout).toContain(`Signed macOS update assets verified for ${version}`)
+      expect(result.stdout).toContain(`Signed arm64 macOS update assets verified for ${version}`)
       expect(result.stdout).not.toContain('deleted')
     } finally {
       fixtures.cleanup()
@@ -552,11 +577,10 @@ describe('swaplabs fork build macOS asset verification', () => {
       const result = await check(fixtures, { DOWNLOAD_FAILURES: '99' })
       expect(result.exitCode).not.toBe(0)
       expect(result.stdout).toContain('::warning::Attempt 3 could not download')
-      for (const arch of MAC_ARCHES) {
-        const names = swaplabsMacUpdateAssetNames(arch)
-        expect(result.stdout).toContain(`deleted ${names.manifest}`)
-        expect(result.stdout).toContain(`deleted ${names.signature}`)
-      }
+      const names = swaplabsMacUpdateAssetNames('arm64')
+      expect(result.stdout).toContain(`deleted ${names.manifest}`)
+      expect(result.stdout).toContain(`deleted ${names.signature}`)
+      expect(result.stdout).not.toContain('deleted swaplabs-update-mac-x64')
       expect(result.stdout).toContain(
         'could not be downloaded from the release for verification and were removed'
       )
@@ -571,7 +595,14 @@ describe('swaplabs fork build macOS asset verification', () => {
     try {
       const ok = await check(fixtures, { SIGNING_ENABLED: 'false', ASSETS: dmgs.join(' ') })
       expect(ok.exitCode, ok.stdout).toBe(0)
-      expect(ok.stdout).toContain('Download-only macOS assets verified')
+      expect(ok.stdout).toContain('Download-only arm64 macOS assets verified')
+      // The other leg's DMG does not stand in for this one's.
+      const otherDmg = await check(fixtures, {
+        SIGNING_ENABLED: 'false',
+        ASSETS: 'orca-macos-x64.dmg'
+      })
+      expect(otherDmg.exitCode).not.toBe(0)
+      expect(otherDmg.stdout).toContain('missing orca-macos-arm64.dmg')
       const stray = await check(fixtures, {
         SIGNING_ENABLED: 'false',
         ASSETS: [...dmgs, 'swaplabs-update-mac-x64.json'].join(' ')
@@ -585,7 +616,7 @@ describe('swaplabs fork build macOS asset verification', () => {
       expect(squirrel.stdout).toContain('carries latest-mac.yml')
       const noDmg = await check(fixtures, { SIGNING_ENABLED: 'false', ASSETS: '' })
       expect(noDmg.exitCode).not.toBe(0)
-      expect(noDmg.stdout).toContain('missing a DMG')
+      expect(noDmg.stdout).toContain('missing orca-macos-arm64.dmg')
     } finally {
       fixtures.cleanup()
     }
