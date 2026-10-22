@@ -257,6 +257,11 @@ describe('a layout intent for a workspace a server’s frames draw', () => {
       name: 'an AI vault title',
       command: { type: 'renameTab', tabId: TAB_2, kind: 'aiVault', title: null },
       sent: { type: 'renameTab', tabId: 'bar-2', kind: 'aiVault', title: null }
+    },
+    {
+      name: 'the workspace’s default-tabs mark',
+      command: { type: 'setDefaultTabsApplied' },
+      sent: { type: 'setDefaultTabsApplied' }
     }
   ])('takes $name to the server’s main, which applies it as from its own window', async (each) => {
     const { store } = await drawnByServer()
@@ -270,6 +275,44 @@ describe('a layout intent for a workspace a server’s frames draw', () => {
         params: { command: { ...each.sent, workspace: WT } }
       }
     ])
+  })
+
+  // A drag-out on a server workspace must reach that server's main, or its frames snap the pane back.
+  it('takes a pane dragged into a new tab to the server’s main, naming no desktop terminal', async () => {
+    const { store } = await drawnByServer()
+    hoisted.reply = async () => ({ ok: true, result: { tabId: 'bar-2', ptyId: 'server-pty-2' } })
+    const { taken, handlers } = send(store, {
+      type: 'movePaneToNewTab',
+      tabId: TAB_1,
+      leafId: LEAF_ID,
+      groupId: HOST_GROUP,
+      index: 1,
+      windowDetach: { ptyId: 'remote:desktop-pty', startupCwd: '/srv/wt' }
+    })
+    await settle()
+
+    expect(taken).toBe(true)
+    expect(hoisted.sent).toEqual([
+      {
+        target: { kind: 'environment', environmentId: ENV },
+        params: {
+          command: {
+            type: 'movePaneToNewTab',
+            tabId: 'bar-1',
+            leafId: LEAF_ID,
+            groupId: HOST_GROUP,
+            index: 1,
+            windowDetach: { ptyId: null, startupCwd: '/srv/wt' },
+            workspace: WT
+          }
+        }
+      }
+    ])
+    expect(handlers.apply).toHaveBeenCalledWith(
+      { tabId: TAB_2, ptyId: 'server-pty-2' },
+      { framesKey: ENV, routed: true }
+    )
+    expect(handlers.asToday).not.toHaveBeenCalled()
   })
 
   it('keeps today’s path for a tab the server’s frames do not hold', async () => {
@@ -343,7 +386,15 @@ describe('a layout intent for a workspace a server’s frames draw', () => {
       { type: 'setTabProps', tabId: TAB_1, color: '#ff0000' },
       { type: 'setChatPane', tabId: TAB_1, leafId: LEAF_ID },
       { type: 'renameTab', tabId: TAB_1, kind: 'aiVault', title: null },
-      { type: 'moveTab', tabId: TAB_1, toGroupId: HOST_GROUP, index: 1 }
+      { type: 'moveTab', tabId: TAB_1, toGroupId: HOST_GROUP, index: 1 },
+      {
+        type: 'movePaneToNewTab',
+        tabId: TAB_1,
+        leafId: LEAF_ID,
+        groupId: HOST_GROUP,
+        windowDetach: { ptyId: null }
+      },
+      { type: 'setDefaultTabsApplied' }
     ]
     for (const command of today) {
       expect(send(older, command).taken).toBe(false)

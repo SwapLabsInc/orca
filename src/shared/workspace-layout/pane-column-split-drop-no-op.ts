@@ -1,10 +1,10 @@
-import type { TabGroupLayoutNode } from '../../../../shared/tab-types'
-import type { TabSplitDirection } from './tabs'
+import type { TabGroupLayoutNode } from '../tab-types'
+import type { GroupSide } from './workspace-layout-command-types'
 
 function getDirectLayoutSiblingOnSplitSide(
   split: Extract<TabGroupLayoutNode, { type: 'split' }>,
   targetGroupId: string,
-  splitDirection: TabSplitDirection
+  splitDirection: GroupSide
 ): string | null {
   const { first, second, direction } = split
 
@@ -32,7 +32,7 @@ function getDirectLayoutSiblingOnSplitSide(
 export function findLayoutSiblingOnSplitSide(
   root: TabGroupLayoutNode,
   targetGroupId: string,
-  splitDirection: TabSplitDirection
+  splitDirection: GroupSide
 ): string | null {
   if (root.type === 'leaf') {
     return null
@@ -53,7 +53,7 @@ export function findLayoutSiblingOnSplitSide(
 export function isPaneColumnSplitDropNoOp(args: {
   sourceGroupId: string
   targetGroupId: string
-  splitDirection: TabSplitDirection
+  splitDirection: GroupSide
   sourceTabCount: number
   layout: TabGroupLayoutNode | undefined
 }): boolean {

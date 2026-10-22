@@ -5,7 +5,7 @@
 // dropping its envelope makes the assistant appear to answer an empty
 // conversation. Surface non-catalog envelopes back as plain user text.
 
-import { isTextBlock, type NativeChatMessage } from './native-chat-types'
+import { isTextBlock, type NativeChatMessage } from '../native-chat-types'
 
 const COMMAND_NAME = /<command-name>([\s\S]*?)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
