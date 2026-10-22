@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RelayAgentHookServer } from '../../relay/agent-hook-server'
+import { RelayAgentHookServer } from '../../wsl-guest/agent-hook-server'
 import type { AgentHookRelayUserEndedSessionEnvelope } from '../../shared/agent-hook-relay'
 import { AgentHookServer, _internals } from './server'
 import { buildBody, PANE, postHookEvent } from './server.test-fixtures'
@@ -22,6 +22,7 @@ const RESUME = {
   providerSession: { key: 'session_id', id: SESSION, transcriptPath: TRANSCRIPT }
 }
 const AGENT_PROCESS = JSON.stringify({ pid: 4001, platform: 'linux', startTime: 'birth-4001' })
+const NESTED_PROCESS = JSON.stringify({ pid: 4002, platform: 'linux', startTime: 'birth-4002' })
 const notLive = (): boolean => false
 
 let dir: string
@@ -49,10 +50,14 @@ async function startServer(userDataPath = join(dir, 'host')): Promise<AgentHookS
 }
 
 /** A hook from the pane's Claude, carrying the process identity its hook script captures. */
-async function hook(server: AgentHookServer, payload: Record<string, unknown>): Promise<void> {
+async function hook(
+  server: AgentHookServer,
+  payload: Record<string, unknown>,
+  agentProcess = AGENT_PROCESS
+): Promise<void> {
   const body = buildBody(
     { session_id: SESSION, transcript_path: TRANSCRIPT, ...payload },
-    { agentProcess: AGENT_PROCESS }
+    { agentProcess }
   )
   expect((await postHookEvent(server, body)).status).toBe(204)
 }
@@ -99,6 +104,20 @@ describe('an identified Claude whose process reports its own exit', () => {
       expect(server.selectTerminalLossResume(PANE, notLive)).toBeNull()
     })
   }
+
+  it('keeps resuming when another process in the pane ends the same session', async () => {
+    const server = await startServer()
+    await runIdleTurn(server)
+
+    await hook(
+      server,
+      { hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' },
+      NESTED_PROCESS
+    )
+
+    expect(visible(server)).toBe(true)
+    expect(server.selectTerminalLossResume(PANE, notLive)).toEqual(RESUME)
+  })
 
   it('lets a shell that outlived a signal-ended Claude retire it to a manual resume', async () => {
     const server = await startServer()
@@ -164,7 +183,10 @@ describe('an identified Claude over the WSL relay', () => {
     })
     servers.push(relay)
     await relay.start()
-    const post = async (payload: Record<string, unknown>): Promise<void> => {
+    const post = async (
+      payload: Record<string, unknown>,
+      agentProcess = AGENT_PROCESS
+    ): Promise<void> => {
       const { port, token } = relay.getCoordinates()
       const response = await fetch(`http://127.0.0.1:${port}/hook/claude`, {
         method: 'POST',
@@ -174,7 +196,7 @@ describe('an identified Claude over the WSL relay', () => {
           tabId: 'tab-1',
           worktreeId: 'wt-1',
           env: 'remote',
-          agentProcess: AGENT_PROCESS,
+          agentProcess,
           payload: { session_id: SESSION, transcript_path: TRANSCRIPT, ...payload }
         })
       })
@@ -195,6 +217,16 @@ describe('an identified Claude over the WSL relay', () => {
     expect(pair.notices).toEqual([expect.objectContaining({ userEndedSessionId: SESSION })])
     expect(pair.host.selectTerminalLossResume(PANE, notLive)).toBeNull()
     expect(pair.relay.replayCachedPayloadsForPanes()).toBe(0)
+  })
+
+  it('does not report the same session ended by another process in the pane', async () => {
+    const pair = await startPair()
+
+    await pair.post({ hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' }, NESTED_PROCESS)
+
+    expect(pair.notices).toEqual([])
+    expect(pair.host.selectTerminalLossResume(PANE, notLive)).toEqual(RESUME)
+    expect(pair.relay.replayCachedPayloadsForPanes()).toBe(1)
   })
 
   it('keeps resuming a session a signal ended', async () => {

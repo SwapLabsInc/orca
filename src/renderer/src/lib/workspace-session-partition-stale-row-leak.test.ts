@@ -76,8 +76,8 @@ function makeApi(partitions: Record<string, WorkspaceSessionState>) {
 describe('a sleeping-record field emptied on a non-local partition', () => {
   it('parks an unprovable connectionId locally instead of guessing an ssh partition', async () => {
     const { api, patch } = makeApi({})
-    await patchWorkspaceSessionByHost(api, withRecord, catalog)
-    await patchWorkspaceSessionByHost(api, cleared, catalog)
+    await patchWorkspaceSessionByHost(api, withRecord, catalog).written
+    await patchWorkspaceSessionByHost(api, cleared, catalog).written
     await new Promise((resolve) => setTimeout(resolve, 0))
     // Local is always fetched; an unproven `ssh:<id>` partition never is, so guessing it loses
     // the handle for good while parking locally corrects itself on the next write.
@@ -112,7 +112,7 @@ describe('a sleeping-record field emptied on a non-local partition', () => {
     const read = await fetchWorkspaceSessionWithRuntimeHostOwners(api, [])
     expect(read.session.sleepingAgentSessionsByPaneKey ?? {}).toEqual({})
 
-    await patchWorkspaceSessionByHost(api, cleared, catalog)
+    await patchWorkspaceSessionByHost(api, cleared, catalog).written
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sshPatches(patch)).toEqual([])
   })

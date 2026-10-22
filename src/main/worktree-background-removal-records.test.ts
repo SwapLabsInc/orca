@@ -6,13 +6,15 @@ import {
   _resetPendingWorktreeRemovalsForTests,
   _settlePendingWorktreeRemovalsForTests,
   loadWorktreeRemovalRecords,
-  projectPendingWorktreeRemovals,
   resumeInterruptedWorktreeRemovals,
-  snapshotPendingWorktreeRemovals,
   startBackgroundWorktreeRemoval,
   stopBackgroundWorktreeRemovals,
   waitForPendingWorktreeRemoval
 } from './worktree-background-removal'
+import {
+  projectPendingWorktreeRemovals,
+  snapshotPendingWorktreeRemovals
+} from './worktree-removal-listing'
 import type * as WorktreeRemovalRecords from './worktree-removal-records'
 import {
   readWorktreeRemovalRecords,
@@ -253,5 +255,30 @@ describe('durable worktree removal records', () => {
 
     await writeFile(worktreeRemovalRecordsFile(directory), '{not json')
     expect(await readWorktreeRemovalRecords(directory)).toEqual([])
+  })
+
+  it('reads a record that carries a field this version does not know, ignoring the field', async () => {
+    const record = {
+      worktreeId: 'repo-1::/work/a',
+      repoId: 'repo-1',
+      repoPath: '/work/repo',
+      worktreePath: '/work/a',
+      branch: 'feature',
+      head: 'abc',
+      deleteBranch: true,
+      force: false,
+      requestedAt: 5,
+      failure: { message: 'Operation not permitted', failedAt: 6 }
+    }
+    // Daily builds before this one may have written a checkout identity with the record.
+    await writeFile(
+      worktreeRemovalRecordsFile(directory),
+      JSON.stringify({
+        version: 1,
+        removals: [{ ...record, checkoutIdentity: { dev: 1, ino: 2, birthtimeMs: 3 } }]
+      })
+    )
+
+    expect(await readWorktreeRemovalRecords(directory)).toEqual([record])
   })
 })

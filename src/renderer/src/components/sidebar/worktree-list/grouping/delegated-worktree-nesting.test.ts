@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { getSettingsFocusedExecutionHostId } from '../../../../../../shared/execution-host'
 import type { ExecutionHostId } from '../../../../../../shared/execution-host'
-import { buildRows } from './build-rows'
-import { resolveDelegatedWorktreeNesting } from './delegated-worktree-nesting'
+import { cloneDefaultWorkspaceStatuses } from '../../../../../../shared/workspace-statuses'
+import { planSidebarRows } from '../../../../../../shared/sidebar-list/sidebar-row-plan'
+import { createSidebarPRGroupReader } from './pr-group-key'
 import { repo, remoteRepo, worktree } from '../../worktree-list-groups-test-fixtures'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
-import type { WorktreeLineage } from '../../../../../../shared/worktree/lineage-types'
 import type { Repo } from '../../../../../../shared/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import type {
   ImportedWorktreesCardCandidate,
   NewExternalWorktreesInboxCandidate,
   PendingCreationRef,
-  Row
-} from './row-types'
+  Row,
+  WorktreeGroupBy
+} from '../../../../../../shared/sidebar-list/row-types'
 
 const REMOTE_HOST = 'runtime:env-1' as const
 
@@ -35,7 +36,7 @@ const remoteWorker: Worktree = {
 }
 
 // Why: a second, undelegated worktree in the child's repo is what gives that repo a
-// section of its own, which is the case where the fallback rows could be emitted twice.
+// section of its own, which is the case where the notice rows could be emitted twice.
 const remoteSibling: Worktree = {
   ...worktree,
   id: 'repo-remote::/home/ubuntu/orca/sibling',
@@ -48,7 +49,7 @@ const remoteSibling: Worktree = {
 const otherRepo: Repo = { ...remoteRepo, id: 'repo-other', displayName: 'other' }
 
 // Why: a second coordinator in a different repo section, with its own delegated child of the
-// same remote repo — the case where two sections each claim that repo.
+// same remote repo — the case where two sections each display a child of that repo.
 const otherCoordinator: Worktree = {
   ...worktree,
   id: 'repo-other::/home/alex/orca/other-coordinator',
@@ -74,71 +75,56 @@ const edge: DelegatedWorktreeEdge = {
   dispatchId: 'ctx_1'
 }
 
-function nest(args: {
-  worktrees: readonly Worktree[]
-  edges: readonly DelegatedWorktreeEdge[]
-  lineageParentIdentity?: (worktree: Worktree) => string | undefined
-}): ReadonlyMap<string, string> {
-  return resolveDelegatedWorktreeNesting({
-    worktrees: args.worktrees,
-    edges: args.edges,
-    homeHostId: 'local',
-    getLineageParentIdentity: args.lineageParentIdentity ?? (() => undefined)
-  }).parentIdentityByChildIdentity
+const repoMap = new Map([
+  [repo.id, repo],
+  [remoteRepo.id, remoteRepo],
+  [otherRepo.id, otherRepo]
+])
+
+const notices = {
+  importedWorktreesByRepo: new Map<string, ImportedWorktreesCardCandidate>([
+    [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
+  ]),
+  newExternalWorktreesInboxByRepo: new Map<string, NewExternalWorktreesInboxCandidate>([
+    [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
+  ]),
+  pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
 }
 
-describe('resolveDelegatedWorktreeNesting', () => {
-  it('nests a remote worker under the coordinator that dispatched it', () => {
-    expect(nest({ worktrees: [coordinator, remoteWorker], edges: [edge] })).toEqual(
-      new Map([[`${REMOTE_HOST}|${remoteWorker.id}`, `local|${coordinator.id}`]])
-    )
-  })
-
-  it('ignores an edge whose coordinator row is not on this machine', () => {
-    const elsewhere = { ...coordinator, hostId: 'runtime:env-2' as const }
-    expect(nest({ worktrees: [elsewhere, remoteWorker], edges: [edge] }).size).toBe(0)
-  })
-
-  it('leaves git lineage in charge when the child already has a parent', () => {
-    expect(
-      nest({
-        worktrees: [coordinator, remoteWorker],
-        edges: [edge],
-        lineageParentIdentity: (candidate) =>
-          candidate.id === remoteWorker.id ? `${REMOTE_HOST}|repo-remote::/other` : undefined
-      }).size
-    ).toBe(0)
-  })
-
-  it('refuses an edge that would close a cycle', () => {
-    const backEdge: DelegatedWorktreeEdge = {
-      parentWorktreeId: coordinator.id,
-      childHostId: REMOTE_HOST,
-      childWorktreeId: remoteWorker.id,
-      dispatchId: 'ctx_2'
-    }
-    const resolved = resolveDelegatedWorktreeNesting({
-      worktrees: [coordinator, remoteWorker],
-      edges: [backEdge],
-      homeHostId: REMOTE_HOST,
-      // The coordinator is itself a delegated child of the worker in this shape.
-      getLineageParentIdentity: (candidate) =>
-        candidate.id === coordinator.id ? `${REMOTE_HOST}|${remoteWorker.id}` : undefined
-    })
-    expect(resolved.parentIdentityByChildIdentity.size).toBe(0)
-  })
-
-  it('keeps the first edge when a worktree was reused by a later dispatch', () => {
-    const reused: DelegatedWorktreeEdge = {
-      ...edge,
-      parentWorktreeId: 'repo-1::/other',
-      dispatchId: 'ctx_3'
-    }
-    expect(nest({ worktrees: [coordinator, remoteWorker], edges: [edge, reused] })).toEqual(
-      new Map([[`${REMOTE_HOST}|${remoteWorker.id}`, `local|${coordinator.id}`]])
-    )
-  })
-})
+function rowsFor(
+  edges: readonly DelegatedWorktreeEdge[],
+  overrides: {
+    groupBy?: WorktreeGroupBy
+    defaultHostId?: ExecutionHostId
+    importedWorktreesByRepo?: ReadonlyMap<string, ImportedWorktreesCardCandidate>
+    newExternalWorktreesInboxByRepo?: ReadonlyMap<string, NewExternalWorktreesInboxCandidate>
+    pendingCreations?: readonly PendingCreationRef[]
+    worktrees?: readonly Worktree[]
+  } = {}
+): Row[] {
+  const worktrees = [...(overrides.worktrees ?? [coordinator, remoteWorker])]
+  return planSidebarRows({
+    groupBy: overrides.groupBy ?? 'repo',
+    worktrees,
+    repoMap,
+    prGroupOf: createSidebarPRGroupReader(repoMap, null),
+    workspaceStatuses: cloneDefaultWorkspaceStatuses(),
+    projectOrderBy: 'manual',
+    lineageById: {},
+    worktreeMap: new Map(worktrees.map((row) => [row.id, row])),
+    nestLineage: true,
+    projectGroups: [],
+    placeholderRepoIds: new Set(),
+    importedWorktreesByRepo: overrides.importedWorktreesByRepo ?? new Map(),
+    newExternalWorktreesInboxByRepo: overrides.newExternalWorktreesInboxByRepo ?? new Map(),
+    pendingCreations: overrides.pendingCreations ?? [],
+    folderWorkspaces: [],
+    defaultHostId: overrides.defaultHostId ?? 'local',
+    pinnedDisplayPolicy: 'single-location',
+    filterRepoIds: [],
+    delegatedWorktreeEdges: edges
+  }).render(new Set())
+}
 
 function findItem(
   rows: readonly Row[],
@@ -150,52 +136,25 @@ function findItem(
   )
 }
 
-describe('buildRows with delegated edges', () => {
-  const repoMapWithRemote = new Map([
-    [repo.id, repo],
-    [remoteRepo.id, remoteRepo],
-    [otherRepo.id, otherRepo]
-  ])
-  const lineage: Record<string, WorktreeLineage> = {}
+type NoticeRow = Extract<
+  Row,
+  { type: 'imported-worktrees-card' | 'new-external-worktrees-inbox' | 'pending-creation' }
+>
 
-  function rowsFor(
-    edges: readonly DelegatedWorktreeEdge[],
-    overrides: {
-      defaultHostId?: ExecutionHostId
-      importedWorktreesByRepo?: ReadonlyMap<string, ImportedWorktreesCardCandidate>
-      newExternalWorktreesInboxByRepo?: ReadonlyMap<string, NewExternalWorktreesInboxCandidate>
-      pendingCreations?: readonly PendingCreationRef[]
-      extraWorktrees?: readonly Worktree[]
-    } = {}
-  ) {
-    const worktrees = [coordinator, remoteWorker, ...(overrides.extraWorktrees ?? [])]
-    return buildRows(
-      'repo',
-      worktrees,
-      repoMapWithRemote,
-      null,
-      new Set(),
-      undefined,
-      undefined,
-      'manual',
-      lineage,
-      new Map(worktrees.map((w) => [w.id, w])),
-      true,
-      undefined,
-      [],
-      new Set(),
-      overrides.importedWorktreesByRepo ?? new Map(),
-      overrides.newExternalWorktreesInboxByRepo ?? new Map(),
-      overrides.pendingCreations ?? [],
-      undefined,
-      [],
-      undefined,
-      overrides.defaultHostId ?? 'local',
-      'single-location',
-      edges
-    )
-  }
+function noticeRows(rows: readonly Row[]): NoticeRow[] {
+  return rows.filter(
+    (row): row is NoticeRow =>
+      row.type === 'imported-worktrees-card' ||
+      row.type === 'new-external-worktrees-inbox' ||
+      row.type === 'pending-creation'
+  )
+}
 
+function headerKeys(rows: readonly Row[]): string[] {
+  return rows.flatMap((row) => (row.type === 'header' ? [row.key] : []))
+}
+
+describe('planSidebarRows with delegated edges', () => {
   it('renders the remote worker nested inside the coordinator repo section', () => {
     const rows = rowsFor([edge])
     const worker = findItem(rows, remoteWorker.id)
@@ -224,58 +183,65 @@ describe('buildRows with delegated edges', () => {
     expect(worker?.sectionKey).not.toBe(parent?.sectionKey)
   })
 
-  it("renders the anchored child repo's fallback rows once, in the section that shows it", () => {
-    const rows = rowsFor([edge], {
-      importedWorktreesByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
-      ]),
-      newExternalWorktreesInboxByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
-      ]),
-      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+  it('follows a pinned coordinator into the Pinned section', () => {
+    const pinnedCoordinator = { ...coordinator, isPinned: true }
+    const rows = rowsFor([edge], { worktrees: [pinnedCoordinator, remoteWorker] })
+    expect(findItem(rows, coordinator.id)).toMatchObject({ depth: 0 })
+    expect(findItem(rows, remoteWorker.id)).toMatchObject({
+      depth: 1,
+      sectionKey: findItem(rows, coordinator.id)?.sectionKey
     })
-    const coordinatorSection = findItem(rows, coordinator.id)?.sectionKey
-    const headers = rows.filter((row) => row.type === 'header')
-    // One section, not two: the child's repo has no section of its own to fall back to.
-    expect(headers.map((header) => header.key)).toEqual([coordinatorSection])
-    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
   })
 
-  it("emits the child repo's fallback rows once when that repo has its own section", () => {
+  it('nests within a status lane only when both share it', () => {
+    const sameLane = rowsFor([edge], { groupBy: 'workspace-status' })
+    expect(findItem(sameLane, remoteWorker.id)).toMatchObject({ depth: 1 })
     const rows = rowsFor([edge], {
-      extraWorktrees: [remoteSibling],
-      importedWorktreesByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
-      ]),
-      newExternalWorktreesInboxByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
-      ]),
-      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+      groupBy: 'workspace-status',
+      worktrees: [{ ...coordinator, workspaceStatus: 'in-review' }, remoteWorker]
+    })
+    const worker = findItem(rows, remoteWorker.id)
+    expect(worker).toMatchObject({ depth: 0 })
+    expect(worker?.sectionKey).not.toBe(findItem(rows, coordinator.id)?.sectionKey)
+  })
+
+  it("keeps the worker's repo notices in that repo's own section, once", () => {
+    // Upstream's rule for a child displayed under another project: the owning repo keeps its
+    // notice rows, in a section of its own when no row of it is displayed there.
+    const rows = rowsFor([edge], notices)
+    const coordinatorSection = findItem(rows, coordinator.id)?.sectionKey
+    const headers = headerKeys(rows)
+    expect(headers).toHaveLength(2)
+    expect(headers).toContain(coordinatorSection)
+    expect(findItem(rows, remoteWorker.id)).toMatchObject({ sectionKey: coordinatorSection })
+    const ownSection = headers.find((key) => key !== coordinatorSection)
+    const ownSectionStart = rows.findIndex((row) => row.type === 'header' && row.key === ownSection)
+    const ownSectionEnd = rows.findIndex(
+      (row, index) => index > ownSectionStart && row.type === 'header'
+    )
+    const ownSectionRows = rows.slice(
+      ownSectionStart + 1,
+      ownSectionEnd === -1 ? undefined : ownSectionEnd
+    )
+    expect(noticeRows(ownSectionRows)).toHaveLength(3)
+    expect(noticeRows(rows)).toHaveLength(3)
+  })
+
+  it("emits the child repo's notice rows once when that repo has its own section", () => {
+    const rows = rowsFor([edge], {
+      ...notices,
+      worktrees: [coordinator, remoteWorker, remoteSibling]
     })
     const coordinatorSection = findItem(rows, coordinator.id)?.sectionKey
-    const siblingSection = findItem(rows, remoteSibling.id)?.sectionKey
-    // The child's repo has a section of its own here, so the coordinator section must not
-    // also claim it — the repo-keyed row ids are identical and would collide.
-    expect(siblingSection).not.toBe(coordinatorSection)
-    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
+    expect(findItem(rows, remoteSibling.id)?.sectionKey).not.toBe(coordinatorSection)
     // The repo-keyed notice rows carry the same id in whichever section emits them, so a
     // second emission is a duplicate React key, not just a redundant card.
-    const noticeKeys = rows
-      .filter(
-        (row) =>
-          row.type === 'imported-worktrees-card' ||
-          row.type === 'new-external-worktrees-inbox' ||
-          row.type === 'pending-creation'
-      )
-      .map((row) => row.key)
+    const noticeKeys = noticeRows(rows).map((row) => row.key)
+    expect(noticeKeys).toHaveLength(3)
     expect(new Set(noticeKeys).size).toBe(noticeKeys.length)
   })
 
-  it('leaves one claim when two coordinators in different sections anchor the same repo', () => {
+  it('emits the notice rows once when two coordinators each nest a worker of one repo', () => {
     const secondEdge: DelegatedWorktreeEdge = {
       parentWorktreeId: otherCoordinator.id,
       childHostId: REMOTE_HOST,
@@ -283,19 +249,15 @@ describe('buildRows with delegated edges', () => {
       dispatchId: 'ctx_2'
     }
     const rows = rowsFor([edge, secondEdge], {
-      extraWorktrees: [otherCoordinator, secondRemoteWorker],
-      importedWorktreesByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, hiddenWorktrees: [] }]
-      ]),
-      newExternalWorktreesInboxByRepo: new Map([
-        [remoteRepo.id, { repo: remoteRepo, inboxWorktrees: [] }]
-      ]),
-      pendingCreations: [{ creationId: 'create-1', repoId: remoteRepo.id }]
+      ...notices,
+      worktrees: [coordinator, remoteWorker, otherCoordinator, secondRemoteWorker]
     })
-    // Both coordinators bucket a child of remoteRepo, so both claimed it. Only one may keep
-    // the claim, or the repo-keyed notice rows are emitted from each section.
-    expect(rows.filter((row) => row.type === 'imported-worktrees-card')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'new-external-worktrees-inbox')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'pending-creation')).toHaveLength(1)
+    expect(findItem(rows, secondRemoteWorker.id)).toMatchObject({
+      depth: 1,
+      sectionKey: findItem(rows, otherCoordinator.id)?.sectionKey
+    })
+    const noticeKeys = noticeRows(rows).map((row) => row.key)
+    expect(noticeKeys).toHaveLength(3)
+    expect(new Set(noticeKeys).size).toBe(noticeKeys.length)
   })
 })

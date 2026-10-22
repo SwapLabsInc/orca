@@ -6,6 +6,7 @@ import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-e
 import type { RemoteServerUpdateSupport } from '../../../../shared/remote-server-update'
 import type { RemoteServerUpdateEntry } from '@/runtime/remote-server-update-coordinator'
 import { useAppStore } from '@/store'
+import { TooltipProvider } from '../ui/tooltip'
 import { RuntimeServerRow } from './runtime-server-row'
 
 const HELP_URL = 'https://example.com/runbooks/orca-update'
@@ -33,7 +34,7 @@ const manual: RemoteServerUpdateSupport = {
 
 const openUrl = vi.fn(async () => undefined)
 
-function renderRow(support: RemoteServerUpdateSupport): HTMLElement {
+function renderRow(support: RemoteServerUpdateSupport): void {
   const remoteUpdate: RemoteServerUpdateEntry = {
     environmentId: environment.id,
     name: environment.name,
@@ -47,24 +48,28 @@ function renderRow(support: RemoteServerUpdateSupport): HTMLElement {
     support,
     error: null
   }
-  return render(
-    <RuntimeServerRow
-      environment={environment}
-      details={undefined}
-      isActive={false}
-      remoteUpdate={remoteUpdate}
-      remoteServerUpdatesRunning={false}
-      connecting={false}
-      switching={false}
-      disconnecting={false}
-      removing={false}
-      isBusy={false}
-      onOpenUpdate={vi.fn()}
-      onDisconnect={vi.fn()}
-      onConnect={vi.fn()}
-      onRemove={vi.fn()}
-    />
-  ).container
+  render(
+    <TooltipProvider>
+      <RuntimeServerRow
+        environment={environment}
+        details={undefined}
+        isActive={false}
+        remoteUpdate={remoteUpdate}
+        remoteServerUpdatesRunning={false}
+        connecting={false}
+        switching={false}
+        disconnecting={false}
+        removing={false}
+        isBusy={false}
+        onOpenUpdate={vi.fn()}
+        onDisconnect={vi.fn()}
+        onConnect={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    </TooltipProvider>
+  )
+  // The full manual-update help lives in the row's expanded details.
+  fireEvent.click(screen.getByRole('button', { name: 'Details' }))
 }
 
 beforeEach(() => {

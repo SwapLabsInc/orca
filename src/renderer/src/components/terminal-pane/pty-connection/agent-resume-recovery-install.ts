@@ -53,7 +53,7 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     const state = useAppStore.getState()
     const target = resolveAgentResumeLaunchTarget({
       projectRuntime: session.projectRuntime,
-      connectionId: session.connectionId,
+      connectionId: null,
       executionHostId: session.executionHostId,
       worktreePath: paneAgentResumeScopePath({
         worktreePath: session.worktree?.path,

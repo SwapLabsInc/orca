@@ -1,7 +1,8 @@
+import { isPaneOwnerRefusal } from './pane-owner-recovery'
+import type { SpawnDeferralReason } from '../../../../../shared/host-spawn-admission'
 import { POST_REPLAY_MODE_RESET } from '../../../../../shared/terminal-mode-reset-profiles'
 import { createTerminalStartupTiming } from '../terminal-startup-timing'
-import type { PtyReplayDataMeta } from '../pty-transport'
-import type { PtyTransportRecoveryState } from '../pty-transport-types'
+import type { PtyReplayDataMeta, PtyTransportRecoveryState } from '../pty-transport-types'
 import type { PtyDataMeta } from '../pty-dispatcher'
 import type { PtyPaneStartup } from '../pty-connection-types'
 
@@ -9,6 +10,7 @@ import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
 /** Per-generation transport output callbacks and the hidden-output restore state they reset. */
 export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySession): void {
+  const ownerErrors = new Set<string>()
   session.captureTransportOutputCallbacks = (
     onError: (message: string) => void,
     startup: PtyPaneStartup
@@ -48,6 +50,10 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
         },
         onConnect: (): void => {
           if (isCurrent()) {
+            for (const message of ownerErrors) {
+              session.deps.onPtyErrorClearedRef?.current?.(session.pane.id, message)
+            }
+            ownerErrors.clear()
             session.startupTiming?.mark('connected')
             session.reportRemoteRendererSerializerReady()
             // Re-derive the pause bit after a rebind; visibility can change while no PTY is bound.
@@ -81,6 +87,11 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
         },
         onError: (message: string): void => {
           if (isCurrent()) {
+            for (const line of message.split('\n')) {
+              if (isPaneOwnerRefusal(line)) {
+                ownerErrors.add(line)
+              }
+            }
             session.startupTiming?.finish('error')
             onError(message)
           }
@@ -102,9 +113,23 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
             session.deps.onPtyRecoveryStateRef?.current?.(session.pane.id, state)
           }
         },
-        onOutputPauseChanged: (paused: boolean, supported: boolean): void => {
+        onOutputPauseChanged: (
+          paused: boolean,
+          supported: boolean,
+          dropsReported?: boolean
+        ): void => {
           if (isCurrent()) {
-            session.handleRemoteOutputPauseChanged(paused, supported)
+            session.handleRemoteOutputPauseChanged(paused, supported, dropsReported === true)
+          }
+        },
+        onPausedOutputDropped: (): void => {
+          if (isCurrent()) {
+            session.handleRemotePausedOutputDropped()
+          }
+        },
+        onSpawnDeferred: (reason: SpawnDeferralReason): void => {
+          if (isCurrent()) {
+            session.pendingSpawnDeferral = reason
           }
         }
       }
@@ -127,6 +152,11 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
   session.hiddenOutputRestoreLegacyPtyId = null
   // Bounded remote re-arms spent instead of the loss banner (per PTY stream).
   session.hiddenOutputRestoreRemoteAbandonCycles = 0
+  // Latest hidden-drop episode main reported, and the one a banner already disclosed:
+  // main's drop latch outlives unhide, so an unservable gap re-marks on every reveal.
+  session.hiddenOutputRestoreLatestDropEpisode = null
+  session.hiddenOutputRestoreUnhideSeq = null
+  session.hiddenOutputRestoreDisclosedGap = null
   session.hiddenOutputSnapshotScrollRestore = null
   // Why: hidden recovery state belongs to one PTY stream. Reattach/restart
   // can reuse the pane object for a different session before visibility.

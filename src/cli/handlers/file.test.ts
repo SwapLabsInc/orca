@@ -88,6 +88,43 @@ describe('orca file CLI handlers', () => {
     expect(vi.mocked(console.log).mock.calls[0][0]).toBe('Opened src/App.tsx.')
   })
 
+  it('forwards 1-based positions while preserving default background navigation', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('open', { worktree: 'wt-1', relativePath: 'a.ts', kind: 'text', opened: true })
+    )
+    await main(
+      ['file', 'open', 'a.ts', '--worktree', 'id:wt-1', '--line', '42', '--column', '7'],
+      '/tmp/repo'
+    )
+    expect(callMock).toHaveBeenCalledWith('files.open', {
+      worktree: 'id:wt-1',
+      relativePath: 'a.ts',
+      navigation: 'caller',
+      line: 42,
+      column: 7
+    })
+  })
+
+  it.each([
+    ['--column', '7'],
+    ['--line', '0'],
+    ['--line', '-1'],
+    ['--line', '4.5'],
+    ['--line', 'x'],
+    ['--line', '9007199254740992'],
+    ['--line='],
+    ['--line'],
+    ['--line', '2', '--column='],
+    ['--line', '2', '--column', '0']
+  ])('rejects invalid positioning %j before resolving a workspace', async (...flags) => {
+    await main(['file', 'open', 'a.ts', ...flags], '/tmp/repo')
+    expect(process.exitCode).toBe(1)
+    expect(callMock).not.toHaveBeenCalled()
+    expect(vi.mocked(console.error).mock.calls[0]?.[0]).toMatch(/--(?:line|column)/)
+    process.exitCode = undefined
+  })
+
   it('opens a staged diff for an explicit worktree without cwd inference', async () => {
     queueFixtures(
       callMock,
@@ -113,7 +150,7 @@ describe('orca file CLI handlers', () => {
     })
   })
 
-  it('reports unopened direct diffs instead of formatting them as opened', async () => {
+  it('fails an unopened direct diff instead of exiting 0', async () => {
     queueFixtures(
       callMock,
       okFixture('req_diff', {
@@ -132,9 +169,36 @@ describe('orca file CLI handlers', () => {
       staged: false,
       navigation: 'caller'
     })
-    expect(vi.mocked(console.log).mock.calls[0][0]).toBe(
-      'Did not open diff for assets/logo.png: binary file.'
+    expect(console.log).not.toHaveBeenCalled()
+    expect(vi.mocked(console.error).mock.calls[0][0]).toContain(
+      'Did not open diff for assets/logo.png: the Orca app declined this binary file.'
     )
+    expect(process.exitCode).toBe(1)
+    process.exitCode = undefined
+  })
+
+  // Why: an older host still answers a PDF with opened:false (STA-9113); that must not read as success.
+  it('fails an unopened file open with ok:false in --json mode', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_open', {
+        worktree: 'wt-1',
+        relativePath: 'docs/example.pdf',
+        kind: 'binary',
+        opened: false
+      })
+    )
+
+    await main(
+      ['file', 'open', '--path', 'docs/example.pdf', '--worktree', 'id:wt-1', '--json'],
+      '/tmp/repo'
+    )
+
+    const output = JSON.parse(vi.mocked(console.log).mock.calls[0][0])
+    expect(output).toMatchObject({ ok: false })
+    expect(output.error.message).toContain('Did not open docs/example.pdf')
+    expect(process.exitCode).toBe(1)
+    process.exitCode = undefined
   })
 
   it('rejects --worktree without a value before cwd inference or RPC calls', async () => {
@@ -456,7 +520,7 @@ describe('orca file CLI handlers', () => {
       '/tmp/elsewhere'
     )
 
-    // Why: a binary edit open returns opened:false before reaching the host, so focus carries to the next open.
+    // Why: an older host answers a binary edit open with opened:false, so focus carries to the next open.
     expect(callMock).toHaveBeenNthCalledWith(2, 'files.open', {
       worktree: 'id:wt-1',
       relativePath: 'assets/logo.png',

@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { runProcess } from '../../src/shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
 import {
   SWAPLABS_MAC_SIGN_IDENTITY,
   createSwaplabsUpdateManifest,
@@ -200,7 +200,7 @@ describe('swaplabs mac signing setup', () => {
         const outDir = join(directory, "orca signing's keys")
         mkdirSync(outDir)
         const { privateKey } = generateKeyPairSync('ed25519')
-        const signingKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' })
+        const signingKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
         const publicKey = exportSwaplabsUpdatePublicKey(privateKey)
         writeFileSync(join(outDir, SWAPLABS_SIGNING_FILES.signingKey), signingKeyPem)
         writeFileSync(join(outDir, SWAPLABS_SIGNING_FILES.certificate), 'pkcs12 bytes')

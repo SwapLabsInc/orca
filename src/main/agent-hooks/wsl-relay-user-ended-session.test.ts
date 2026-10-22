@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RelayAgentHookServer } from '../../relay/agent-hook-server'
+import { RelayAgentHookServer } from '../../wsl-guest/agent-hook-server'
 import type {
   AgentHookRelayEnvelope,
   AgentHookRelayUserEndedSessionEnvelope

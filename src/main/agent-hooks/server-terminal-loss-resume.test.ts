@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makePaneKey } from '../../shared/stable-pane-id'
 import { AgentHookServer, _internals } from './server'
 import { buildBody, LEAF_2, PANE } from './server.test-fixtures'
-import { sweepRestoredSubagentsWithoutLiveAgent } from './restored-subagent-liveness-sweep'
+import { retireRestoredStatusesWithDeadTerminals } from './restored-status-dead-terminal-sweep'
 
 vi.mock('../telemetry/client', () => ({ track: vi.fn() }))
 vi.mock('../telemetry/cohort-classifier', () => ({ getCohortAtEmit: vi.fn(() => ({})) }))
@@ -328,27 +328,20 @@ describe('resuming an agent whose terminal was lost', () => {
     first.flushStatusPersistSync()
     first.stop()
     const restarted = await startServer()
-    try {
-      const reaped = await sweepRestoredSubagentsWithoutLiveAgent({
-        probeLiveLocalPty: async () => false,
+    const sweep = (): Promise<number> =>
+      retireRestoredStatusesWithDeadTerminals({
+        server: restarted,
+        probePtyLiveness: async () => false,
         isLocalExecutionHost: () => true,
         getBoundPtyIdForPaneKey: () => undefined,
-        getPersistedPtyIdForPaneKey: (paneKey) => (paneKey === PANE ? 'pty-1' : undefined),
-        reap: (isLocalHost, isLive, isCurrent) =>
-          restarted.reapRestoredClaudeSubagentsWithoutLiveAgent(isLocalHost, isLive, isCurrent)
+        getPersistedPtyIdForPaneKey: (paneKey) => (paneKey === PANE ? 'pty-1' : undefined)
       })
-
-      expect(reaped).toBe(1)
+    try {
+      expect(await sweep()).toBe(1)
       expect(restarted.getStatusChangeSnapshot()).toEqual([])
       expect(restarted.selectTerminalLossResume(PANE, notLive)).toEqual(RESUME)
       // A retained identity asserts nothing, so a second sweep has nothing to do.
-      expect(
-        await restarted.reapRestoredClaudeSubagentsWithoutLiveAgent(
-          () => true,
-          async () => false,
-          () => true
-        )
-      ).toBe(0)
+      expect(await sweep()).toBe(0)
     } finally {
       restarted.stop()
     }

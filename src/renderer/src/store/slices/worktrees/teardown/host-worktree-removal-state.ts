@@ -10,10 +10,14 @@ import {
 import { getRepoIdFromWorktreeId } from '../../../../../../shared/worktree/id'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import type { WorktreeSliceGet } from '../listing/worktree-slice-types'
+import {
+  selectDetectedWorktreesByRepo,
+  selectWorktreesByRepo
+} from '../../../workspace-record-selectors'
 
 export const UNFINISHED_WORKTREE_REMOVAL_ERROR = 'The delete did not finish. Try again.'
 
-type RemovalRow = Pick<Worktree, 'id' | 'hostId' | 'removing'>
+type RemovalRow = Pick<Worktree, 'id' | 'hostId' | 'removing' | 'removalError'>
 
 function rowHostId(row: Pick<Worktree, 'hostId'>): ExecutionHostId {
   return row.hostId ?? LOCAL_EXECUTION_HOST_ID
@@ -40,8 +44,9 @@ const pendingJudgements = new Set<() => void>()
 
 /**
  * Settles a delete whose reply was lost from the host's listing, as every other view does: the row
- * leaving means the delete finished, and the row listed without `removing` means it did not. When
- * the listing cannot be read either, rejects with the lost reply's error.
+ * leaving means the delete finished, and the row listed without `removing` means it did not (with
+ * the host's error when it lists one). When the listing cannot be read either, rejects with the
+ * lost reply's error.
  */
 function waitForHostWorktreeRemoval(args: {
   hostId: ExecutionHostId | undefined
@@ -62,7 +67,7 @@ function waitForHostWorktreeRemoval(args: {
       }
       pendingJudgements.delete(judge)
       if (row) {
-        reject(new Error(UNFINISHED_WORKTREE_REMOVAL_ERROR))
+        reject(new Error(row.removalError ?? UNFINISHED_WORKTREE_REMOVAL_ERROR))
       } else {
         resolve()
       }
@@ -90,8 +95,8 @@ export function settleLostWorktreeRemovalReply(
   return waitForHostWorktreeRemoval({
     ...args,
     readRows: () => [
-      ...(get().worktreesByRepo[repoId] ?? []),
-      ...(get().detectedWorktreesByRepo[repoId]?.worktrees ?? [])
+      ...(selectWorktreesByRepo(get())[repoId] ?? []),
+      ...(selectDetectedWorktreesByRepo(get())[repoId]?.worktrees ?? [])
     ],
     refresh: () =>
       args.hostId

@@ -1,7 +1,7 @@
 import type { AgentDotState } from '@/components/AgentStateDot'
 import { translate } from '@/i18n/i18n'
 import { formatAgentTypeLabel } from '@/lib/agent-status'
-import { getAgentRowPrimaryText } from '@/lib/agent-row-primary-text'
+import { getAgentRowPrimaryText } from '../../../../shared/agent-row-primary-text'
 import { getActivityThreadWorkspaceTitle } from '@/lib/activity-thread-display'
 import { isClipboardTextByteLengthOverLimit } from '../../../../shared/clipboard-text'
 import {
@@ -132,6 +132,20 @@ export function isActivitySearchQueryTooLarge(
   maxBytes = ACTIVITY_SEARCH_QUERY_MAX_BYTES
 ): boolean {
   return isClipboardTextByteLengthOverLimit(query, maxBytes)
+}
+
+export function createActivityThreadSearchMatcher(
+  searchQuery: string
+): (thread: AgentPaneThread) => boolean {
+  if (isActivitySearchQueryTooLarge(searchQuery)) {
+    return () => false
+  }
+  const trimmedQuery = searchQuery.trim()
+  if (!trimmedQuery) {
+    return () => true
+  }
+  const normalizedQuery = trimmedQuery.toLowerCase()
+  return (thread) => threadSearchText(thread).includes(normalizedQuery)
 }
 
 export function activityThreadMatchesSearchQuery({

@@ -91,4 +91,13 @@ describe('RuntimeDelegatedWorktreeEdgeProjection', () => {
     expect(projection({ db: 'without-query' }).build()).toEqual({ known: false })
     expect(projection({ placements: [] }).build()).toEqual({ known: true, edges: [] })
   })
+
+  it('publishes the unavailable flag, never an empty list, when the db cannot answer', () => {
+    expect(projection({ db: 'missing' }).buildSyncWindowGraphFields()).toEqual({
+      delegatedWorktreeEdgesUnavailable: true
+    })
+    expect(projection({ placements: [] }).buildSyncWindowGraphFields()).toEqual({
+      delegatedWorktreeEdges: []
+    })
+  })
 })

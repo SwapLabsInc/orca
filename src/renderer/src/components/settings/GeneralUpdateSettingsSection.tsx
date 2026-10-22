@@ -1,3 +1,4 @@
+import { getUpdateInstallBlockGuidance } from '../maintenance/update-card/update-install-block-guidance'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2, RefreshCw } from 'lucide-react'
@@ -97,19 +98,30 @@ function DownloadUpdateButton({ version }: { version: string }): React.JSX.Eleme
 
 function RestartToUpdateButton({
   version,
+  installing,
   onRestart
 }: {
   version: string
+  installing?: boolean
   onRestart: () => void
 }): React.JSX.Element {
   return (
-    <Button variant="default" size="sm" onClick={onRestart}>
+    <Button variant="default" size="sm" onClick={onRestart} disabled={installing}>
       <Download className="size-3.5" />
       {translate(
         'auto.components.settings.GeneralUpdateSettingsSection.f44299636f',
         'Restart to Update ('
       )}
       {version})
+    </Button>
+  )
+}
+
+function RetryInstallButton({ onRetry }: { onRetry: () => void }): React.JSX.Element {
+  return (
+    <Button variant="default" size="sm" onClick={onRetry}>
+      <RefreshCw className="size-3.5" />
+      {translate('auto.components.UpdateCard.2c2d3e03ca', 'Try Again')}
     </Button>
   )
 }
@@ -143,6 +155,10 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   const runningSource =
     multiSource && appVersion ? getReleaseSource(getVersionReleaseSource(appVersion) ?? '') : null
   const localBuildOffered = updateStatus.source === 'local'
+  const installRetryOffered =
+    updateStatus.state === 'error' &&
+    updateStatus.retryAction === 'install' &&
+    updateStatus.retryable !== false
 
   useEffect(() => {
     let cancelled = false
@@ -224,8 +240,11 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
             {updateStatus.state === 'downloaded' ? (
               <RestartToUpdateButton
                 version={updateStatus.version}
+                installing={updateStatus.installing}
                 onRestart={handleRestartToUpdate}
               />
+            ) : installRetryOffered ? (
+              <RetryInstallButton onRetry={handleRestartToUpdate} />
             ) : localBuildOffered && updateStatus.state === 'available' ? (
               // Why: a local build (Option-click on macOS) is no source's release, so it keeps
               // the generic action instead of wearing a source button's label.
@@ -246,9 +265,12 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
 
             {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
               <DownloadUpdateButton version={updateStatus.version} />
+            ) : installRetryOffered ? (
+              <RetryInstallButton onRetry={handleRestartToUpdate} />
             ) : updateStatus.state === 'downloaded' ? (
               <RestartToUpdateButton
                 version={updateStatus.version}
+                installing={updateStatus.installing}
                 onRestart={handleRestartToUpdate}
               />
             ) : null}
@@ -256,7 +278,9 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
         )}
 
         <p className="text-xs text-muted-foreground">
-          {multiSource && !localBuildOffered ? (
+          {updateStatus.state === 'error' && updateStatus.installBlock ? (
+            getUpdateInstallBlockGuidance(updateStatus.installBlock).explainer
+          ) : multiSource && !localBuildOffered ? (
             <ReleaseSourceUpdateHint
               runningSourceId={runningSource?.id ?? null}
               updateStatus={updateStatus}

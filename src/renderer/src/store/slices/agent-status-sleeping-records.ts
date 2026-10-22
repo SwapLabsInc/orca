@@ -1,34 +1,21 @@
 import type { AppState } from '../types'
 import { mainAgentStatusEqual, type AgentStatusEntry } from '../../../../shared/agent-status-types'
-import {
-  agentTurnEndedUncleanly,
-  agentVerdictFields
-} from '../../../../shared/agent-main-agent-verdict'
+import { agentTurnEndedUncleanly } from '../../../../shared/agent-main-agent-verdict'
 import {
   agentProviderSessionsEqual,
-  getAgentResumeArgv,
-  isResumableTuiAgent,
   type AgentProviderSessionMetadata,
   type SleepingAgentLaunchConfig,
   type SleepingAgentSessionRecord
 } from '../../../../shared/agent-session-resume'
+import { resumeRecordFromStatus } from '../../../../shared/agent-resume-record-from-status'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { findTabForAgentEntry } from './agent-status-pane-key-tab-binding'
-
-export function copyLaunchConfig(config: SleepingAgentLaunchConfig): SleepingAgentLaunchConfig {
-  return {
-    ...(config.agentCommand ? { agentCommand: config.agentCommand } : {}),
-    agentArgs: config.agentArgs,
-    agentEnv: { ...config.agentEnv },
-    ...(config.ompResumeFilePath ? { ompResumeFilePath: config.ompResumeFilePath } : {})
-  }
-}
 
 /** Omission is not evidence. `interrupted` is refreshed from every payload, so a payload that says
  *  nothing about it must not clear a prior marker — the row then reads as passive hibernation and
  *  the resume path clears it instead of resuming. Cleared only on an explicit negative, and
  *  inherited only from a record that names the same session this entry does (EP-STATE). */
-function resolveInterruptedMarker(
+export function resolveInterruptedMarker(
   entry: AgentStatusEntry,
   priorRecord: SleepingAgentSessionRecord | undefined
 ): boolean {
@@ -56,45 +43,12 @@ export function sleepingRecordFromEntry(args: {
   capturedAt: number
   launchConfig?: SleepingAgentLaunchConfig
   origin?: SleepingAgentSessionRecord['origin']
-  /** The record this build replaces, so an omitted `interrupted` keeps its established marker. */
-  priorRecord?: SleepingAgentSessionRecord
 }): SleepingAgentSessionRecord | null {
-  const agent = args.entry.agentType
-  if (
-    args.entry.terminalResumeEligible === false ||
-    !isResumableTuiAgent(agent) ||
-    !args.entry.providerSession
-  ) {
-    return null
-  }
-  if (!getAgentResumeArgv(agent, args.entry.providerSession)) {
-    return null
-  }
-  const tab = args.tab ?? findTabForAgentEntry(args.state, args.worktreeId, args.entry)
-  return {
-    paneKey: args.entry.paneKey,
-    ...(tab ? { tabId: tab.id } : {}),
-    worktreeId: args.worktreeId,
-    agent,
-    providerSession: args.entry.providerSession,
-    ...(args.entry.connectionId !== undefined ? { connectionId: args.entry.connectionId } : {}),
-    prompt: args.entry.prompt,
-    state: args.entry.state,
-    capturedAt: args.capturedAt,
-    updatedAt: args.entry.updatedAt,
-    ...((args.entry.terminalTitle ?? tab?.title)
-      ? { terminalTitle: (args.entry.terminalTitle ?? tab?.title)! }
-      : {}),
-    ...(args.entry.lastAssistantMessage
-      ? { lastAssistantMessage: args.entry.lastAssistantMessage }
-      : {}),
-    ...(args.launchConfig ? { launchConfig: copyLaunchConfig(args.launchConfig) } : {}),
-    ...agentVerdictFields({
-      interrupted: resolveInterruptedMarker(args.entry, args.priorRecord),
-      mainAgent: args.entry.mainAgent
-    }),
-    ...(args.origin ? { origin: args.origin } : {})
-  }
+  const { state, tab, ...record } = args
+  return resumeRecordFromStatus({
+    ...record,
+    tabOf: () => tab ?? findTabForAgentEntry(state, args.worktreeId, args.entry)
+  })
 }
 
 // Why positive evidence only: this is the pane's sole resume handle, and a row with no provider

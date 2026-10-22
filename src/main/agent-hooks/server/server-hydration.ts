@@ -11,7 +11,7 @@ import {
 import { seedCodexStateFromSnapshot } from '../../../shared/agent-hook-listener/providers/codex-state'
 import { AGENT_STATUS_PERSISTED_HYDRATION_MODE } from '../../../shared/agent-status-legacy-adapter'
 import { HYDRATE_MAX_AGE_MS, LAST_STATUS_FILE_VERSION } from './server-constants'
-import type { LastStatusFile } from './server-types'
+import type { EnrichedAgentHookEventPayload, LastStatusFile } from './server-types'
 import {
   authorityCommitmentsMatch,
   dropHydratedIdleClaudeSubagents,
@@ -19,9 +19,10 @@ import {
   sanitizeHydratedEntry,
   sanitizePersistedAuthorityCommitment
 } from './server-persistence-validation'
-import { AgentHookServerReaping } from './server-reaping'
+import { AgentHookServerTerminalLossResume } from './server-terminal-loss-resume'
+import { readPersistedAgentExits, recordAgentExit } from './agent-exit-evidence'
 
-export abstract class AgentHookServerHydration extends AgentHookServerReaping {
+export abstract class AgentHookServerHydration extends AgentHookServerTerminalLossResume {
   /** Hydrate the durable cache, validating every row before it reaches the live listener state. */
   protected hydrateLastStatusFromDisk(): void {
     if (!this.lastStatusFilePath) {
@@ -138,6 +139,9 @@ export abstract class AgentHookServerHydration extends AgentHookServerReaping {
         dropped += 1
       }
     }
+    for (const exit of readPersistedAgentExits(file.agentExits, ttlCutoff)) {
+      recordAgentExit(this.agentExitedAtByPaneKey, exit.paneKeys, exit, exit.at)
+    }
     for (const [paneKey, rawCommitment] of Object.entries(file.authorityCommitments ?? {})) {
       const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
       const commitment = sanitizePersistedAuthorityCommitment(resolvedPaneKey, rawCommitment)
@@ -165,7 +169,25 @@ export abstract class AgentHookServerHydration extends AgentHookServerReaping {
       this.runStatusPersist()
     } else if (hydrated > 0) {
       // Why: prime dedup from raw bytes (not re-serialized) only when hydration was lossless.
-      this.lastWrittenJson = raw
+      this.primeStatusPersistBaseline(raw)
     }
+  }
+
+  /** Hydrated rows still claiming work that nothing in this runtime has confirmed. */
+  listUnconfirmedRestoredStatuses(): EnrichedAgentHookEventPayload[] {
+    const rows: EnrichedAgentHookEventPayload[] = []
+    for (const [paneKey, row] of this.state.lastStatusByPaneKey) {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Main admits enriched legacy rows; the shared view declares their base event type.
+      const enriched = row as EnrichedAgentHookEventPayload
+      // Why: a resume remnant carries no state claim.
+      if (
+        enriched.restoredUnconfirmed &&
+        !enriched.providerSessionOnly &&
+        !this.runtimeObservedStatusPaneKeys.has(paneKey)
+      ) {
+        rows.push(enriched)
+      }
+    }
+    return rows
   }
 }

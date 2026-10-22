@@ -114,6 +114,31 @@ describe('removeProject when the owning host already dropped the project', () =>
     expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a'])
   })
 
+  // STA-7117: the startup sweep never reaps `runtime:*` rows, so the removal itself must.
+  it("drops this desktop's persisted rows for that host once the host confirms", async () => {
+    answerRepoRmWith('repo_not_found')
+    const store = seedRemoteProjects([liveRemoteRepo, staleRemoteRepo])
+
+    await store.getState().removeProject('project-b', { hostId: 'runtime:env-1' })
+
+    expect(reposRemoveForHost).toHaveBeenCalledExactlyOnceWith({
+      repoId: 'project-b',
+      hostId: 'runtime:env-1'
+    })
+  })
+
+  it('still finishes the removal when the residue cleanup throws', async () => {
+    answerRepoRmWith('repo_not_found')
+    reposRemoveForHost.mockImplementation(() => {
+      throw new Error('Forgetting a host is unavailable in paired web clients.')
+    })
+    const store = seedRemoteProjects([liveRemoteRepo, staleRemoteRepo])
+
+    await store.getState().removeProject('project-b', { hostId: 'runtime:env-1' })
+
+    expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a'])
+  })
+
   it('keeps the row and stays silent when the remote refuses', async () => {
     answerRepoRmWith('unauthorized')
     const store = seedRemoteProjects([liveRemoteRepo, staleRemoteRepo])
@@ -123,6 +148,8 @@ describe('removeProject when the owning host already dropped the project', () =>
     expect(outcome).toEqual({ status: 'failed' })
     expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a', 'project-b'])
     expect(toast.error).not.toHaveBeenCalled()
+    // An unconfirmed removal is not evidence the host dropped the project.
+    expect(reposRemoveForHost).not.toHaveBeenCalled()
   })
 
   it('toasts once for a genuine failure when the caller opts in', async () => {
@@ -149,6 +176,8 @@ describe('removeProject when the owning host already dropped the project', () =>
     expect(outcome).toEqual({ status: 'owner-unverifiable' })
     expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a', 'project-b'])
     expect(toast.error).not.toHaveBeenCalled()
+    // Nor are this desktop's rows for that host dropped: an unanswered call confirms nothing.
+    expect(reposRemoveForHost).not.toHaveBeenCalled()
   })
 
   // The client refuses to dispatch to an environment the user disconnected, so the host answered
@@ -178,8 +207,8 @@ describe('removeProject when the owning host already dropped the project', () =>
     expect(store.getState().repos.map((repo) => repo.id)).toEqual(['project-a'])
     // Nothing at all is asked of the host — not the removal, not the terminal teardown.
     expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
-    // Host-scoped so a same-id row on another host keeps its own records.
-    expect(reposRemoveForHost).toHaveBeenCalledWith({
+    // Host-scoped so a same-id row on another host keeps its own records, and dropped once.
+    expect(reposRemoveForHost).toHaveBeenCalledExactlyOnceWith({
       repoId: 'project-b',
       hostId: 'runtime:env-1'
     })

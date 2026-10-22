@@ -1,10 +1,4 @@
 import type { TerminalLossAgentResume } from '../agent-hooks/server'
-import type {
-  RuntimeMobileSessionTabsSnapshot,
-  RuntimeMobileSessionTerminalTab
-} from '../../shared/runtime-types'
-import { makePaneKey } from '../../shared/stable-pane-id'
-import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import {
   agentProviderSessionIdentityKey,
   agentProviderSessionsEqual,
@@ -16,6 +10,7 @@ import {
   resolveAgentStartupPlanInputs,
   type AgentStartupSettings
 } from '../../shared/agent-startup-plan-inputs'
+import { agentLaunchQuotingShell, type AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery'
 import type { TuiAgent } from '../../shared/tui-agent'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
@@ -28,6 +23,8 @@ export type HostPaneAgentResumeLaunch = {
   env?: Record<string, string>
   launchConfig: SleepingAgentLaunchConfig
   startupCommandDelivery?: StartupCommandDelivery
+  /** What the command was quoted for; the create spawns with it. */
+  launchRuntime: AgentLaunchRuntime
 }
 
 export type PreparedHostPaneAgentResume = {
@@ -40,9 +37,9 @@ export type HostPaneAgentResumeInputs = {
   /** The host store's answer for the pane; re-read after every await. */
   selectResume: () => TerminalLossAgentResume | null
   getSettings: () => AgentStartupSettings & { disabledTuiAgents?: readonly TuiAgent[] }
-  resolveWorkspace: () => Promise<{
+  resolveWorkspace: (agent: ResumableTuiAgent) => Promise<{
     connectionId: string | null
-    platform: NodeJS.Platform
+    launchRuntime: AgentLaunchRuntime
   }>
   /** The pane still exists, is still bound to the lost session, and nothing re-created it yet. */
   isStillPending: () => boolean
@@ -88,7 +85,7 @@ export class HostPaneAgentResumes {
     }
     let launch: HostPaneAgentResumeLaunch
     try {
-      const workspace = await inputs.resolveWorkspace()
+      const workspace = await inputs.resolveWorkspace(resume.agent)
       // Why: an SSH relay can outlive its client; only the relay may decide its PTY is gone.
       if (workspace.connectionId) {
         return null
@@ -97,7 +94,8 @@ export class HostPaneAgentResumes {
         ...resolveAgentStartupPlanInputs({
           agent: resume.agent,
           settings,
-          platform: workspace.platform,
+          platform: workspace.launchRuntime.platform,
+          shell: agentLaunchQuotingShell(workspace.launchRuntime),
           isRemote: false
         }),
         agent: resume.agent,
@@ -114,7 +112,8 @@ export class HostPaneAgentResumes {
         launchConfig: plan.launchConfig,
         ...(plan.startupCommandDelivery
           ? { startupCommandDelivery: plan.startupCommandDelivery }
-          : {})
+          : {}),
+        launchRuntime: workspace.launchRuntime
       }
     } catch (error) {
       // Why: a resume that cannot be prepared must not cost the pane its shell.
@@ -136,61 +135,4 @@ export class HostPaneAgentResumes {
     this.resumingSessions.add(sessionKey)
     return { launch, release: () => this.resumingSessions.delete(sessionKey) }
   }
-}
-
-/** The runtime state a pane re-creation reads to decide on a resume. */
-export type HostPaneAgentResumeRuntime = {
-  store: { getSettings: HostPaneAgentResumeInputs['getSettings'] } | null
-  ptysById: ReadonlyMap<string, { connected: boolean; paneKey: string | null }>
-  mobileSessionTabsByWorktree: ReadonlyMap<string, Pick<RuntimeMobileSessionTabsSnapshot, 'tabs'>>
-  selectTerminalLossAgentResumeFn:
-    | ((
-        paneKey: string,
-        isPaneTerminalLive: (paneKey: string) => boolean
-      ) => TerminalLossAgentResume | null)
-    | null
-  getHostPaneAgentResumes: () => HostPaneAgentResumes
-  resolveTerminalWorkspaceLaunchScope: (selector: string) => Promise<TerminalWorkspaceLaunchScope>
-  getAgentLaunchPlatformForWorkspace: (scope: TerminalWorkspaceLaunchScope) => NodeJS.Platform
-}
-
-/** The resume launch for a pane whose terminal the host is re-creating, when its agent never ended. */
-export function prepareHostPaneAgentResume(
-  runtime: HostPaneAgentResumeRuntime,
-  worktreeId: string,
-  tab: RuntimeMobileSessionTerminalTab,
-  sessionId: string | undefined
-): Promise<PreparedHostPaneAgentResume | null> {
-  const selectResume = runtime.selectTerminalLossAgentResumeFn
-  const store = runtime.store
-  if (!selectResume || !store) {
-    return Promise.resolve(null)
-  }
-  const paneKey = makePaneKey(tab.parentTabId, tab.leafId)
-  const isPaneTerminalLive = (candidate: string): boolean =>
-    [...runtime.ptysById.values()].some((pty) => pty.connected && pty.paneKey === candidate)
-  return runtime.getHostPaneAgentResumes().prepare({
-    selectResume: () => selectResume(paneKey, isPaneTerminalLive),
-    getSettings: () => store.getSettings(),
-    resolveWorkspace: async () => {
-      const workspace = await runtime.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
-      return {
-        connectionId: workspace.connectionId,
-        platform: runtime.getAgentLaunchPlatformForWorkspace(workspace)
-      }
-    },
-    isStillPending: () => {
-      const current = runtime.mobileSessionTabsByWorktree
-        .get(worktreeId)
-        ?.tabs.find(
-          (candidate): candidate is RuntimeMobileSessionTerminalTab =>
-            candidate.type === 'terminal' &&
-            candidate.parentTabId === tab.parentTabId &&
-            candidate.leafId === tab.leafId
-        )
-      const currentSessionId =
-        current?.ptyId ?? current?.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
-      return current !== undefined && currentSessionId === sessionId && !isPaneTerminalLive(paneKey)
-    }
-  })
 }

@@ -1,10 +1,7 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import {
-  runProcess,
-  type ProcessResult,
-  type ProcessSpec
-} from '../../../shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
+import type { ProcessResult, ProcessSpec } from '@orca/process-host/process-spec'
 import { compareAppVersions, isValidAppVersion } from '../../../shared/app-version'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 

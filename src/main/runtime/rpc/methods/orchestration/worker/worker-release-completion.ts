@@ -5,11 +5,8 @@ import type {
   WorkerTerminalResourceRow,
   WorkerTerminalRetainedReason
 } from '../../../../orchestration/worker-terminal-ownership'
-import {
-  captureWorkerOutputArchive,
-  summarizeWorkerOutputArchive
-} from '../../../../orchestration/worker-output-archive'
-import type { OrcaRuntimeService } from '../../../../orca-runtime'
+import { summarizeWorkerOutputArchive } from '../../../../orchestration/worker-output-archive'
+import type { WorkerTerminalReleaseRuntime } from '../../../../orchestration/worker-terminal-release-runtime'
 import { describeUnconfirmedAgentStop } from '../../../../../../shared/pty-liveness-verdict'
 import { inspectWorkerTerminal } from './worker-observation'
 import { orchestrationTimestampToMs } from './worker-output'
@@ -18,13 +15,10 @@ import { classifyWorkerTerminalCloseError } from './worker-release-close-error'
 import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 import { resolveStructuredWorkerForDispatch } from '../../orchestration-structured-worker-lifecycle'
 import { stopStructuredWorkerForRelease } from './structured-worker-release-stop'
-import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
-import { awaitReleaseClosingTurn, noteClosingTurnInArchive } from './worker-release-closing-turn'
-
-export {
-  archiveSummary,
-  exposeWorkerTerminalResource
-} from './worker-terminal-resource-presentation'
+import { isStructuredWorkerHandle } from '../../../../../../shared/structured-worker-handle'
+import { captureWorkerReleaseArchive } from './worker-release-archive-capture'
+import { noteClosingTurnInArchive } from './worker-release-closing-turn'
+import { awaitClosingTurnForMode, type ClosingTurnMode } from './worker-release-closing-turn-mode'
 
 export type WorkerReleaseReceipt = {
   dispatchId: string
@@ -37,12 +31,12 @@ export type WorkerReleaseReceipt = {
 }
 
 type WorkerTerminalReleaseArgs = {
-  runtime: OrcaRuntimeService
+  runtime: WorkerTerminalReleaseRuntime
   db: OrchestrationDb
   dispatchId: string
   resource: WorkerTerminalResourceRow
   mode?: 'interactive' | 'recovery'
-}
+} & ClosingTurnMode
 
 type ActiveWorkerTerminalRelease = {
   promise: Promise<WorkerReleaseReceipt>
@@ -50,7 +44,7 @@ type ActiveWorkerTerminalRelease = {
 }
 
 const activeReleaseByRuntime = new WeakMap<
-  OrcaRuntimeService,
+  WorkerTerminalReleaseRuntime,
   Map<string, ActiveWorkerTerminalRelease>
 >()
 
@@ -121,7 +115,7 @@ async function completeWorkerTerminalReleaseOnce(
     }
   }
   // Before the identity checks, so they judge the terminal the closing turn left behind.
-  const closingTurn = await awaitReleaseClosingTurn(args, resource.terminal_handle)
+  const closingTurn = await awaitClosingTurnForMode(args, resource.terminal_handle)
   const observation = await inspectWorkerTerminal(runtime, db, dispatchId)
   // The live handle to act on: the durable one, or a handle re-minted from the recorded process
   // incarnation when the durable handle went stale (inspectWorkerTerminal proved it live).
@@ -211,16 +205,19 @@ async function completeWorkerTerminalReleaseOnce(
   let capturedArchive: { kind: WorkerTerminalArchiveKind; content: string } | undefined
   const structured = resolveStructuredWorkerForDispatch(db, dispatchId)
   if (!archive) {
-    const captured = noteClosingTurnInArchive(
-      await captureWorkerOutputArchive({
-        runtime,
-        dispatchId,
-        terminalHandle,
-        attachedAtMs: orchestrationTimestampToMs(worker.created_at),
-        structuredWorker: structured
-      }),
-      closingTurn
-    )
+    const capture = await captureWorkerReleaseArchive({
+      db,
+      resource,
+      runtime,
+      dispatchId,
+      terminalHandle,
+      attachedAtMs: orchestrationTimestampToMs(worker.created_at),
+      structuredWorker: structured
+    })
+    if ('receipt' in capture) {
+      return capture.receipt
+    }
+    const captured = noteClosingTurnInArchive(capture.captured, closingTurn)
     capturedArchive = { kind: captured.kind, content: JSON.stringify(captured.content) }
     archiveSource = captured.kind === 'terminal_tail' ? 'terminal' : 'transcript'
     archiveStatus = captured.status

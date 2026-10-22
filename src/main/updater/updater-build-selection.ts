@@ -1,5 +1,4 @@
 import { app } from 'electron'
-import { is } from '@electron-toolkit/utils'
 import {
   DEV_CHANNEL_PLATFORM_LABEL,
   getReleaseRepoForChannel,
@@ -19,11 +18,9 @@ import {
 } from '../../shared/release-sources'
 import type { ReleaseSourceStatus } from '../../shared/update-status-types'
 import { compareVersions } from '../updater-fallback'
+import { profileStateBuildCompatibilityError } from '../../shared/profile-state-build-compatibility'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
-import {
-  verifyReleaseTagManifest,
-  type ReleaseTagManifestVerdict
-} from '../updater-prerelease-feed'
+import { verifyReleaseTagManifest } from '../updater-prerelease-feed'
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { getReleaseTagPageUrl } from '../updater-release-urls'
@@ -32,44 +29,13 @@ import {
   isMacSelfUpdateActive
 } from './mac-self-update/mac-self-update-activation'
 import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
+import {
+  describeRefusedCrossSourceJump,
+  describeRefusedLocalBuildSwitch,
+  describeRefusedPinnedManifest
+} from './updater-build-selection-refusals'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
-
-/** Why a message per verdict: the dev picked this tag by hand, so the refusal must say what the release actually holds. */
-function describeRefusedPinnedManifest(
-  verdict: Exclude<ReleaseTagManifestVerdict, { kind: 'ready' }>,
-  tag: string,
-  version: string,
-  source: ReleaseSource
-): string {
-  const release = `${source.prereleaseIdentifier === null ? '' : `${source.label} `}release "${tag}"`
-  switch (verdict.kind) {
-    case 'mismatch':
-      return `The ${release} advertises ${version}, but its update manifest installs ${verdict.manifestVersion}. Nothing was installed.`
-    case 'not-ready':
-      return `The ${release} has no installable build for this platform yet.`
-    case 'unavailable':
-      return `Could not read the ${release} manifest. Check your connection and try again.`
-  }
-}
-
-/** Why per platform: each names the signature check the downloaded build would fail. */
-function describeRefusedCrossSourceJump(source: ReleaseSource): string {
-  if (process.platform === 'win32') {
-    return `Orca on Windows only installs updates signed by the running build's publisher, and ${source.label} builds are signed differently. Download the ${source.label} installer from its release page and run it by hand.`
-  }
-  return `Orca on macOS can only install updates carrying the same code signature, and ${source.label} builds are signed differently. Download the ${source.label} build from its release page and install it by hand.`
-}
-
-/**
- * Why refuse before the file dialog: Orca's own macOS installer installs only bundles carrying
- * the running build's release identity under a release-key-signed manifest, which a local
- * build has no way to produce, so the loopback feed could never get past its check.
- */
-function describeRefusedLocalBuildSwitch(source: ReleaseSource | null): string {
-  const identity = source ? `the ${source.label} release identity` : 'its release identity'
-  return `Local build switching is unavailable on this build. It updates itself through Orca's own installer, which installs only builds signed with ${identity}; install a local build by hand instead.`
-}
 
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
@@ -110,6 +76,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       const candidate = await chooseLocalBuild(this.mainWindowRef)
       if (!candidate) {
         return
+      }
+      const compatibilityError = profileStateBuildCompatibilityError(
+        app.getVersion(),
+        candidate.version
+      )
+      if (compatibilityError) {
+        await candidate.close()
+        throw new Error(compatibilityError)
       }
       this.closeLocalBuildFeed()
       const feed = await startLocalBuildFeed(candidate)
@@ -182,7 +156,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   /** Pins the updater at one exact release tag and checks it, so a dev can move to any published build on any channel — including an older one. */
   protected async checkForPinnedBuild(target: PinnedBuildTarget): Promise<void> {
     const { channel, tag } = target
-    if (!app.isPackaged || is.dev) {
+    if (!app.isPackaged) {
       this.sendStatus({ state: 'not-available', userInitiated: true })
       return
     }
@@ -246,6 +220,13 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     this.pinnedBuildSelectionInProgress = true
     try {
       const resolved = resolveTargetBuild(channel, tag, source, target.version)
+      const compatibilityError = profileStateBuildCompatibilityError(
+        app.getVersion(),
+        resolved.version
+      )
+      if (compatibilityError) {
+        throw new Error(compatibilityError)
+      }
       if (compareVersions(resolved.version, app.getVersion()) === 0) {
         this.sendSettledCheckStatus({ state: 'not-available', userInitiated: true })
         return

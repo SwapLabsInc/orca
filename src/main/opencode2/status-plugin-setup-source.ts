@@ -1,20 +1,25 @@
 import { getOpenCode2TuiSource } from './status-plugin-tui-source'
 import { openCodeTuiPluginDirName } from '../../shared/opencode-tui-plugin-install'
+import { getLegacyOpenCodeTuiSource } from '../opencode/status-plugin-legacy-tui-source'
 
 /** The OpenCode 2 entry points (server setup and TUI reporter) plus the constants they share. */
 export function getOpenCode2ModuleSource(pluginID: string, expectedAgent: string): string[] {
   return [
     `const ORCA_TUI_PLUGIN_ENTRY = new URL("./${openCodeTuiPluginDirName(`${pluginID}.js`)}/tui.js", import.meta.url);`,
     `const ORCA_STATUS_AGENT = "${expectedAgent}";`,
+    ...getLegacyOpenCodeTuiSource(),
     ...getOpenCode2SetupSource()
   ]
 }
+
+// Interpolated so the server bundle stays ASCII; String.raw keeps the generated source's bytes.
+const EM_DASH = '\u2014'
 
 export function getOpenCode2SetupSource(): string[] {
   return String.raw`
 // Why: OpenCode owns a form under a session id, and Orca retires a blocker when
 // that session goes idle. An owner that is not a real session has no idle, so a
-// blocker minted for it can only ever be retired by an exact reply — add an id
+// blocker minted for it can only ever be retired by an exact reply ${EM_DASH} add an id
 // here to drop forms Orca could otherwise strand. OpenCode's own schema calls
 // "global" a temporary MCP-elicitation sentinel it intends to replace with real
 // session ids; when it does, this set stops matching and those forms block.
@@ -81,20 +86,23 @@ async function tuiReportsPaneLifecycle() {
 }
 
 async function setupOpenCode2Status(ctx) {
-  reportingOpenCodeMajor = 2;
   const noop = async () => {};
-  if (isOpenCode2TuiContext(ctx)) return setupOpenCode2Tui(ctx);
+  if (isOpenCode2TuiContext(ctx)) {
+    reportingOpenCodeMajor = 2;
+    return setupOpenCode2Tui(ctx);
+  }
   let hooks;
   // Why: OpenCode may probe setup() with no context during startup, and the setup
-  // API shape can drift between releases. Never throw from setup — a throw surfaces
+  // API shape can drift between releases. Never throw from setup ${EM_DASH} a throw surfaces
   // as an 'orca-opencode-status' plugin failed error in the TUI, which is worse
   // than silently running without status reporting.
   try {
     if (!ctx || typeof ctx.session?.hook !== "function" || typeof ctx.event?.subscribe !== "function") return noop;
+    reportingOpenCodeMajor = 2;
     if (await tuiReportsPaneLifecycle()) return noop;
     const controller = new AbortController();
     // Why the envelope: OpenCode 2's plugin adapter unwraps a single-property
-    // { data } success schema, so ctx.session.get resolves to the bare record —
+    // { data } success schema, so ctx.session.get resolves to the bare record ${EM_DASH}
     // but the shared lineage lookup only accepts result?.data?.id === sessionID.
     // Without it, resolveRootSessionID returns null for every session and a
     // subagent's work publishes as if it were the root's.

@@ -1,3 +1,5 @@
+import { installPtyKittyFileReader } from './pty-kitty-file-reader'
+import { installSpawnDeferredSleep } from './spawn-deferred-sleep'
 import type { PaneManager, ManagedPane } from '@/lib/pane-manager/pane-manager'
 import { useAppStore } from '@/store'
 import { TerminalKittyKeyboardModeTracker } from '../../../../../shared/terminal-kitty-keyboard-mode-tracker'
@@ -30,7 +32,7 @@ import { installTerminalKeydownFit } from './terminal-keydown-fit'
 import { installPtyExitHibernate } from './pty-exit-hibernate'
 import { installTitleSpawnBell } from './title-spawn-bell'
 import { installAgentTaskCompleteNotify } from './agent-task-complete-notify'
-import { installDirectSshRetryStatus } from './direct-ssh-retry-status'
+import { installPaneHostCapabilityFlags } from './pane-host-capability-flags'
 import { installPtyInputRecovery } from './pty-input-recovery'
 import { installPtyInputForward } from './pty-input-forward'
 import { installPtyResizeGeometry } from './pty-resize-geometry'
@@ -67,8 +69,6 @@ export function connectPanePty(
   )
   session.connectFrame = null
   session.connectFallbackTimer = null
-  session.startupGridSettleHandle = null
-  session.startupGridSettledForConnect = false
   session.connectStarted = false
   session.unregisterBacklogRecovery = null
   session.unregisterDocumentVisibilityRecovery = null
@@ -79,12 +79,14 @@ export function connectPanePty(
   session.cleanupHiddenOutputRestoreDeferredRetry = (): void => {}
   session.cleanupHiddenOutputRestoreForegroundDeadline = (): void => {}
   session.cleanupHiddenOutputRestoreFloodRepaint = (): void => {}
+  session.flushRemoteProgramRedraw = (): void => {}
   session.resetRendererOrderedSeqForPtyExit = () => {}
   session.cleanupStartupDraftPasteTimers = (): void => {}
   session.unregisterE2ePtyDataInjection = (): void => {}
   session.startupInjectTimer = null
   session.agentTaskCompleteNotificationGraceTimer = null
   session.agentTaskCompleteNotificationMaxTimer = null
+  session.hookOwnedIdleAbsorbsBell = false
   session.agentTaskCompleteStatusUnsubscribe = null
   session.agentTaskCompleteSettingsUnsubscribe = null
   session.agentTaskCompleteNotificationGeneration = 0
@@ -111,6 +113,7 @@ export function connectPanePty(
   session.syncHiddenRendererPtyDelivery = () => {}
   session.releaseHiddenRendererPtyDelivery = () => {}
   session.handleRemoteOutputPauseChanged = () => {}
+  session.handleRemotePausedOutputDropped = () => {}
   session.handleRendererOwnedAgentStatus = () => {}
   session.remoteOutputGatedPtyId = null
   session.remoteOutputFactConsumerPtyId = null
@@ -180,9 +183,10 @@ export function connectPanePty(
   installInterruptInputIntent(session)
   installTerminalKeydownFit(session)
   installPtyExitHibernate(session)
+  installSpawnDeferredSleep(session)
   installTitleSpawnBell(session)
   installAgentTaskCompleteNotify(session)
-  installDirectSshRetryStatus(session)
+  installPaneHostCapabilityFlags(session)
   installPtyInputRecovery(session)
   // Must follow installPtyInputRecovery: it registers the chooser's pane handler under
   // `session.transport`, which that installer is what assigns.
@@ -213,6 +217,7 @@ export function connectPanePty(
     }
     session.deps.clearExitedPanePtyLayoutBinding(session.pane.id, exitedPtyId)
   }
+  installPtyKittyFileReader(session)
   installPtyInputForward(session)
   installPtyResizeGeometry(session)
   installRunDeferredConnect(session)

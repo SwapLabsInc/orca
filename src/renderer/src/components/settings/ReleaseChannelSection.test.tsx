@@ -1,106 +1,130 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useAppStore } from '../../store'
-import { TooltipProvider } from '../ui/tooltip'
+import { getShortcutPlatform } from '@/lib/shortcut-platform'
+import type { ReleaseBuild } from '../../../../shared/release-channel'
 import { ReleaseChannelSection } from './ReleaseChannelSection'
 
-// Why hoisted: the source registry reads the define once, when the component's imports load.
-const { platformRef, sources } = await vi.hoisted(async () => {
-  const sources = await import('../../../../shared/release-sources.fixture')
-  sources.setReleaseSourcesLiteralForTest(sources.FORK_RELEASE_SOURCES_LITERAL)
-  const platformRef: { current: NodeJS.Platform } = { current: 'darwin' }
-  return { platformRef, sources }
-})
+vi.mock('@/lib/shortcut-platform', () => ({ getShortcutPlatform: vi.fn(() => 'darwin') }))
 
-vi.mock('@/lib/shortcut-platform', () => ({ getShortcutPlatform: () => platformRef.current }))
-
-const FORK_VERSION = '1.4.197-swaplabs.202609241530'
-const upstreamBuild = {
-  tag: 'v1.4.197',
-  version: '1.4.197',
-  channel: 'stable',
-  name: null,
-  publishedAt: null,
-  releaseUrl: 'https://github.com/stablyai/orca/releases/tag/v1.4.197',
-  installerUrl: 'https://github.com/stablyai/orca/releases/download/v1.4.197/Orca-1.4.197-arm64.dmg'
-} as const
+const builds: ReleaseBuild[] = [
+  {
+    tag: 'v1.4.238-adhoc.20261021165056',
+    version: '1.4.238-adhoc.20261021165056',
+    name: '1.4.238 • plugins-machines-preview • cdcd37a',
+    channel: 'adhoc',
+    publishedAt: null,
+    releaseUrl: 'https://example.com/latest-release',
+    installerUrl: 'https://example.com/latest-installer'
+  },
+  {
+    tag: 'v1.4.237-adhoc.20261020165056',
+    version: '1.4.237-adhoc.20261020165056',
+    name: '1.4.237 • older-branch • ab96d02',
+    channel: 'adhoc',
+    publishedAt: null,
+    releaseUrl: 'https://example.com/older-release',
+    installerUrl: 'https://example.com/older-installer'
+  }
+]
+const listBuilds = vi.fn()
 const check = vi.fn()
 const openUrl = vi.fn()
 
 beforeEach(() => {
+  vi.mocked(getShortcutPlatform).mockReturnValue('darwin')
+  listBuilds.mockReset().mockResolvedValue({ ok: true, builds })
   check.mockReset().mockResolvedValue(undefined)
   openUrl.mockReset().mockResolvedValue(undefined)
-  useAppStore.setState({ updateStatus: { state: 'idle' }, releaseChannelOverride: null })
+  useAppStore.setState({ updateStatus: { state: 'idle' }, releaseChannelOverride: 'adhoc' })
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
-      updater: {
-        check,
-        getVersion: vi.fn().mockResolvedValue(FORK_VERSION),
-        listBuilds: vi
-          .fn()
-          .mockResolvedValue({ ok: true, channel: 'stable', builds: [upstreamBuild] })
-      },
+      updater: { getVersion: async () => '1.4.236', listBuilds, check },
       shell: { openUrl },
-      ui: { set: vi.fn().mockResolvedValue(undefined) }
+      ui: { set: async () => {} }
     }
   })
 })
 
 afterEach(() => {
   cleanup()
+  useAppStore.setState({ updateStatus: { state: 'idle' }, releaseChannelOverride: null })
 })
 
-afterAll(() => {
-  sources.setReleaseSourcesLiteralForTest(null)
-})
-
-// Why: the picker lists the primary source's builds, and main refuses every macOS cross-source
-// jump — so a fork build on macOS gets the download the refusal would otherwise point at.
-function renderSection(): void {
-  render(
-    <TooltipProvider>
-      <ReleaseChannelSection />
-    </TooltipProvider>
-  )
+async function searchForOlderBuild(): Promise<void> {
+  const trigger = screen.getByRole('combobox', { name: 'Build' })
+  await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false))
+  fireEvent.click(trigger)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search builds' }), {
+    target: { value: 'older-branch' }
+  })
+  await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1))
+  fireEvent.click(screen.getByRole('option'))
+  expect(trigger.textContent).toContain('older-branch')
 }
 
-it('offers the installer download for a fork build on macOS, where the jump would be refused', async () => {
-  platformRef.current = 'darwin'
-  renderSection()
+it('keeps searching local and switches only to the explicitly selected build on confirmation', async () => {
+  render(<ReleaseChannelSection />)
+  await searchForOlderBuild()
+  expect(listBuilds).toHaveBeenCalledTimes(1)
+  expect(check).not.toHaveBeenCalled()
+  expect(screen.getByText('1.4.236 → 1.4.237-adhoc.20261020165056')).toBeTruthy()
+  const switchButton = screen.getByRole('button', { name: 'Switch to build' })
+  fireEvent.click(switchButton)
+  expect(check).toHaveBeenCalledWith({ channel: 'adhoc', targetTag: builds[1].tag })
 
-  // The hint renders once the build list has loaded and a row is selected.
-  expect(await screen.findByText(/signed differently/)).toBeTruthy()
-  const button = screen.getByRole('button', { name: 'Download installer' })
-  fireEvent.click(button)
+  act(() => useAppStore.setState({ updateStatus: { state: 'checking' } }))
+  expect(switchButton.hasAttribute('disabled')).toBe(true)
+})
 
-  expect(openUrl).toHaveBeenCalledWith(upstreamBuild.installerUrl)
+it('keeps the Windows manual-install path tied to the selected search result', async () => {
+  vi.mocked(getShortcutPlatform).mockReturnValue('win32')
+  render(<ReleaseChannelSection />)
+  await searchForOlderBuild()
+  fireEvent.click(screen.getByRole('button', { name: 'Download installer' }))
+  expect(openUrl).toHaveBeenCalledWith(builds[1].installerUrl)
   expect(check).not.toHaveBeenCalled()
 })
 
-// Why: a Windows installer from another publisher fails Authenticode against the installed
-// app's publisherName, so the fork build gets the same download macOS does — with Windows copy.
-it('offers the installer download for a fork build on Windows', async () => {
-  platformRef.current = 'win32'
-  renderSection()
+it('resets selection on refresh and keeps load failures recoverable', async () => {
+  render(<ReleaseChannelSection />)
+  await searchForOlderBuild()
+  listBuilds.mockResolvedValueOnce({ ok: false, message: 'Build feed unavailable.' })
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh build list' }))
+  await screen.findByText('Build feed unavailable.')
+  expect(screen.getByRole('combobox', { name: 'Build' }).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByRole('button', { name: 'Switch to build' }).hasAttribute('disabled')).toBe(
+    true
+  )
 
-  expect(await screen.findByText(/Orca on Windows only installs updates signed by/)).toBeTruthy()
-  const button = screen.getByRole('button', { name: 'Download installer' })
-  fireEvent.click(button)
-
-  expect(openUrl).toHaveBeenCalledWith(upstreamBuild.installerUrl)
-  expect(check).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh build list' }))
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'Build' }).textContent).toContain(
+      'plugins-machines-preview'
+    )
+  )
+  expect(screen.queryByText('Build feed unavailable.')).toBeNull()
+  expect(listBuilds).toHaveBeenLastCalledWith('adhoc', { force: true })
 })
 
-it('keeps the in-app switch for a fork build on Linux', async () => {
-  platformRef.current = 'linux'
-  renderSection()
-
-  expect(await screen.findByText(`${FORK_VERSION} → 1.4.197`)).toBeTruthy()
-  const button = screen.getByRole('button', { name: 'Switch to build' })
-  fireEvent.click(button)
-
-  expect(check).toHaveBeenCalledWith({ channel: 'stable', targetTag: 'v1.4.197' })
-  expect(openUrl).not.toHaveBeenCalled()
+it('discards a previous channel search and offers only the newly loaded channel', async () => {
+  render(<ReleaseChannelSection />)
+  await searchForOlderBuild()
+  fireEvent.click(screen.getByRole('combobox', { name: 'Build' }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search builds' }), {
+    target: { value: 'older-branch' }
+  })
+  listBuilds.mockResolvedValueOnce({
+    ok: true,
+    builds: [{ ...builds[0], channel: 'stable', tag: 'v1.4.238', version: '1.4.238', name: null }]
+  })
+  fireEvent.click(screen.getByRole('radio', { name: /^Stable$/ }))
+  const trigger = screen.getByRole('combobox', { name: 'Build' })
+  await waitFor(() => expect(trigger.textContent).toBe('1.4.238'))
+  fireEvent.click(trigger)
+  expect(screen.getByRole('combobox', { name: 'Search builds' }).getAttribute('value')).toBe('')
+  expect(screen.getAllByRole('option')).toHaveLength(1)
+  expect(screen.getByRole('option').textContent).toBe('1.4.238')
 })

@@ -29,6 +29,10 @@ import {
   hostTestOperationId,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { recordingProductionStructuredAgentSessionLogger } from './structured-agent-session-logger-test-support'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { claudeAndCodexDeclared } from './structured-agent-session-adapter-router-test-support'
+import { startsWhenPublished } from './structured-agent-session-instant-start.test-support'
 
 const journals = createTrackedJournalOpener()
 
@@ -62,6 +66,7 @@ let root: string
 let recoveryCapsule: TrackedTestRecoveryCapsule
 let store: AgentSessionRecordStore
 let host: StructuredAgentSessionHost
+let log: ReturnType<typeof recordingProductionStructuredAgentSessionLogger>
 let acquire: Mock<StructuredAgentSessionAdapter['acquire']>
 let releaseAcquisition: Mock<NonNullable<StructuredAgentSessionAdapter['releaseAcquisition']>>
 let dispatch: Mock<StructuredAgentSessionAdapter['dispatch']>
@@ -79,17 +84,23 @@ function accepted(): AgentSessionDispatchOutcome {
 }
 
 function adapter(): StructuredAgentSessionAdapter {
-  return {
-    acquire,
-    releaseAcquisition,
-    dispatch: async (input) => {
-      await input.beforeDispatch?.()
-      return dispatch(input)
+  return startsWhenPublished(
+    {
+      acquire,
+      open: async () => ({
+        reportedOptions: { model: '' }
+      }),
+      releaseAcquisition,
+      dispatch: async (input) => {
+        await input.beforeDispatch?.()
+        return dispatch(input)
+      },
+      cancelTurn,
+      answerPrompt,
+      setOption
     },
-    cancelTurn,
-    answerPrompt,
-    setOption
-  }
+    () => host
+  )
 }
 
 async function attach(): Promise<AgentSessionRecord | null> {
@@ -131,6 +142,7 @@ beforeEach(async () => {
   resetHostTestOperationIds()
   ordinal = 0
   acquire = vi.fn(async ({ fence }) => ({
+    acquisitionGeneration: globalThis.crypto.randomUUID(),
     process: {
       hostId: 'local',
       pid: 4242,
@@ -139,7 +151,7 @@ beforeEach(async () => {
     },
     link: {
       linkId: `link-${fence}`,
-      handle: { provider: 'codex', threadId: THREAD },
+      handle: codexProviderHandle(THREAD),
       origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
       mintedAtFence: fence,
       observedAt: NOW
@@ -152,7 +164,10 @@ beforeEach(async () => {
   setOption = vi.fn(async () => undefined)
   store = await openTestAgentSessionRecordStore(root)
   recoveryCapsule = new TrackedTestRecoveryCapsule(root)
+  log = recordingProductionStructuredAgentSessionLogger()
   host = new StructuredAgentSessionHost({
+    agents: claudeAndCodexDeclared(),
+    logger: log.logger,
     store,
     adapter: adapter(),
     journalDatabase: openTestJournalHostDatabase(root),
@@ -200,6 +215,8 @@ export function hostTestState() {
     root,
     store,
     host,
+    /** Every entry the beforeEach host logged; a host a test builds itself logs elsewhere. */
+    log,
     acquire,
     releaseAcquisition,
     dispatch,

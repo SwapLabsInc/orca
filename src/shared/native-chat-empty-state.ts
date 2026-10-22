@@ -15,23 +15,21 @@ export const NATIVE_CHAT_EMPTY_STATE_COPY = {
     title: 'Start a chat with {{value0}}',
     subtitle: 'Ask {{value0}} to inspect code, explain output, or make a change.'
   },
+  /** A chat whose conversation the host has not found: new, or not reported by the agent. */
+  notFound: {
+    title: "Can't find this conversation yet",
+    subtitle:
+      'Send a message to start one, or open the terminal view to see what {{value0}} is doing.'
+  },
   error: {
     title: 'Could not load conversation',
     subtitle: 'The transcript could not be read. Toggle back to the terminal to keep working.'
-  },
-  // The structured chat's read reconnects on its own; the terminal-backed read does not.
-  retryingError: {
-    title: 'Could not load conversation',
-    subtitle: 'The transcript could not be read. Orca keeps trying to load it.'
   },
   notAgent: {
     title: 'No conversation here',
     subtitle: 'This terminal is not running a recognized coding agent.'
   }
 } as const satisfies Record<string, NativeChatEmptyStateCopy>
-
-/** The retrying half alone, under a title that already says the history didn't load. */
-export const NATIVE_CHAT_KEEPS_TRYING_COPY = 'Orca keeps trying to load it.'
 
 /** Resolve the empty-state copy with the agent label substituted for `{{value0}}`.
  *  For platforms without an i18n layer (mobile). */

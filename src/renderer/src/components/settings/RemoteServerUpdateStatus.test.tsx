@@ -62,7 +62,7 @@ describe('getRemoteServerManualUpdateHelp', () => {
       )
     ).toBe('Development builds must be updated from their source checkout.')
     expect(getRemoteServerManualUpdateHelp(entry(null))).toBe(
-      'Update this server manually once to enable remote updates.'
+      'Remote updates are unavailable for this server. Update Orca on the server host.'
     )
   })
 

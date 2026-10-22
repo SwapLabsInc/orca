@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('sonner', () => ({ toast: { error: mocks.toastError, message: vi.fn() } }))
 
 vi.mock('@/runtime/structured-agent-session-client', () => ({
-  callStructuredAgentSession: mocks.call
+  callStructuredAgentSession: mocks.call,
+  supportsStructuredAgentSessionQuietRepeatedStop: vi.fn(async () => false)
 }))
 
 vi.mock('./use-structured-agent-session-read', () => ({
@@ -30,13 +31,15 @@ vi.mock('./use-structured-agent-session-read', () => ({
   })
 }))
 
-vi.mock('./use-structured-agent-session-outbox', () => ({
-  structuredSessionOperationId: () => 'operation-1',
-  useStructuredAgentSessionOutbox: () => ({
-    outbox: [],
+vi.mock('./structured-agent-session-operation-id', () => ({
+  structuredSessionOperationId: () => 'operation-1'
+}))
+vi.mock('./use-structured-agent-session-sends', () => ({
+  useStructuredAgentSessionSends: () => ({
+    pending: [],
     error: null,
     send: vi.fn(),
-    retry: vi.fn()
+    stopSends: vi.fn()
   })
 }))
 
@@ -253,8 +256,7 @@ describe('a chat write the host refused', () => {
       await expect(result.current.cancel('turn-1')).resolves.toBeNull()
       await expect(result.current.runConversationCommand('compact')).resolves.toEqual({
         accepted: false,
-        error:
-          "The agent is still responding. The command didn't run. Wait for the agent to finish responding, or stop it."
+        error: "The agent is still working. Run /compact when it's done."
       })
     })
 

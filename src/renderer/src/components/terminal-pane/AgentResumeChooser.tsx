@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { translate } from '@/i18n/i18n'
 import {
   Dialog,
@@ -45,9 +45,11 @@ export function AgentResumeChooser({
   const listboxRef = useRef<HTMLDivElement | null>(null)
 
   // Why: a shrinking list (a sibling pane claimed one) must not strand the cursor past the end.
-  useEffect(() => {
-    setSelected((current) => (current < rows.length ? current : Math.max(0, rows.length - 1)))
-  }, [rows.length])
+  // Adjusted during render, not in an effect, so the stale row is never painted.
+  const lastRow = Math.max(0, rows.length - 1)
+  if (selected > lastRow) {
+    setSelected(lastRow)
+  }
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>): void => {

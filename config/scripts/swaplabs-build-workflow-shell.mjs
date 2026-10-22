@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { runProcess } from '../../src/shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
 
 // LOCAL: what the fork build workflow's contract tests share — the parsed
 // workflow, step lookups, and a runner that executes one step's bash against a
