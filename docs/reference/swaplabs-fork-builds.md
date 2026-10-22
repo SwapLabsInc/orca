@@ -137,6 +137,16 @@ API requires. Nothing else in this workflow reads that secret. Without it, or
 when the dispatch fails, the job prints a notice or warning and the build stays
 green, because the hourly check still picks the release up.
 
+## Slack note for each build
+
+The `notify-build` job sends an `orca-fork-build` repository dispatch to
+SwapLabsInc/SwapLabs as soon as the release goes live, or once the run cannot
+publish. It carries the outcome (`published`, `failed` or `cancelled`), the
+commit, the run id, and the tag when published. Its `Orca sync note` workflow
+posts the note to Slack once per outcome and run. A published note does not wait
+for the macOS leg, which is best-effort. The job uses the same token as
+`notify-devvms`, and a missing token or failed dispatch leaves the build green.
+
 ## macOS signing material
 
 The mac leg signs and publishes update manifests only when three Actions secrets

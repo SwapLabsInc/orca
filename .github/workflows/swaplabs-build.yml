@@ -959,6 +959,51 @@ jobs:
             echo "::warning::Could not dispatch to SwapLabsInc/SwapLabs; its hourly check still picks up $TAG."
           fi
 
+  # LOCAL: tells SwapLabsInc/SwapLabs's Slack note workflow how this build ended:
+  # published as soon as the release is live (the macOS leg is best-effort and
+  # may still be uploading), or failed or cancelled once the run cannot publish.
+  # Like notify-devvms, nothing here may fail the build.
+  notify-build:
+    needs: [preflight, draft, build-linux, publish]
+    if: >-
+      always() && github.repository == 'SwapLabsInc/orca' &&
+      (needs.preflight.outputs.should_build == 'true' || needs.preflight.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Tell the SwapLabs Slack note workflow how the build ended
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SWAPLABS_DEVVMS_DISPATCH_TOKEN }}
+          PUBLISHED: ${{ needs.publish.outputs.published }}
+          CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+          TAG: ${{ needs.draft.outputs.tag }}
+          SHA: ${{ needs.preflight.outputs.head_sha || github.sha }}
+        run: |
+          set -uo pipefail
+          if [[ "$PUBLISHED" == "true" ]]; then
+            outcome=published
+          elif [[ "$CANCELLED" == "true" ]]; then
+            outcome=cancelled
+          else
+            outcome=failed
+          fi
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::notice::SWAPLABS_DEVVMS_DISPATCH_TOKEN is not set; no Slack note for this $outcome build."
+            exit 0
+          fi
+          args=(-f event_type=orca-fork-build -f "client_payload[outcome]=$outcome"
+            -f "client_payload[sha]=$SHA" -f "client_payload[run]=$GITHUB_RUN_ID")
+          if [[ "$outcome" == published ]]; then
+            args+=(-f "client_payload[tag]=$TAG")
+          fi
+          if gh api repos/SwapLabsInc/SwapLabs/dispatches "${args[@]}" --silent; then
+            echo "Told SwapLabsInc/SwapLabs the build $outcome."
+          else
+            echo "::warning::Could not dispatch to SwapLabsInc/SwapLabs; no Slack note for this build."
+          fi
+
   # Why: a draft left behind by a failed or cancelled run is invisible to users
   # but still holds its tag name, so a rerun landing on the same minute would
   # collide. Runs last, after every leg, and never touches a release that went
