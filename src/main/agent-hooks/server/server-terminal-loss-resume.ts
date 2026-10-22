@@ -4,7 +4,8 @@ import {
   type TerminalLossAgentResume
 } from './server-retained-identity'
 import type { EnrichedAgentHookEventPayload, UserEndedAgentSession } from './server-types'
-import { hashLaunchToken } from './server-status-identity'
+import { launchTokenHash } from '../../../shared/agent-hook-spool'
+import { isSameAgentProcess } from '../../../shared/agent-process-presence'
 
 export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
   /** The agent session the execution host may resume when it re-creates `paneKey`'s terminal. */
@@ -54,10 +55,12 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     const paneKey = this.resolvePaneKeyAlias(ended.paneKey)
     const row = this.state.lastStatusByPaneKey.get(paneKey)
     // Why: a nested CLI inherits the pane key, so only the session the row names may retire it,
-    // and only the route that produced the row may speak for it.
+    // only the route that produced the row may speak for it, and never another identified process.
+    const owner = row?.agentPresence?.process
     if (
       row?.providerSession?.id !== ended.sessionId ||
-      (row.connectionId ?? null) !== (ended.connectionId ?? null)
+      (row.connectionId ?? null) !== (ended.connectionId ?? null) ||
+      (ended.sender && owner && !isSameAgentProcess(ended.sender, owner))
     ) {
       return
     }
@@ -66,9 +69,9 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     const endedToken = ended.launchToken?.trim()
     const rowToken = row.launchToken?.trim()
     const rowTokenHash = rowToken
-      ? hashLaunchToken(rowToken)
+      ? launchTokenHash(rowToken)
       : this.hydratedLaunchTokenHashByPaneKey.get(paneKey)
-    if (endedToken && rowTokenHash && hashLaunchToken(endedToken) !== rowTokenHash) {
+    if (endedToken && rowTokenHash && launchTokenHash(endedToken) !== rowTokenHash) {
       return
     }
     const disposition = this.getAgentStatusDisposition(paneKey, {
@@ -81,8 +84,8 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
       // Why: the exit hook that follows finds no owner and is dropped, so record the ended
       // process here: nothing probes it again, and its late hooks cannot bring the row back.
       const presence = row.agentPresence
-      this.clearPaneState(paneKey, {
-        retainIdentity: 'agent-ended',
+      this.reconcileEndedProcessForPaneKeys([paneKey], {
+        userEnded: true,
         ...(presence ? { endedPresence: { ...presence, ended: true as const } } : {})
       })
     }

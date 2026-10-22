@@ -1,4 +1,4 @@
-import { spawnProcess } from '../../../shared/child-process/run-process'
+import { spawnProcess } from '@orca/process-host'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 
 /** How long the helper waits for the relaunched app's health marker before rolling back. */

@@ -1,11 +1,11 @@
 import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
+import type { AgentChildWorkStopAcknowledgement } from '../../shared/agent-child-work-stop-targets'
 import type { ClaudePromptClaim } from './claude-structured-prompt-replies'
 import { ClaudeControlRequestError } from './claude-stream-json-connection'
 import { ClaudeControlRequestTimeoutError } from './claude-agent-sdk-control-requests'
 import { settleCancelledClaudeDispatchWaiters } from './claude-structured-dispatch'
 import type { ClaudeLateDispatchSettlement } from './claude-replay-turn-resolution'
 import type { ClaudeSession } from './claude-structured-session-state'
-import type { StructuredAgentSessionStopCause } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 
 const INTERRUPT_CANCEL_QUEUED_CAPABILITY = 'interrupt_cancel_queued_v1'
 
@@ -27,8 +27,7 @@ export async function cancelClaudeTurn(
   session: ClaudeSession,
   timeoutMs: number | undefined,
   isCurrent: ClaudeTurnCancellationGuard = () => true,
-  onDispatchSettledLate?: ClaudeLateDispatchSettlement,
-  stopped?: { turnId: string; cause: StructuredAgentSessionStopCause }
+  onDispatchSettledLate?: ClaudeLateDispatchSettlement
 ): Promise<{ cancelled: boolean }> {
   // The SDK interrupt is session-scoped. Re-check the caller's turn/fence
   // immediately before issuing it so a delayed request cannot stop a later turn.
@@ -36,10 +35,6 @@ export async function cancelClaudeTurn(
     return { cancelled: false }
   }
   const cancelQueued = supportsClaudeQueuedInterruptCancellation(session)
-  // Recorded before the interrupt goes out, so the result it provokes finds it.
-  if (stopped) {
-    session.translator?.recordTurnStop(stopped.turnId, stopped.cause)
-  }
   try {
     const receipt = await session.connection.interrupt({
       ...(cancelQueued ? { cancelQueued: true } : {}),
@@ -59,7 +54,7 @@ export async function cancelClaudeTurn(
     return { cancelled: true }
   } catch (error) {
     // The CLI refused. Any other error leaves the interrupt's effect unknown. Either way the Stop
-    // ends the child next, so the stop recorded on the turn stands.
+    // ends the child next, so its Stop event stands.
     if (error instanceof ClaudeControlRequestError) {
       return { cancelled: false }
     }
@@ -67,13 +62,15 @@ export async function cancelClaudeTurn(
   }
 }
 
-/** Stops each task the host named. An acknowledged stop ends the task's record: the CLI answers
- *  success for a task it no longer knows without sending that task any frame. */
+/** Stops each task the host named, and names each the CLI accepted the stop of as it does: the host
+ *  ends that run provisionally, since the CLI answers success for a task it no longer knows without
+ *  sending that task any frame. */
 export async function stopClaudeBackgroundTasks(
   session: ClaudeSession,
   timeoutMs: number | undefined,
   isCurrent: ClaudeTurnCancellationGuard,
-  taskIds: readonly string[]
+  taskIds: readonly string[],
+  acknowledge: (acknowledgement: AgentChildWorkStopAcknowledgement) => void = () => {}
 ): Promise<{ cancelled: boolean }> {
   let cancelled = false
   // A failed request for one task still leaves the others to stop; it is reported after them. A
@@ -86,8 +83,8 @@ export async function stopClaudeBackgroundTasks(
     }
     try {
       await session.connection.stopTask(taskId, { timeoutMs })
-      session.childWork.stopAcknowledged(taskId)
       cancelled = true
+      acknowledge({ taskId })
     } catch (error) {
       if (error instanceof ClaudeControlRequestTimeoutError) {
         throw error
@@ -101,6 +98,31 @@ export async function stopClaudeBackgroundTasks(
     throw failure.error
   }
   return { cancelled }
+}
+
+/** Stops the tasks while `session` is still the one the host asked about. */
+export async function stopCurrentClaudeBackgroundTasks(input: {
+  sessions: ReadonlyMap<string, ClaudeSession>
+  session: ClaudeSession
+  sessionId: string
+  fence: number
+  taskIds: readonly string[]
+  timeoutMs: number | undefined
+  acknowledge?: (acknowledgement: AgentChildWorkStopAcknowledgement) => void
+}): Promise<{ cancelled: boolean }> {
+  const { sessions, session, sessionId, fence } = input
+  const acquisitionGeneration = session.acquisitionGeneration
+  const isCurrent = () =>
+    sessions.get(sessionId) === session &&
+    session.fence === fence &&
+    session.acquisitionGeneration === acquisitionGeneration
+  return stopClaudeBackgroundTasks(
+    session,
+    input.timeoutMs,
+    isCurrent,
+    input.taskIds,
+    input.acknowledge
+  )
 }
 
 export async function answerClaudePrompt(

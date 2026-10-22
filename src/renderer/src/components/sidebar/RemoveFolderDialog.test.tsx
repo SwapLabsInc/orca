@@ -9,7 +9,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Repo } from '../../../../shared/repo-types'
 
 const mocks = vi.hoisted(() => {
-  const runtimeEnvironments: { id: string; name: string }[] = []
+  const worktreesByRepo: Record<
+    string,
+    { id: string; hostId?: string; ephemeralVmCheckoutMode?: 'provisioned-root' }[]
+  > = {}
+  const tabsByWorktree: Record<string, { id: string }[]> = {}
+  const ptyIdsByTabId: Record<string, string[]> = {}
+  const runtimeEnvironments: {
+    id: string
+    name: string
+    orcadDeployment?: { sshTargetId: string }
+  }[] = []
   return {
     state: {
       activeModal: 'confirm-remove-folder' as string | null,
@@ -24,6 +34,10 @@ const mocks = vi.hoisted(() => {
       runtimeEnvironments,
       sshTargetLabels: new Map<string, string>(),
       removedSshTargetLabels: new Map<string, string>(),
+      worktreesByRepo,
+      detectedWorktreesByRepo: {},
+      tabsByWorktree,
+      ptyIdsByTabId,
       closeModal: vi.fn(),
       removeProject: vi.fn()
     }
@@ -31,7 +45,11 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('@/store', () => ({
-  useAppStore: (selector: (state: typeof mocks.state) => unknown) => selector(mocks.state)
+  useAppStore: Object.assign(
+    (selector: (state: typeof mocks.state) => unknown) => selector(mocks.state),
+    // Read on confirm (unsaved-edits snapshot) and by the unsaved-files notice once mounted.
+    { getState: () => mocks.state }
+  )
 }))
 
 vi.mock('@/components/ui/dialog', () => ({
@@ -92,7 +110,27 @@ describe('RemoveFolderDialog', () => {
     mocks.state.runtimeEnvironments = []
     mocks.state.sshTargetLabels = new Map([['target-1', 'Persistent host']])
     mocks.state.removedSshTargetLabels = new Map()
+    mocks.state.worktreesByRepo = {}
+    mocks.state.tabsByWorktree = {}
+    mocks.state.ptyIdsByTabId = {}
     mocks.state.removeProject.mockResolvedValue({ status: 'removed' })
+  })
+
+  it("warns about VM recipe cleanup for a project on a recipe VM's managed server", () => {
+    mocks.state.modalData.hostId = 'runtime:env-vm'
+    mocks.state.repos = [repo(null, 'runtime:env-vm')]
+    mocks.state.runtimeEnvironments = [
+      {
+        id: 'env-vm',
+        name: 'Docker root VM',
+        orcadDeployment: { sshTargetId: 'runtime-ssh-runtime-1' }
+      }
+    ]
+
+    const html = renderToStaticMarkup(<RemoveFolderDialog />)
+
+    expect(html).toContain('Its VM recipe determines whether the environment')
+    expect(html).not.toContain('It is still on your disk')
   })
 
   it('warns that VM recipe cleanup controls file deletion', () => {
@@ -106,6 +144,18 @@ describe('RemoveFolderDialog', () => {
     expect(html).not.toContain('Its files stay on')
   })
 
+  it('warns about VM recipe cleanup for an adopted provisioned root before the catalog loads', () => {
+    mocks.state.modalData.hostId = 'runtime:env-vm'
+    mocks.state.repos = [repo(null, 'runtime:env-vm')]
+    mocks.state.worktreesByRepo = {
+      'repo-1': [
+        { id: 'repo-1::/vm', hostId: 'runtime:env-vm', ephemeralVmCheckoutMode: 'provisioned-root' }
+      ]
+    }
+
+    expect(renderToStaticMarkup(<RemoveFolderDialog />)).toContain('Its VM recipe determines')
+  })
+
   it('keeps the file-preservation promise for ordinary SSH projects', () => {
     mocks.state.repos = [repo('target-1', 'ssh:target-1')]
 
@@ -113,6 +163,19 @@ describe('RemoveFolderDialog', () => {
 
     expect(html).toContain('Its files stay on Persistent host')
     expect(html).not.toContain('VM recipe')
+  })
+
+  it('says how many open terminals removal will close', () => {
+    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+    mocks.state.worktreesByRepo = {
+      'repo-1': [{ id: 'repo-1::/workspace/example', hostId: 'ssh:target-1' }]
+    }
+    mocks.state.tabsByWorktree = { 'repo-1::/workspace/example': [{ id: 'a' }, { id: 'b' }] }
+    mocks.state.ptyIdsByTabId = { a: ['pty-a'], b: ['pty-b'] }
+
+    expect(renderToStaticMarkup(<RemoveFolderDialog />)).toContain(
+      '2 open terminals in this project will be closed.'
+    )
   })
 
   it('closes on a removal the owning host confirmed', async () => {
@@ -123,8 +186,21 @@ describe('RemoveFolderDialog', () => {
 
     expect(mocks.state.removeProject).toHaveBeenCalledWith('repo-1', {
       hostId: 'ssh:target-1',
-      errorFeedback: 'toast'
+      errorFeedback: 'toast',
+      confirmedDiscards: expect.any(Map)
     })
+    expect(mocks.state.closeModal).toHaveBeenCalledTimes(1)
+  })
+
+  // Without the opener's host a bare id could remove another host's row (#13071).
+  it('closes without removing anything when the modal names no host', async () => {
+    delete mocks.state.modalData.hostId
+    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
+    render(<RemoveFolderDialog />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(mocks.state.removeProject).not.toHaveBeenCalled()
     expect(mocks.state.closeModal).toHaveBeenCalledTimes(1)
   })
 
@@ -154,6 +230,7 @@ describe('RemoveFolderDialog', () => {
     expect(mocks.state.removeProject).toHaveBeenLastCalledWith('repo-1', {
       hostId: 'runtime:env-1',
       errorFeedback: 'toast',
+      confirmedDiscards: expect.any(Map),
       mode: 'forget-local'
     })
     expect(mocks.state.closeModal).toHaveBeenCalledTimes(1)
@@ -170,17 +247,6 @@ describe('RemoveFolderDialog', () => {
 
     expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
     expect(screen.queryByText(/could not reach ,/)).not.toBeInTheDocument()
-  })
-
-  it('names the owner when the modal was opened without a hostId', async () => {
-    delete mocks.state.modalData.hostId
-    mocks.state.repos = [repo('target-1', 'ssh:target-1')]
-    mocks.state.removeProject.mockResolvedValueOnce({ status: 'owner-unverifiable' })
-    render(<RemoveFolderDialog />)
-
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
-
-    expect(screen.getByText(/Orca could not reach Persistent host/)).toBeInTheDocument()
   })
 
   // The unreachable runtime is exactly the case whose environment record may be gone, and the

@@ -25,7 +25,7 @@ vi.mock('node:child_process', async (importOriginal) => ({
 vi.mock('./spawned-command-tree-kill', () => ({
   killSpawnedCommandTree: killSpawnedCommandTreeMock
 }))
-vi.mock('../../../shared/child-process/process-tree-termination', () => ({
+vi.mock('@orca/process-host/process-tree-termination', () => ({
   signalProcessTree: signalProcessTreeMock,
   forceTerminateProcessTree: forceTerminateProcessTreeMock
 }))
@@ -46,6 +46,7 @@ vi.mock('../../../shared/git-fetch-head-lock', async (importOriginal) => {
   }
 })
 
+import { RuntimeRemoteFetchController } from '../../runtime/runtime-remote-fetch-controller'
 import { gitExecFileAsync, gitExecFileAsyncBuffer } from './git-exec-file'
 import { execFileCapture } from './exec-file-capture'
 import {
@@ -67,6 +68,15 @@ function mockChild(pid: number | undefined = 1234): ChildProcess {
   return child as unknown as ChildProcess
 }
 
+function mockMissingSshConfig(callback: ExecCallback): ChildProcess {
+  const child = mockChild()
+  queueMicrotask(() => {
+    callback(Object.assign(new Error('No SSH configuration'), { code: 1 }), '', '')
+    child.emit('close', 1, null)
+  })
+  return child
+}
+
 async function settleAdmissionGrant(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
@@ -82,6 +92,7 @@ describe('git exec admission lifetime', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllEnvs()
     _resetGitAdmissionForTests()
   })
 
@@ -107,6 +118,31 @@ describe('git exec admission lifetime', () => {
     blocker.release()
     expect(_gitAdmissionSnapshotForTests().queued).toBe(0)
   })
+
+  it.each([false, true])(
+    'never spawns an expired preview after admission (late timer: %s)',
+    async (lateTimer) => {
+      vi.stubEnv('GIT_SSH_COMMAND', 'ssh')
+      _resetGitAdmissionForTests(new GitAdmissionScheduler({ networkCap: 1, networkHeadroom: 0 }))
+      const blocker = await acquireGitAdmission({ args: ['fetch'], cwd: '/preview' })
+      const controller = new RuntimeRemoteFetchController()
+      vi.spyOn(controller, 'getCanonicalRepoKey').mockResolvedValue('local::/preview/.git')
+      const preview = controller.refreshRemoteTrackingBaseForPreview('/preview', {
+        remote: 'origin',
+        branch: 'main',
+        ref: 'refs/remotes/origin/main',
+        base: 'origin/main'
+      })
+      await settleAdmissionGrant()
+      expect(_gitAdmissionSnapshotForTests().queued).toBe(1)
+      vi.setSystemTime(Date.now() + (lateTimer ? 10_001 : 0))
+      await vi.advanceTimersByTimeAsync(lateTimer ? 0 : 10_001)
+      blocker.release()
+      await settleAdmissionGrant()
+      await expect(preview).resolves.toEqual({ ok: false, errorKind: 'git_error' })
+      expect(execFileMock).not.toHaveBeenCalled()
+    }
+  )
 
   it('retains the string-exec permit after timeout settlement until close', async () => {
     const child = mockChild()
@@ -151,18 +187,21 @@ describe('git exec admission lifetime', () => {
     const children = [mockChild(1001), mockChild(1002)]
     const callbacks: ExecCallback[] = []
     execFileMock.mockImplementation(
-      (_command: string, _args: string[], _options: unknown, callback: ExecCallback) => {
+      (_command: string, args: string[], _options: unknown, callback: ExecCallback) => {
+        if (args[0] === 'config') {
+          return mockMissingSshConfig(callback)
+        }
         callbacks.push(callback)
         return children[callbacks.length - 1]
       }
     )
 
     const first = gitExecFileAsync(['fetch', 'origin'], { cwd: '/same-repo' })
-    await vi.waitFor(() => expect(execFileMock).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(callbacks).toHaveLength(1))
     const second = gitExecFileAsync(['fetch', 'origin'], { cwd: '/same-repo' })
     await Promise.resolve()
 
-    expect(execFileMock).toHaveBeenCalledOnce()
+    expect(execFileMock).toHaveBeenCalledTimes(2)
     expect(_gitAdmissionSnapshotForTests()).toMatchObject({
       queued: 0,
       budgets: { network: { baseUsed: 1, headroomUsed: 0 } }
@@ -171,7 +210,8 @@ describe('git exec admission lifetime', () => {
     callbacks[0]?.(null, '', '')
     children[0].emit('close', 0, null)
     await expect(first).resolves.toEqual({ stdout: '', stderr: '' })
-    await vi.waitFor(() => expect(execFileMock).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(callbacks).toHaveLength(2))
+    expect(execFileMock).toHaveBeenCalledTimes(4)
     callbacks[1]?.(null, '', '')
     children[1].emit('close', 0, null)
     await expect(second).resolves.toEqual({ stdout: '', stderr: '' })
@@ -300,6 +340,9 @@ describe('git exec admission lifetime', () => {
     const callbacks = new Map<string, ExecCallback>()
     execFileMock.mockImplementation(
       (_command: string, args: string[], _options: unknown, callback: ExecCallback) => {
+        if (args[0] === 'config') {
+          return mockMissingSshConfig(callback)
+        }
         const label = args[1] ?? ''
         const child = mockChild()
         children.set(label, child)

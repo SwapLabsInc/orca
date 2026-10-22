@@ -1,3 +1,10 @@
+/** jcode's `run --json` envelope, narrowed to the field the answer lives in. */
+type JcodeJsonResult = { text?: unknown }
+
+function isJcodeJsonResult(value: unknown): value is JcodeJsonResult {
+  return typeof value === 'object' && value !== null && 'text' in value
+}
+
 /** Strips noise around the agent's output: surrounding whitespace, a single
  *  enclosing fenced code block, lone "Generating…" preamble lines some CLIs
  *  print before the real answer, and a reasoning block the output opens with. */
@@ -6,13 +13,34 @@ export function cleanGeneratedCommitMessage(raw: string): string {
   // unwrap by scanning boundaries instead of building newline-sized arrays.
   let text = normalizeGeneratedCommitMessageLineFeeds(raw).trim()
 
+  // Why: jcode --json emits a `{"text": …}` envelope (its plain-text mode
+  // mixes thinking and a "[Tokens]…" usage line into stdout); extract the
+  // answer field when the output is such an envelope.
+  if (text.startsWith('{')) {
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (isJcodeJsonResult(parsed) && typeof parsed.text === 'string') {
+        text = parsed.text.trim()
+      }
+    } catch {
+      // not a JSON envelope; fall through to the plain-text cleanup
+    }
+  }
+
+  // Why: jcode prints a trailing "[Tokens] upload: …" usage line after the
+  // answer; strip it so the result stays clean for branch/commit naming.
+  const tokensUsageIndex = text.search(/\n\[Tokens\]\s/)
+  if (tokensUsageIndex !== -1) {
+    text = text.slice(0, tokensUsageIndex).trimEnd()
+  }
+
   // Why: real commit messages never start with an ellipsis or the word
   // "Generating"/"Thinking" — those leak from CLIs that print a status line
   // before the actual response.
   const firstNewline = text.indexOf('\n')
   if (firstNewline !== -1) {
     const firstLine = text.slice(0, firstNewline)
-    if (/^(generating|thinking)\b/i.test(firstLine) || /^[.…]+$/.test(firstLine.trim())) {
+    if (/^(generating|thinking)\b/i.test(firstLine) || /^[.\u2026]+$/.test(firstLine.trim())) {
       text = text.slice(firstNewline + 1).trim()
     }
   }
@@ -26,7 +54,7 @@ export function cleanGeneratedCommitMessage(raw: string): string {
 
   // Why: some CLIs format a one-shot answer as a list item even when the
   // prompt asks for raw text; a Git subject should not carry that marker.
-  text = text.replace(/^(\s*)(?:[-*•●]\s+|\d+[.)]\s+)/, '$1').trim()
+  text = text.replace(/^(\s*)(?:[-*\u2022\u25CF]\s+|\d+[.)]\s+)/, '$1').trim()
 
   return text
 }

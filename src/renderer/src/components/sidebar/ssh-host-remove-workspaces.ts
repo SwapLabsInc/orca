@@ -1,5 +1,7 @@
+import type { ConfirmedUnsavedDiscards } from '@/store/slices/worktrees/teardown/removed-workspace-unsaved-files'
 import { getRepoExecutionHostId, toSshExecutionHostId } from '../../../../shared/execution-host'
 import { useAppStore } from '@/store'
+import { runEnclosingWorktreeRemoval } from '@/store/active-worktree-deselection-intent'
 import type { SshHostRemoveResolution } from './ssh-host-remove-resolution'
 
 export type ClearSshHostWorkspacesResult = {
@@ -21,9 +23,10 @@ export type ClearSshHostWorkspacesResult = {
  * still-registered child. Failures are collected (not thrown) so the caller can
  * decide whether to proceed with target removal.
  */
-export async function clearSshHostWorkspaces(
+async function clearSshHostWorkspacesImpl(
   resolution: SshHostRemoveResolution,
-  mode: 'delete-remote' | 'forget-local'
+  mode: 'delete-remote' | 'forget-local',
+  confirmedDiscards: ConfirmedUnsavedDiscards | undefined
 ): Promise<ClearSshHostWorkspacesResult> {
   const store = useAppStore.getState()
   const forgetLocalOnly = mode === 'forget-local'
@@ -32,14 +35,13 @@ export async function clearSshHostWorkspaces(
   // removed, so that target is the host each removal is confirmed against
   // (STA-4343) — a bare id could land on a local checkout at the same path.
   const hostId = toSshExecutionHostId(resolution.targetId)
-
   for (const worktreeId of resolution.workspaceWorktreeIds) {
     // Why: sequential, not parallel — deletes on the same repo contend on git
     // ref locks, and forget is cheap enough that ordering keeps failures legible.
     const result = await store.removeWorktree(
       { id: worktreeId, executionHostId: hostId },
       false,
-      forgetLocalOnly ? { mode: 'forget-local' } : undefined
+      forgetLocalOnly ? { mode: 'forget-local', confirmedDiscards } : { confirmedDiscards }
     )
     if (!result.ok) {
       failedIds.push(worktreeId)
@@ -49,15 +51,18 @@ export async function clearSshHostWorkspaces(
   // Why: removeProject purges renderer state and (in main) is host-scoped. Pass
   // the explicit SSH host id so a repo id shared with the local host resolves to
   // this host's row instead of falling back to the focused host — otherwise the
-  // wrong (local) project could be removed and the SSH ghost left behind.
-  // Why: forward the mode too. Without it a repo whose owner settings resolve a runtime target
-  // would dispatch repo.rm (and, for a runtime-owned SSH target, destroy its ephemeral VM) during
-  // an operation defined as touching nothing outside this client.
+  // wrong (local) project could be removed and the SSH ghost left behind. For an
+  // offline/ghost host this hits the local backend path (no live runtime target),
+  // clearing Orca's records without a successful remote call.
+  // Why: forward the mode too. Without it a project on a runtime-owned SSH target would have its
+  // ephemeral VM destroyed during an operation defined as touching nothing outside this client.
   for (const repoId of resolution.hostRepoIds) {
     try {
       const outcome = await store.removeProject(
         repoId,
-        forgetLocalOnly ? { hostId, mode: 'forget-local' as const } : { hostId }
+        forgetLocalOnly
+          ? { hostId, mode: 'forget-local' as const, confirmedDiscards }
+          : { hostId, confirmedDiscards }
       )
       if (outcome.status !== 'removed') {
         failedIds.push(repoId)
@@ -77,4 +82,14 @@ export async function clearSshHostWorkspaces(
   }
 
   return { failedIds }
+}
+
+export async function clearSshHostWorkspaces(
+  resolution: SshHostRemoveResolution,
+  mode: 'delete-remote' | 'forget-local',
+  confirmedDiscards?: ConfirmedUnsavedDiscards
+): Promise<ClearSshHostWorkspacesResult> {
+  return runEnclosingWorktreeRemoval({ hostId: toSshExecutionHostId(resolution.targetId) }, () =>
+    clearSshHostWorkspacesImpl(resolution, mode, confirmedDiscards)
+  )
 }

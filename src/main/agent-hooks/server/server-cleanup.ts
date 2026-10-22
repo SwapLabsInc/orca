@@ -1,14 +1,23 @@
 import type { AgentProcessPresence } from '../../../shared/agent-process-presence'
 import {
   admitLegacyAgentStatus,
+  clearPaneCacheState,
   deleteLegacyAgentStatus,
   paneHasStateClaims
 } from '../../../shared/agent-hook-listener/listener-state'
 import { AGENT_STATUS_2A_CURRENT_PRODUCER_MODE } from '../../../shared/agent-status-legacy-adapter'
 import type { AgentStatusCacheIdentity } from '../../../shared/agent-status-types'
+import {
+  ALL_EXECUTION_HOSTS_SCOPE,
+  parseExecutionHostId,
+  type ExecutionHostScope
+} from '../../../shared/execution-host'
+import { worktreeIdsEqual } from '../../../shared/worktree/id'
+import { isLocalHookConnectionId } from '../../../shared/wsl-hook-relay-contract'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 import { AgentHookServerAuthorityFences } from './server-authority-fences'
-import { isResumableIdentityRow, type RetainedIdentityCause } from './server-retained-identity'
+import { recordAgentExit } from './agent-exit-evidence'
+import { retainResumeIdentity, type RetainedIdentityCause } from './server-retained-identity'
 
 export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFences {
   /** The resume-identity remnant of a dropped row: a `providerSessionOnly` entry carries no state
@@ -25,31 +34,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
     ) {
       return null
     }
-    const {
-      launchToken: _launchToken,
-      resumeAfterTerminalLoss: _resumeAfterTerminalLoss,
-      terminalHandle,
-      ...resumeIdentity
-    } = entry
-    if (cause === 'agent-ended') {
-      return {
-        ...resumeIdentity,
-        ...(terminalHandle ? { terminalHandle } : {}),
-        providerSessionOnly: true,
-        retainedForLiveness: true
-      }
-    }
-    // Why: losing the terminal is not the agent ending, but an identity already kept for an agent
-    // that ended stays ended. The handle goes with the terminal it named, and so does the process
-    // presence: kept, a later probe would find it gone and retire the identity as agent-ended.
-    const resumable = !entry.structuredHost && isResumableIdentityRow(entry)
-    const { agentPresence: _agentPresence, ...terminalIdentity } = resumeIdentity
-    return {
-      ...terminalIdentity,
-      providerSessionOnly: true,
-      retainedForLiveness: true,
-      ...(resumable ? { resumeAfterTerminalLoss: true as const } : {})
-    }
+    return retainResumeIdentity(entry, cause)
   }
 
   /** Re-admits the identity a pane retains once its live claims are gone. */
@@ -103,13 +88,14 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
       const existing = this.state.lastStatusByPaneKey.get(resolvedPaneKey) as
         | EnrichedAgentHookEventPayload
         | undefined
+      const canonical = existing ?? this.getTmuxSelectedStatus(resolvedPaneKey)
       // Why: stateStartedAt pins the turn; the renderer's updatedAt is stamped at or after this
       // receivedAt (runtime-sync and recovery paths use Date.now()/capturedAt), so a strictly
       // newer cached event is the only replacement worth protecting.
       if (
-        !existing ||
-        existing.stateStartedAt !== identity.stateStartedAt ||
-        existing.receivedAt > identity.receivedAt
+        !canonical ||
+        canonical.stateStartedAt !== identity.stateStartedAt ||
+        canonical.receivedAt > identity.receivedAt
       ) {
         continue
       }
@@ -157,17 +143,35 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
        *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
        *  host re-creates, so the identity stays resumable. */
       preserveResumeIdentity?: boolean
+      /** The pane's terminal died while Orca was down (the boot sweep): the identity stays resumable. */
+      terminalLost?: boolean
+      /** The user ended the session: keep the identity for a manual resume only. */
+      userEnded?: boolean
     }
   ): number {
     // Why: an exit only the process proves cannot tell a lost terminal from an ended agent. Claude
     // reports `other` when a signal ends it, and a probe after a restart finds every agent of a
-    // lost terminal gone, so such an exit stays resumable. A session the user ended was already
-    // retired as agent-ended, and a shell that outlived the agent retires it on confirmation.
-    const retainIdentity =
-      options?.preserveResumeIdentity && !options.endedPresence ? 'agent-ended' : 'terminal-loss'
+    // lost terminal gone, so such an exit stays resumable. A session the user ended is retired as
+    // agent-ended, and a shell that outlived the agent retires it on confirmation.
+    const retainIdentity: RetainedIdentityCause =
+      options?.userEnded ||
+      (options?.preserveResumeIdentity && !options.endedPresence && !options.terminalLost)
+        ? 'agent-ended'
+        : 'terminal-loss'
     let cleared = 0
     for (const paneKey of paneKeys) {
       const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
+      if (options?.endedPresence) {
+        // Why both: cleanup below drops the alias, and a reader may still hold the original key.
+        const paneKeys = new Set([resolvedPaneKey, paneKey])
+        for (const [aliasKey, alias] of this.legacyPaneKeyAliases) {
+          if (alias.stablePaneKey === resolvedPaneKey) {
+            paneKeys.add(aliasKey)
+          }
+        }
+        recordAgentExit(this.agentExitedAtByPaneKey, paneKeys, options.endedPresence)
+        this.scheduleStatusPersist()
+      }
       if (!this.hasLiveClaimsForPaneKey(resolvedPaneKey)) {
         continue
       }
@@ -185,7 +189,79 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
    *  itself lives beside `clearPaneCacheState`, so adding a latch cannot leave this behind in a
    *  different file. */
   protected hasLiveClaimsForPaneKey(paneKey: string): boolean {
-    return paneHasStateClaims(this.state, paneKey)
+    return Boolean(this.getTmuxSelectedStatus(paneKey)) || paneHasStateClaims(this.state, paneKey)
+  }
+
+  /** Retire the panes a removed worktree occupied on `host`, and its leftover claim on any other pane. */
+  dropStatusEntriesForRemovedWorktree(worktreeId: string, host?: ExecutionHostScope): void {
+    const parsed = host === ALL_EXECUTION_HOSTS_SCOPE ? null : parseExecutionHostId(host ?? 'local')
+    // Why: a runtime host keeps its own store, so no row here is its to retire.
+    if (host !== ALL_EXECUTION_HOSTS_SCOPE && (!parsed || parsed.kind === 'runtime')) {
+      return
+    }
+    const ownedByRemoved = (claim: { connectionId: string | null; worktreeId?: string }): boolean =>
+      Boolean(claim.worktreeId && worktreeIdsEqual(claim.worktreeId, worktreeId)) &&
+      (!parsed ||
+        (parsed.kind === 'ssh'
+          ? claim.connectionId === parsed.targetId
+          : isLocalHookConnectionId(claim.connectionId)))
+    // The startup snapshot may outlive its replaced map entry; revoke only the removed owner.
+    for (const commitment of this.hydratedAuthorityCommitments) {
+      if (ownedByRemoved(commitment)) {
+        this.revokedHydratedAuthorityCommitments.add(commitment)
+      }
+    }
+    const paneKeys = new Set<string>()
+    for (const claim of [
+      ...this.state.lastStatusByPaneKey.values(),
+      ...this.persistedAuthorityCommitmentsByPaneKey.values()
+    ]) {
+      if (ownedByRemoved(claim)) {
+        paneKeys.add(claim.paneKey)
+      }
+    }
+    for (const paneKey of paneKeys) {
+      const row = this.state.lastStatusByPaneKey.get(paneKey)
+      const commitment = this.persistedAuthorityCommitmentsByPaneKey.get(paneKey)
+      if (row && ownedByRemoved(row) && commitment && !ownedByRemoved(commitment)) {
+        // A tokenless repaint cannot prove a foreign launch exited; retain it behind its token fence.
+        const observation = this.currentAuthorityObservations.get(paneKey)
+        const deleted = this.deleteStatusEntry(paneKey, { preserveAuthority: true })
+        clearPaneCacheState(this.state, paneKey)
+        if (observation && !ownedByRemoved(observation)) {
+          this.currentAuthorityObservations.set(paneKey, observation)
+        }
+        this.restartedStatusLaunchTokenHashByPaneKey.set(paneKey, {
+          hash: commitment.launchTokenHash,
+          allowRetainedOwner: true
+        })
+        this.observations.forget(paneKey)
+        this.commitStatusRowMutation(deleted, undefined)
+        this.scheduleStatusPersist()
+        this.notifyStatusChangeListeners()
+        this.emitPaneStatusCleared({ paneKey })
+        continue
+      }
+      const occupant = row ?? commitment
+      if (occupant && !ownedByRemoved(occupant)) {
+        // Another owner has the pane now; only our outlived commitment is left to clear.
+        if (commitment && ownedByRemoved(commitment)) {
+          this.persistedAuthorityCommitmentsByPaneKey.delete(paneKey)
+          this.hydratedLaunchTokenHashByPaneKey.delete(paneKey)
+          this.scheduleStatusPersist()
+        }
+        const observation = this.currentAuthorityObservations.get(paneKey)
+        if (observation && ownedByRemoved(observation)) {
+          this.currentAuthorityObservations.delete(paneKey)
+        }
+        continue
+      }
+      // Why a pane fence, not a tab one: a surviving same-id host keeps the shared tab.
+      this.retirePaneAuthority(paneKey)
+      if (row) {
+        this.emitPaneStatusCleared({ paneKey })
+      }
+    }
   }
 
   /** Clear statuses proven to belong to one lost SSH transport. */
@@ -219,6 +295,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
           this.state.claudeLeadStateByPaneKey.delete(paneKey)
           this.state.claudeRunningNonAgentTaskPaneKeys.delete(paneKey)
           this.state.claudeActiveSessionCronPaneKeys.delete(paneKey)
+          this.state.claudeLaunchedBackgroundTasksByPaneKey.delete(paneKey)
           this.state.claudeSessionOwnerByPaneKey.delete(paneKey)
         }
       }
@@ -250,7 +327,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
       | EnrichedAgentHookEventPayload
       | undefined
     if (!existing) {
-      return null
+      return this.deleteTmuxSelectedStatus(resolvedPaneKey) ?? null
     }
     deleteLegacyAgentStatus(this.state, resolvedPaneKey)
     this.activeHookTurnCompletedAtByPaneKey.delete(resolvedPaneKey)

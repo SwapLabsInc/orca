@@ -1,5 +1,6 @@
 import { toRuntimeExecutionHostId } from '../../shared/execution-host'
 import type { DelegatedWorktreeEdge } from '../../shared/worktree/delegated-worktree-edge'
+import type { RuntimeSyncWindowGraphResult } from '../../shared/runtime-session-contracts'
 import type { DelegatedWorktreePlacementRow } from './orchestration/db/federation/federated-dispatch-store'
 
 /** Enough for any realistic sidebar; the renderer drops edges whose rows it cannot see anyway. */
@@ -62,6 +63,20 @@ export class RuntimeDelegatedWorktreeEdgeProjection {
       })
     }
     return { known: true, edges }
+  }
+
+  /**
+   * The graph-sync fields. An unanswerable db publishes the unavailable flag instead of `[]`,
+   * so readers keep the edges they already have rather than un-nesting every delegated card.
+   */
+  buildSyncWindowGraphFields(): Pick<
+    RuntimeSyncWindowGraphResult,
+    'delegatedWorktreeEdges' | 'delegatedWorktreeEdgesUnavailable'
+  > {
+    const result = this.build()
+    return result.known
+      ? { delegatedWorktreeEdges: result.edges }
+      : { delegatedWorktreeEdgesUnavailable: true }
   }
 
   private resolveCoordinatorWorktreeId(placement: {

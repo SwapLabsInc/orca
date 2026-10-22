@@ -9,7 +9,6 @@ import {
 const {
   appMock,
   autoUpdaterMock,
-  isMock,
   powerMonitorOnMock,
   fetchNudgeMock,
   shouldApplyNudgeMock,
@@ -31,8 +30,7 @@ function asForkBuild(): void {
 vi.mock('electron', () => moduleFactories.electron())
 vi.mock('electron-updater', () => moduleFactories.electronUpdater())
 vi.mock('./electron-updater-loader', () => moduleFactories.electronUpdaterLoader())
-vi.mock('@electron-toolkit/utils', () => moduleFactories.electronToolkitUtils())
-vi.mock('./ipc/pty', () => moduleFactories.ipcPty())
+vi.mock('./ipc/pty/kill-all', () => moduleFactories.ptyKillAll())
 vi.mock('./linux-update-package-type', () => moduleFactories.linuxUpdatePackageType())
 vi.mock('./updater-lifecycle-diagnostics', () => moduleFactories.updaterLifecycleDiagnostics())
 vi.mock('./updater-changelog', () => moduleFactories.updaterChangelog())
@@ -155,7 +153,7 @@ describe('updater', () => {
   })
 
   it('does not load or configure electron-updater during dev setup', async () => {
-    isMock.dev = true
+    appMock.isPackaged = false
     const mainWindow = { webContents: { send: vi.fn() } }
 
     const { setupAutoUpdater } = await loadUpdaterModule()

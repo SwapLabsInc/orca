@@ -1,3 +1,4 @@
+import { createObserveTerminalGitHubPullRequestLink } from './worktrees/session/worktree-terminal-reference'
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { WorktreeSlice } from './worktree-helpers'
@@ -35,12 +36,7 @@ import { createUpdateWorktreeMeta } from './worktrees/metadata/update-worktree-m
 import { createEnsureHostedReviewPushTarget } from './worktrees/metadata/hosted-review-push-target-ensure'
 import { createUpdateWorktreesMeta } from './worktrees/metadata/update-worktrees-meta'
 import { createSetWorktreesPinnedAndReveal } from './worktrees/session/worktree-pin-reveal'
-import {
-  createBumpWorktreeActivity,
-  createClearWorktreeUnread,
-  createMarkWorktreeUnread,
-  createObserveTerminalGitHubPullRequestLink
-} from './worktrees/session/worktree-unread-activity'
+import { createBumpWorktreeActivity } from './worktrees/session/worktree-activity-bump'
 import {
   createMarkWorktreeVisited,
   createPruneLastVisitedTimestamps,
@@ -72,8 +68,6 @@ export {
   setDetachedHeadAutoDerivedDisplayNameForTests
 } from './worktrees/metadata/detached-head-display-name'
 export { resetAuthoritativelyRemovedWorktreeMemoryForTests } from './worktrees/listing/authoritative-worktree-removal-memory'
-export type { DirectSshDetectedWorktreeRefresh } from './worktrees/listing/known-ssh-worktree-fetch'
-export { acquireDirectSshDetectedWorktreeRefresh } from './worktrees/listing/known-ssh-worktree-fetch'
 
 function delegatedWorktreeEdgesEqual(
   left: readonly DelegatedWorktreeEdge[],
@@ -126,9 +120,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
   ensureHostedReviewPushTarget: createEnsureHostedReviewPushTarget(set, get),
   updateWorktreesMeta: createUpdateWorktreesMeta(set, get),
   setWorktreesPinnedAndReveal: createSetWorktreesPinnedAndReveal(set, get),
-  markWorktreeUnread: createMarkWorktreeUnread(set, get),
-  observeTerminalGitHubPullRequestLink: createObserveTerminalGitHubPullRequestLink(set, get),
-  clearWorktreeUnread: createClearWorktreeUnread(set, get),
+  observeTerminalGitHubPullRequestLink: createObserveTerminalGitHubPullRequestLink(get),
   bumpWorktreeActivity: createBumpWorktreeActivity(set, get),
   markWorktreeVisited: createMarkWorktreeVisited(set, get),
   pruneLastVisitedTimestamps: createPruneLastVisitedTimestamps(set, get),

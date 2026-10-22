@@ -1,7 +1,7 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerOutputArchiveCapture } from '../../../../orchestration/worker-output-archive'
-import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
+import { isStructuredWorkerHandle } from '../../../../../../shared/structured-worker-handle'
 
 /** Fits the 30 s a coordinator gives a federated release (and the CLI's 60 s) beside capture and stop. */
 export const WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS = 15_000

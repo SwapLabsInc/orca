@@ -26,6 +26,38 @@ export function isResumableIdentityRow(row: EnrichedAgentHookEventPayload): bool
   )
 }
 
+/** The hidden `providerSessionOnly` remnant a dropped row leaves, marked by why it was dropped. */
+export function retainResumeIdentity(
+  entry: EnrichedAgentHookEventPayload,
+  cause: RetainedIdentityCause
+): EnrichedAgentHookEventPayload {
+  const {
+    launchToken: _launchToken,
+    resumeAfterTerminalLoss: _resumeAfterTerminalLoss,
+    terminalHandle,
+    ...resumeIdentity
+  } = entry
+  if (cause === 'agent-ended') {
+    return {
+      ...resumeIdentity,
+      ...(terminalHandle ? { terminalHandle } : {}),
+      providerSessionOnly: true,
+      retainedForLiveness: true
+    }
+  }
+  // Why: losing the terminal is not the agent ending, but an identity already kept for an agent
+  // that ended stays ended. The handle goes with the terminal it named, and so does the process
+  // presence, so no probe retires the remnant.
+  const resumable = !entry.structuredHost && isResumableIdentityRow(entry)
+  const { agentPresence: _agentPresence, ...terminalIdentity } = resumeIdentity
+  return {
+    ...terminalIdentity,
+    providerSessionOnly: true,
+    retainedForLiveness: true,
+    ...(resumable ? { resumeAfterTerminalLoss: true as const } : {})
+  }
+}
+
 /**
  * The agent session the execution host may resume when it re-creates `paneKey`'s terminal.
  *

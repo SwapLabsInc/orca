@@ -1,6 +1,8 @@
 import { readAgentProcessIdentity } from './agent-process-presence'
-import { normalizeAgentStatusPayload } from './agent-status-types'
-import type { AgentHookSource } from './agent-hook-relay'
+import { resolveAgentStatusIdentity } from './agent-status-identity'
+import { sameAgentStatusTerminalOwner } from './agent-status-terminal-owner'
+import { normalizeAgentStatusPayload, type AgentMainAgentStatus } from './agent-status-types'
+import { statusRowToComplete, type AgentHookSource } from './agent-hook-relay'
 import { extractAgentProviderSession } from './agent-session-resume'
 import {
   canAcceptClaudeCompactCompletion,
@@ -20,9 +22,12 @@ import { normalizeProviderEvent } from './agent-hook-listener/provider-dispatch'
 import { hasExplicitUserPrompt } from './agent-hook-listener/provider-event-routing'
 import { hasExplicitAmpPrompt } from './agent-hook-listener/providers/amp-events'
 import {
+  isOpenCodeSharedServerPost,
   resolveOpenCodeSharedServerEnvelope,
+  suppressOpenCodeSharedServerPost,
   trackOpenCodePaneLaunchToken
 } from './agent-hook-listener/opencode-session-registry'
+import { claudeRowHasUnlistedLiveWork } from './agent-hook-listener/providers/claude-pane-hold-evidence'
 import { readString } from './agent-hook-listener/tool-input-preview'
 /** Canonical transport-agnostic normalization entry shared by main and relay listeners. */
 const CLAUDE_EXIT_SESSION_END_REASONS = new Set([
@@ -37,7 +42,16 @@ export function normalizeHookPayload(
   source: AgentHookSource,
   body: unknown,
   expectedEnv: string,
-  options: { deferCompactOwnershipToClient?: boolean } = {}
+  options: {
+    deferCompactOwnershipToClient?: boolean
+    previousOpenCodeMainAgent?: AgentMainAgentStatus
+    admitOpenCodeTui?: (
+      identity: Pick<
+        AgentHookEventPayload,
+        'paneKey' | 'launchToken' | 'hookEventName' | 'hasExplicitPrompt'
+      >
+    ) => boolean | 'preserve-poster'
+  } = {}
 ): AgentHookEventPayload | null {
   const envelope = parseHookEnvelope(state, source, body, expectedEnv)
   if (!envelope) {
@@ -57,32 +71,67 @@ export function normalizeHookPayload(
   const eventName =
     readFirstString(record, ['hook_event_name', 'hookEventName', 'hook_type', 'hookType']) ??
     hookPayloadRecord.hook_event_name ??
-    hookPayloadRecord.hookEventName
+    hookPayloadRecord.hookEventName ??
+    // Why jcode only: its payload names the lifecycle point `event`, and it is posted
+    // verbatim through the shared transport rather than re-stated as a form field.
+    // Scoped so another provider's unrelated `event` key cannot become an event name.
+    (source === 'jcode' ? hookPayloadRecord.event : undefined)
   // Codex child hooks expose the child's session_id on the parent's pane.
   const providerSession =
     source === 'codex' && readString(hookPayloadRecord, 'agent_id')
       ? null
       : extractAgentProviderSession(source, hookPayloadRecord)
+  if (source === 'opencode' && record.opencodeTui === 1 && !providerSession) {
+    return null
+  }
+  if (suppressOpenCodeSharedServerPost(state, source, record, providerSession?.id)) {
+    return null
+  }
+  const extractedPrompt = extractPromptText(hookPayloadRecord)
+  // A TUI's physical launch must pass the host fence before borrowing its creator's identity.
+  const tuiAdmission =
+    source === 'opencode' && record.opencodeTui === 1 && isOpenCodeSharedServerPost(source, record)
+      ? options.admitOpenCodeTui?.({
+          paneKey: stampedPaneKey,
+          launchToken: stampedLaunchToken,
+          hookEventName: typeof eventName === 'string' ? eventName : undefined,
+          hasExplicitPrompt: hasExplicitUserPrompt(
+            source,
+            eventName,
+            extractedPrompt,
+            extractedPrompt.text
+          )
+        })
+      : undefined
+  if (tuiAdmission === false) {
+    return null
+  }
   // Why (#21359): an OpenCode 1 `serve` process stamps every post with its own
   // frozen pane. When the binder has mapped this session to its real pane,
   // the stamp is replaced before anything downstream (status lookup, dispatch,
   // fences) can act on the wrong owner. Unbound sessions keep the stamp.
-  const { paneKey, tabId, worktreeId, launchToken } = resolveOpenCodeSharedServerEnvelope({
-    state,
-    source,
-    stamped: {
-      paneKey: stampedPaneKey,
-      tabId: stampedTabId,
-      worktreeId: stampedWorktreeId,
-      launchToken: stampedLaunchToken
-    },
-    sessionId: providerSession?.id,
-    body: record
-  })
+  const stamped = {
+    paneKey: stampedPaneKey,
+    tabId: stampedTabId,
+    worktreeId: stampedWorktreeId,
+    launchToken: stampedLaunchToken
+  }
+  const { paneKey, tabId, worktreeId, launchToken } =
+    tuiAdmission === 'preserve-poster'
+      ? stamped
+      : resolveOpenCodeSharedServerEnvelope({
+          state,
+          source,
+          stamped,
+          sessionId: providerSession?.id,
+          body: record
+        })
   // Why after the resolve: tracking the stamped token first would let a stale
   // shared-server stamp overwrite the pane's live token; the resolved envelope
   // carries the stored token (or nothing) for bound sessions instead.
-  trackOpenCodePaneLaunchToken(state, paneKey, launchToken)
+  if (tuiAdmission !== 'preserve-poster') {
+    trackOpenCodePaneLaunchToken(state, paneKey, launchToken)
+  }
   const providerPromptId =
     source === 'claude'
       ? normalizeClaudePromptId(hookPayloadRecord.prompt_id)
@@ -104,9 +153,36 @@ export function normalizeHookPayload(
   ) {
     return null
   }
-  const storedStatus = state.lastStatusByPaneKey.get(paneKey)
-  // Why: a retained resume identity is what a retired pane leaves behind, not a row to complete.
-  const previousStatus = storedStatus?.providerSessionOnly ? undefined : storedStatus
+  // Why before the guard: a retained resume identity lends the next agent in the pane nothing.
+  const previousStatus = statusRowToComplete(state.lastStatusByPaneKey.get(paneKey))
+  const previousReceivedAt =
+    previousStatus &&
+    'receivedAt' in previousStatus &&
+    typeof previousStatus.receivedAt === 'number'
+      ? previousStatus.receivedAt
+      : previousStatus?.hostEvidenceObservedAt
+  // Reject before provider folds mutate the pane's prompt, tool and child caches.
+  if (
+    previousStatus &&
+    previousReceivedAt !== undefined &&
+    sameAgentStatusTerminalOwner(
+      { connectionId: previousStatus.connectionId ?? null, worktreeId: previousStatus.worktreeId },
+      { connectionId: null, worktreeId }
+    ) &&
+    resolveAgentStatusIdentity({
+      existing: {
+        agentType: previousStatus.payload.agentType,
+        state: previousStatus.payload.state,
+        updatedAt: previousReceivedAt,
+        restoredUnconfirmed: previousStatus.restoredUnconfirmed,
+        agentPresence: previousStatus.providerSessionOnly ? undefined : previousStatus.agentPresence
+      },
+      incoming: source,
+      now: Date.now()
+    }).inheritedFromActivePane
+  ) {
+    return null
+  }
   // Why: only a MANUAL completion claims anything, so only it may write compact-scoped state. An
   // auto compact runs inside a turn that resumes and emits its own Stop; running the ownership
   // guard for it would burn the pane's consumed-compact slot on an event that maps to nothing.
@@ -150,7 +226,9 @@ export function normalizeHookPayload(
   // Why: presence needs the agent's own process; without it the hook cannot speak for liveness.
   const agentProcess =
     source === 'claude' ? readAgentProcessIdentity(record.agentProcess) : undefined
-  const agentPresence = agentProcess ? { agent: source, process: agentProcess } : undefined
+  const agentPresence = agentProcess
+    ? { agent: source, process: agentProcess, sessionOwner: true as const }
+    : undefined
   const sessionEndReason = readString(hookPayloadRecord, 'reason')
   if (
     eventName === 'SessionEnd' &&
@@ -181,7 +259,6 @@ export function normalizeHookPayload(
     }
   }
 
-  const extractedPrompt = extractPromptText(hookPayloadRecord)
   const promptText = extractedPrompt.text
   const dispatched = normalizeProviderEvent({
     state,
@@ -191,10 +268,11 @@ export function normalizeHookPayload(
     paneKey,
     hookPayload: hookPayloadRecord,
     envelope: record,
-    extractedPrompt
+    extractedPrompt,
+    previousOpenCodeMainAgent: options.previousOpenCodeMainAgent
   })
   const providerSessionOnly =
-    (source === 'pi' || source === 'prime-agent') &&
+    (source === 'pi' || source === 'prime-agent' || source === 'jcode') &&
     eventName === 'session_start' &&
     providerSession !== null
   // A transcript session_start carries resume identity while idle; receivers discard the placeholder row.
@@ -227,13 +305,13 @@ export function normalizeHookPayload(
           : undefined
         : hasExplicitUserPrompt(
             source,
-            eventName,
+            dispatched.eventName,
             extractedPrompt,
             dispatched.resolvedPromptText,
             dispatched.hasTranscriptPromptEvidence
           ),
     promptInteractionKey: dispatched.promptInteractionKey,
-    hookEventName: typeof eventName === 'string' ? eventName : undefined,
+    hookEventName: typeof dispatched.eventName === 'string' ? dispatched.eventName : undefined,
     providerPromptId:
       source === 'grok' ? (grokActiveTurn?.promptId ?? providerPromptId) : providerPromptId,
     grokPromptBoundary: grokActiveTurn ? true : undefined,
@@ -247,13 +325,12 @@ export function normalizeHookPayload(
     toolAgentType: readString(hookPayloadRecord, 'agent_type'),
     ...(source === 'claude'
       ? {
-          claudeRunningNonAgentTask:
-            state.claudeRunningNonAgentTaskPaneKeys.has(paneKey) ||
-            state.claudeActiveSessionCronPaneKeys.has(paneKey)
+          claudeRunningNonAgentTask: claudeRowHasUnlistedLiveWork(state, paneKey)
         }
       : {}),
     ...(providerSession ? { providerSession } : {}),
     ...(providerSessionOnly ? { providerSessionOnly: true } : {}),
+    ...dispatched.hostTurnSignals,
     payload: transportPayload
   }
 }

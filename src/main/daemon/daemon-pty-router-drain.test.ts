@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { DaemonPtyRouter } from './daemon-pty-router'
 import { SessionNotFoundError, TerminalSessionOwnerUnverifiedError } from './daemon-errors'
 import type { DaemonPtyAdapter } from './daemon-pty-adapter'
-import type { PtySpawnOptions, PtySpawnResult } from '../providers/types'
+import type { PtySpawnOptions, PtySpawnResult } from '../providers/pty-provider-contract'
 import { PROTOCOL_VERSION } from './daemon-protocol-version'
 
-// Only what routing a spawn touches: spawning, and the inventory that settles ownership.
+// Only what routing a spawn touches: spawning, the liveness probe that finds an unrouted id's
+// owner, and the inventory that settles ownership.
 function createAdapter(label: string, sessions: string[] = [], draining = false): DaemonPtyAdapter {
   const double = {
     protocolVersion: PROTOCOL_VERSION,
@@ -15,6 +16,7 @@ function createAdapter(label: string, sessions: string[] = [], draining = false)
       sessions.push(id)
       return { id }
     }),
+    probePtyLiveness: vi.fn(async (id: string) => sessions.includes(id)),
     listProcesses: vi.fn(async () => sessions.map((id) => ({ id, cwd: '', title: label }))),
     onData: vi.fn(() => () => {}),
     onExit: vi.fn(() => () => {})
@@ -29,6 +31,22 @@ describe('DaemonPtyRouter with a drained daemon', () => {
     const drained = createAdapter('drained', ['kept'], true)
     const router = new DaemonPtyRouter({ current, legacy: [drained] })
     await router.discoverLegacySessions()
+
+    await router.spawn({ sessionId: 'kept', cols: 80, rows: 24 })
+
+    expect(drained.spawn).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'kept',
+      attachOnly: true,
+      cols: 80,
+      rows: 24
+    })
+    expect(current.spawn).not.toHaveBeenCalled()
+  })
+
+  it('attaches, never creates, an unrouted session a drained daemon still runs', async () => {
+    const current = createAdapter('current')
+    const drained = createAdapter('drained', ['kept'], true)
+    const router = new DaemonPtyRouter({ current, legacy: [drained] })
 
     await router.spawn({ sessionId: 'kept', cols: 80, rows: 24 })
 

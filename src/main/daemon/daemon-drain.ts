@@ -51,6 +51,18 @@ export function isDaemonDrainEnabled(
   return value === '1' && platform !== 'win32'
 }
 
+/**
+ * Not on the macOS desktop either: its daemon is a launchd job, one per profile and protocol
+ * (macos-daemon-launchd.ts), so a fresh daemon cannot start beside a drained one there.
+ */
+export function isDaemonDrainEnabledForLaunch(
+  macosLoginSessionWatch: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  return !(platform === 'darwin' && macosLoginSessionWatch) && isDaemonDrainEnabled(env, platform)
+}
+
 function drainSlot(runtimeDir: string, protocolVersion: number, id: string): DaemonDrainSlot {
   const base = join(runtimeDir, `drain-v${protocolVersion}-${id}`)
   return {

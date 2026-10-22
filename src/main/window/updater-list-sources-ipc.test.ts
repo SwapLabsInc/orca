@@ -28,7 +28,8 @@ vi.mock('electron', () => ({
 vi.mock('../ipc/repos', () => ({ registerRepoHandlers: vi.fn() }))
 vi.mock('../ipc/worktrees', () => ({ registerWorktreeHandlers: vi.fn() }))
 vi.mock('../ipc/worktree-change-invalidators', () => ({ runWorktreeChangeInvalidators: vi.fn() }))
-vi.mock('../ipc/pty', () => ({ getLocalPtyProvider: vi.fn(), registerPtyHandlers: vi.fn() }))
+vi.mock('../ipc/pty/provider/registry', () => ({ getLocalPtyProvider: vi.fn() }))
+vi.mock('../ipc/pty/register-handlers', () => ({ registerPtyHandlers: vi.fn() }))
 vi.mock('../memory/hydrate-local-pty-registry', () => ({
   hydrateLocalPtyRegistryAtBoot: vi.fn()
 }))
@@ -55,7 +56,7 @@ vi.mock('../updater', () => ({
   listReleaseSources: listReleaseSourcesMock
 }))
 
-import { registerUpdaterHandlers } from './attach-main-window-services'
+import { registerUpdaterHandlers } from './main-window-updater'
 
 const SOURCE_ROWS: ReleaseSourceStatus[] = [
   {

@@ -17,8 +17,12 @@ const {
   (await import('./daemon-init-test-harness')).createDaemonInitMocks()
 )
 
+const hostImage = vi.hoisted((): { verdict: 'not-ephemeral' | 'severed' } => ({
+  verdict: 'not-ephemeral'
+}))
+
 const drainMocks = vi.hoisted(() => ({
-  isDaemonDrainEnabled: vi.fn(() => true),
+  isDaemonDrainEnabledForLaunch: vi.fn(() => true),
   prepareDaemonDrain: vi.fn(),
   recoverUncommittedDaemonDrains: vi.fn(() => 0),
   abandonDaemonDrain: vi.fn(() => false),
@@ -46,9 +50,18 @@ vi.mock('./client', () => moduleFactories.client())
 vi.mock('./daemon-lifecycle-event', () => moduleFactories.daemonLifecycleEvent())
 vi.mock('./daemon-spawner', () => moduleFactories.daemonSpawner())
 vi.mock('./daemon-pty-adapter', () => moduleFactories.daemonPtyAdapter())
-vi.mock('../ipc/pty', () => moduleFactories.ipcPty())
+vi.mock('../ipc/pty/provider/registry', () => moduleFactories.ptyProviderRegistry())
+vi.mock('../ipc/pty/provider/listener-lifecycle', () => moduleFactories.ptyListenerLifecycle())
+vi.mock('./daemon-host-image', () => ({
+  inspectDaemonHostImage: () => ({
+    verdict: hostImage.verdict,
+    pid: 4242,
+    linuxStartTicks: '777',
+    bootId: 'boot-1'
+  })
+}))
 vi.mock('./daemon-drain', () => ({
-  isDaemonDrainEnabled: drainMocks.isDaemonDrainEnabled,
+  isDaemonDrainEnabledForLaunch: drainMocks.isDaemonDrainEnabledForLaunch,
   prepareDaemonDrain: drainMocks.prepareDaemonDrain,
   recoverUncommittedDaemonDrains: drainMocks.recoverUncommittedDaemonDrains,
   abandonDaemonDrain: drainMocks.abandonDaemonDrain,
@@ -107,6 +120,7 @@ describe('daemon-init: draining a stale daemon with live sessions', () => {
   })
 
   afterEach(() => {
+    hostImage.verdict = 'not-ephemeral'
     vi.clearAllMocks()
   })
 
@@ -141,6 +155,24 @@ describe('daemon-init: draining a stale daemon with live sessions', () => {
     expect(drainMocks.recoverUncommittedDaemonDrains.mock.invocationCallOrder[0]).toBeLessThan(
       drainMocks.prepareDaemonDrain.mock.invocationCallOrder[0]
     )
+    expect(forkMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(['--handed-over-endpoint', '64769:1234']),
+      expect.anything()
+    )
+  })
+
+  it('drains a stale daemon whose AppImage files are gone instead of falling back locally', async () => {
+    const launcher = await firstLauncher()
+    mockStaleDaemonWithLiveSessions()
+    hostImage.verdict = 'severed'
+    drainMocks.prepareDaemonDrain.mockResolvedValueOnce(HAND_OVER)
+    forkMock.mockImplementationOnce(readyChild)
+
+    const handle = await launcher('/fake/socket', '/fake/token')
+
+    expect(handle).not.toHaveProperty('mode')
+    expect(killStaleDaemonMock).not.toHaveBeenCalled()
     expect(forkMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.arrayContaining(['--handed-over-endpoint', '64769:1234']),

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { vi } from 'vitest'
-import type { ProcessResult, ProcessSpec } from '../../../shared/child-process/run-process'
+import type { ProcessResult, ProcessSpec } from '@orca/process-host/process-spec'
 import type { ReleaseSource } from '../../../shared/release-sources'
 import { hashDesignatedRequirement } from './mac-self-update-bundle'
 import type { ReleaseAssetFetch, ReleaseAssetResponse } from './mac-self-update-download'

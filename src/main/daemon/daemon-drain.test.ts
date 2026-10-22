@@ -7,6 +7,7 @@ import { DaemonClient } from './client'
 import {
   abandonDaemonDrain,
   isDaemonDrainEnabled,
+  isDaemonDrainEnabledForLaunch,
   listDaemonDrainSlots,
   prepareDaemonDrain,
   recoverUncommittedDaemonDrains,
@@ -84,6 +85,13 @@ describe('isDaemonDrainEnabled', () => {
     expect(isDaemonDrainEnabled(env('true'), 'linux')).toBe(false)
     expect(warn).toHaveBeenCalledOnce()
     warn.mockRestore()
+  })
+
+  it('is off for the macOS desktop, whose daemon launchd runs as one job', () => {
+    const env = { ORCA_DAEMON_DRAIN_STALE_BUNDLE: '1' }
+    expect(isDaemonDrainEnabledForLaunch(true, env, 'darwin')).toBe(false)
+    expect(isDaemonDrainEnabledForLaunch(false, env, 'darwin')).toBe(true)
+    expect(isDaemonDrainEnabledForLaunch(true, env, 'linux')).toBe(true)
   })
 })
 

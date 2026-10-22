@@ -12,20 +12,37 @@ import {
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import {
+  ORCAD_NODE_PTY_DIR,
+  ORCAD_NODE_RUNTIME_MARKER_FILENAME,
+  ORCAD_SERVER_TARGET_FILENAME,
   ORCAD_TEMPLATE_MANIFEST_FILENAME,
   ORCAD_TEMPLATE_TARGETS_DIR,
+  orcadNodePtySlotFiles,
   orcadTemplateCommonFilenames,
   orcadTemplateTargetFilenames
 } from '../../src/shared/orcad-artifacts.ts'
 import { orcadAgentBrowserNativeName } from '../../src/shared/orcad-agent-browser-name.ts'
-import { ORCAD_TEMPLATE_TARGETS } from '../../src/shared/node-runtime-pin.ts'
-import { runProcessSync } from './script-child-process.mjs'
+import {
+  COMPAT_SERVER_TARGET_BASES,
+  COMPAT_SERVER_TARGETS,
+  ORCAD_TEMPLATE_TARGETS,
+  pinnedNodeRuntimeAsset
+} from '../../src/shared/node-runtime-pin.ts'
+import { ORCAD_PREBUILDS_DIR } from './build-orcad-prebuilds.mjs'
+import {
+  COMPAT_SLOT_ADDONS,
+  findCompatAddonGaps,
+  findSlotProblems,
+  readManifest
+} from './orcad-prebuild-slot-contents.mjs'
+import { runProcessSync } from '@orca/process-host'
 import { verifyPackagedOrcadTemplate } from './verify-packaged-orcad-template.cjs'
+import { readOrcadMobileWebAssetFilenames } from './orcad-mobile-web-bundle.mjs'
+import { assertNotDarkBuild, darkBuildMarkers } from '../dark-build-switches.cjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const outputDir = join(root, 'out', 'orcad-template')
 const buildDir = join(root, 'out', '.orcad-template-build')
-const commonArtifacts = orcadTemplateCommonFilenames()
 
 function isExecutable(filename) {
   return /(?:^|\/)(?:rg|spawn-helper)$/.test(filename)
@@ -56,6 +73,9 @@ function buildTargetPackage(target) {
       packageDir
     ],
     cwd: root,
+    // Why no agent-browser: the template ships inside every desktop build (design D2), and seven
+    // ~10 MB browsers would outweigh everything else in it; a slot without one reports no browser.
+    env: { ...process.env, ORCAD_OMIT_AGENT_BROWSER: '1' },
     stdio: 'inherit',
     timeoutMs: null
   })
@@ -87,22 +107,107 @@ function stageTarget(target, packageDir) {
   return { files, browserName, browserSha256: sha256(browserDestination) }
 }
 
+/**
+ * `--targets a,b` builds a partial template for CI jobs that can fill only some prebuild slots
+ * (the SSH hostile-host matrix). A shipped template always carries every target.
+ */
+export function requestedTemplateTargets(argv = process.argv) {
+  const index = argv.indexOf('--targets')
+  if (index === -1) {
+    return ORCAD_TEMPLATE_TARGETS
+  }
+  const targets = (argv[index + 1] ?? '').split(',').filter(Boolean)
+  const unknown = targets.filter((target) => !ORCAD_TEMPLATE_TARGETS.includes(target))
+  if (targets.length === 0 || unknown.length > 0) {
+    throw new Error(
+      `--targets needs a comma-separated subset of ${ORCAD_TEMPLATE_TARGETS.join(',')}; got ${argv[index + 1] ?? 'nothing'}`
+    )
+  }
+  return [...new Set(targets)]
+}
+
+/**
+ * A compat target (design D6 rung B) is its base target's package with the compat slot's addons
+ * and runtime marker swapped in; everything else is target-independent or libc-static.
+ * Omitted, not failed, when this build has no compat slot: rung B then refuses as unavailable.
+ */
+function stageCompatTarget(compat, basePackageDir) {
+  const problems = findSlotProblems(readManifest(ORCAD_PREBUILDS_DIR), ORCAD_PREBUILDS_DIR, [
+    compat
+  ])
+  if (problems.length > 0) {
+    process.stdout.write(
+      `[build-orcad-template] skipping compat target ${compat}: ${problems.join('; ')}\n`
+    )
+    return null
+  }
+  const destination = join(outputDir, ORCAD_TEMPLATE_TARGETS_DIR, compat)
+  const slotFiles = new Map([
+    ...orcadNodePtySlotFiles(compat).map((file) => [
+      `${ORCAD_NODE_PTY_DIR}/build/Release/${file}`,
+      join(ORCAD_PREBUILDS_DIR, compat, ...file.split('/'))
+    ]),
+    ...Object.entries(COMPAT_SLOT_ADDONS).map(([file, shipped]) => [
+      shipped,
+      join(ORCAD_PREBUILDS_DIR, compat, ...file.split('/'))
+    ])
+  ])
+  // Why fatal: the base binary would pass every check here and fail only on a compat host.
+  const gaps = findCompatAddonGaps(orcadTemplateTargetFilenames(compat), slotFiles)
+  if (gaps.length > 0) {
+    throw new Error(`compat target ${compat} would ship base-target addons: ${gaps.join(', ')}`)
+  }
+  const files = {}
+  for (const filename of orcadTemplateTargetFilenames(compat)) {
+    const staged = join(destination, ...filename.split('/'))
+    if (filename === ORCAD_SERVER_TARGET_FILENAME) {
+      mkdirSync(dirname(staged), { recursive: true })
+      writeFileSync(staged, `${compat}\n`)
+    } else if (filename === ORCAD_NODE_RUNTIME_MARKER_FILENAME) {
+      mkdirSync(dirname(staged), { recursive: true })
+      writeFileSync(staged, `${pinnedNodeRuntimeAsset(compat).executableSha256}\n`)
+    } else {
+      const source = slotFiles.get(filename) ?? join(basePackageDir, ...filename.split('/'))
+      copy(source, staged, isExecutable(filename))
+    }
+    files[filename] = sha256(staged)
+  }
+  return { files }
+}
+
+/**
+ * `--dark-test-template` lets a dark switch through for test servers only; the template then
+ * carries the switch's marker, which packaging refuses.
+ */
+export function assertTemplateBuildAllowed(argv = process.argv, env = process.env) {
+  if (!argv.includes('--dark-test-template')) {
+    // The template is what releases ship as the server; a dark build must never become one.
+    assertNotDarkBuild([], env)
+  }
+}
+
 function sameBytes(left, right) {
   return sha256(left) === sha256(right)
 }
 
 async function main() {
+  assertTemplateBuildAllowed()
+  const templateTargets = requestedTemplateTargets()
   rmSync(buildDir, { recursive: true, force: true })
   const packages = Object.fromEntries(
-    ORCAD_TEMPLATE_TARGETS.map((target) => [target, buildTargetPackage(target)])
+    templateTargets.map((target) => [target, buildTargetPackage(target)])
   )
   rmSync(outputDir, { recursive: true, force: true })
   mkdirSync(outputDir, { recursive: true })
-  const [firstTarget] = ORCAD_TEMPLATE_TARGETS
+  const [firstTarget] = templateTargets
+  // Every package carries the same page: its manifest is a common file, checked byte for byte below.
+  const commonArtifacts = orcadTemplateCommonFilenames(
+    readOrcadMobileWebAssetFilenames(packages[firstTarget])
+  )
   for (const filename of commonArtifacts) {
     const source = join(packages[firstTarget], ...filename.split('/'))
     // Why check every target: the template keeps one copy, so a per-target difference would ship wrong bytes.
-    for (const target of ORCAD_TEMPLATE_TARGETS) {
+    for (const target of templateTargets) {
       if (!sameBytes(source, join(packages[target], ...filename.split('/')))) {
         throw new Error(`${filename} differs between ${firstTarget} and ${target} packages`)
       }
@@ -110,8 +215,17 @@ async function main() {
     copy(source, join(outputDir, ...filename.split('/')), isExecutable(filename))
   }
   const targets = Object.fromEntries(
-    ORCAD_TEMPLATE_TARGETS.map((target) => [target, stageTarget(target, packages[target])])
+    templateTargets.map((target) => [target, stageTarget(target, packages[target])])
   )
+  // A partial CI template stages a compat target only beside its base target.
+  for (const compat of COMPAT_SERVER_TARGETS.filter((candidate) =>
+    templateTargets.includes(COMPAT_SERVER_TARGET_BASES[candidate])
+  )) {
+    const staged = stageCompatTarget(compat, packages[COMPAT_SERVER_TARGET_BASES[compat]])
+    if (staged) {
+      targets[compat] = staged
+    }
+  }
   const commonSha256 = Object.fromEntries(
     commonArtifacts.map((filename) => [filename, sha256(join(outputDir, filename))])
   )
@@ -119,9 +233,15 @@ async function main() {
     join(outputDir, ORCAD_TEMPLATE_MANIFEST_FILENAME),
     `${JSON.stringify({ schemaVersion: 3, commonSha256, targets }, null, 2)}\n`
   )
-  verifyPackagedOrcadTemplate(join(root, 'out'))
+  verifyPackagedOrcadTemplate(join(root, 'out'), templateTargets)
+  // Outside the manifest, so deploys never copy it; it marks the whole template as test-only.
+  for (const marker of darkBuildMarkers()) {
+    writeFileSync(join(outputDir, marker.fileName), marker.text)
+  }
   rmSync(buildDir, { recursive: true, force: true })
-  process.stdout.write(`[build-orcad-template] ok — ${ORCAD_TEMPLATE_TARGETS.length} targets\n`)
+  process.stdout.write(`[build-orcad-template] ok — ${Object.keys(targets).length} targets\n`)
 }
 
-await main()
+if (process.argv[1]?.endsWith('build-orcad-template.mjs')) {
+  await main()
+}

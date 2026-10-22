@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TerminalLossAgentResume } from '../agent-hooks/server'
+import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import { HostPaneAgentResumes, type HostPaneAgentResumeInputs } from './host-pane-agent-resume'
 
 const RESUME: TerminalLossAgentResume = {
   agent: 'claude',
   providerSession: { key: 'session_id', id: 'c0ffee00-0000-4000-8000-000000000001' }
+}
+
+const LINUX: AgentLaunchRuntime = {
+  platform: 'linux',
+  pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
 }
 
 function inputs(overrides: Partial<HostPaneAgentResumeInputs> = {}): HostPaneAgentResumeInputs {
@@ -16,7 +22,7 @@ function inputs(overrides: Partial<HostPaneAgentResumeInputs> = {}): HostPaneAge
       agentDefaultEnv: { claude: { CLAUDE_TEST_ENV: '1' } },
       disabledTuiAgents: []
     }),
-    resolveWorkspace: async () => ({ connectionId: null, platform: 'linux' }),
+    resolveWorkspace: async () => ({ connectionId: null, launchRuntime: LINUX }),
     isStillPending: () => true,
     ...overrides
   }
@@ -29,7 +35,8 @@ describe('HostPaneAgentResumes', () => {
     expect(prepared?.launch).toMatchObject({
       agent: 'claude',
       providerSession: RESUME.providerSession,
-      env: { CLAUDE_TEST_ENV: '1' }
+      env: { CLAUDE_TEST_ENV: '1' },
+      launchRuntime: LINUX
     })
     expect(prepared?.launch.command).toBe(
       "claude '--dangerously-skip-permissions' '--model' 'opus' '--effort' 'max' '--resume' 'c0ffee00-0000-4000-8000-000000000001'"
@@ -44,7 +51,7 @@ describe('HostPaneAgentResumes', () => {
     expect(
       await resumes.prepare(
         inputs({
-          resolveWorkspace: async () => ({ connectionId: 'ssh-1', platform: 'linux' })
+          resolveWorkspace: async () => ({ connectionId: 'ssh-1', launchRuntime: LINUX })
         })
       )
     ).toBeNull()

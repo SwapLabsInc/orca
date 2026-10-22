@@ -8,6 +8,7 @@ import {
 } from './daemon-background-transient-facts'
 import { DaemonClientConnections } from './daemon-client-connections'
 import { DaemonEndpointLifecycle } from './daemon-endpoint-lifecycle'
+import { daemonEndpointLocation } from './daemon-endpoint-handover'
 import { createNoopDaemonFileLog, type DaemonFileLog } from './daemon-file-log'
 import { DaemonPtySpawnPreparations } from './daemon-pty-spawn-preparations'
 import { DaemonRequestRouter } from './daemon-request-router'
@@ -21,6 +22,8 @@ import { DaemonTerminalAdmission } from './daemon-terminal-admission'
 import { checkPtySpawnHealth } from './pty-subprocess'
 import { TerminalHistorySeedTransferRegistry } from './terminal-history-seed-transfer-registry'
 import { TerminalHost } from './terminal-host'
+import { DaemonAutomaticWorkGuard } from './daemon-automatic-work-guard'
+import { answerAutomaticWorkRequest } from './daemon-automatic-work-protocol'
 import {
   CLEAN_DISCONNECT_PROTOCOL_VERSION,
   NOTIFY_PREFIX,
@@ -33,6 +36,7 @@ export class DaemonServer {
   private static readonly INITIAL_ADOPTION_TIMEOUT_MS = 2 * 60 * 1000
 
   private readonly log: DaemonFileLog
+  readonly automaticWork: DaemonAutomaticWorkGuard
   private readonly host: TerminalHost
   private readonly transientFactRelay: BackgroundTransientFactRelay
   private readonly streamDataBatcher: DaemonStreamDataBatcher
@@ -48,8 +52,17 @@ export class DaemonServer {
 
   constructor(options: DaemonServerOptions) {
     this.log = options.log ?? createNoopDaemonFileLog()
+    this.automaticWork = new DaemonAutomaticWorkGuard({
+      markerPath: options.automaticWorkMarkerPath,
+      hostTerminalLedgerDir: options.hostTerminalLedgerDir,
+      mode: options.spawnAdmission ?? 'observe',
+      log: this.log,
+      listSessions: () => this.host.listSessions(),
+      ownsEndpoint: () => !this.endpoint.lost
+    })
     this.host = new TerminalHost({
       spawnSubprocess: options.spawnSubprocess,
+      spawnGate: this.automaticWork.gate,
       reportReadinessEvent: (event, details) => this.log.log(event, details),
       onSessionReaped: (sessionId) => {
         this.attachments.release(sessionId)
@@ -131,8 +144,14 @@ export class DaemonServer {
       },
       onLastAuthenticatedClientDisconnected: () =>
         this.lifecycle.onLastAuthenticatedClientDisconnected(),
-      onControlRequest: (socket, clientId, request) =>
-        void this.handleRequest(socket, clientId, request),
+      onControlRequest: (socket, clientId, request) => {
+        // Why: a rejection here would be unhandled, and the daemon treats that as fatal.
+        this.handleRequest(socket, clientId, request).catch((error: unknown) => {
+          this.log.log('client-request-failed', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        })
+      },
       onControlReplaced: (clientId) => {
         this.preparations.cancelForClient(clientId)
         this.historySeedTransfers.clearOwner(clientId)
@@ -151,16 +170,14 @@ export class DaemonServer {
       }
     })
     this.endpoint = new DaemonEndpointLifecycle({
-      socketPath: options.socketPath,
-      tokenPath: options.tokenPath,
+      ...daemonEndpointLocation(options),
       pidPath: options.pidPath ?? null,
       launchNonce,
       token,
       publishEndpointOwnership: options.publishEndpointOwnership ?? (() => {}),
       log: this.log,
       isServing: () => this.lifecycle.isAcceptingWork(),
-      onOwnershipLost: () => this.lifecycle.onEndpointOwnershipLost(),
-      handedOverEndpoint: options.handedOverEndpoint ?? null
+      onOwnershipLost: () => this.lifecycle.onEndpointOwnershipLost()
     })
     const lifecycleClock = options.initialAdoptionTestConfig?.clock ?? {
       setTimeout: (callback: () => void, delayMs: number) => {
@@ -181,7 +198,8 @@ export class DaemonServer {
       isIdle: () => this.isIdle(),
       disposeResources: () => this.disposeResources(),
       onIdleShutdown: options.onIdleShutdown ?? (() => {}),
-      onRpcShutdown: options.onRpcShutdown ?? (() => {})
+      onRpcShutdown: options.onRpcShutdown ?? (() => {}),
+      onShutdownRequested: options.onShutdownRequested ?? (() => {})
     })
     this.admission = new DaemonTerminalAdmission({
       host: this.host,
@@ -225,8 +243,10 @@ export class DaemonServer {
     }))
   }
 
-  start(): Promise<void> {
-    return this.lifecycle.start((socket) => this.connections.accept(socket))
+  async start(): Promise<void> {
+    await this.lifecycle.start((socket) => this.connections.accept(socket))
+    // Why after start: only the daemon that won the endpoint may judge or rewrite the marker.
+    this.automaticWork.start()
   }
 
   shutdown(): Promise<void> {
@@ -234,7 +254,7 @@ export class DaemonServer {
   }
 
   private isIdle(): boolean {
-    if (this.admission.inFlight > 0 || this.host.listSessions().length > 0) {
+    if (this.admission.inFlight > 0 || this.host.hasLiveSessions()) {
       return false
     }
     if (this.endpoint.lost) {
@@ -257,6 +277,8 @@ export class DaemonServer {
     }
     this.streamDataBatcher.clear()
     this.historySeedTransfers.dispose()
+    // Why after host dispose: every automatic session is gone, so this exit was orderly.
+    this.automaticWork.stop()
     // Let canceled in-flight RPCs enqueue their protocol errors before transport destruction.
     await waitForImmediate()
     this.connections.dispose()
@@ -269,7 +291,9 @@ export class DaemonServer {
   ): Promise<void> {
     const isNotify = request.id.startsWith(NOTIFY_PREFIX)
     try {
-      const result = await this.requestRouter.route(clientId, request)
+      const result =
+        answerAutomaticWorkRequest(request, this.automaticWork, this.endpoint) ??
+        (await this.requestRouter.route(clientId, request))
       if (!isNotify) {
         socket.write(encodeNdjson({ id: request.id, ok: true, payload: result }), () => {
           this.lifecycle.startPendingShutdownReply(clientId, request.id)

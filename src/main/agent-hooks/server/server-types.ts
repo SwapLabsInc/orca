@@ -1,4 +1,11 @@
+import type { ProgramStatusFacet } from '../../../shared/program-status/facet'
 import type { ClaudeStatusLineRateLimits } from '../../../shared/claude-statusline-rate-limits'
+import type { PersistedAgentExitEvidence } from './agent-exit-evidence'
+import type { RetainedIdentityCause } from './server-retained-identity'
+import type {
+  AgentProcessIdentity,
+  AgentProcessPresence
+} from '../../../shared/agent-process-presence'
 import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
 import type {
   AgentStatusClearIpcPayload,
@@ -34,16 +41,23 @@ export type EnrichedAgentHookEventPayload = AgentHookEventPayload & {
   /** The relay that produced this row reports a session the user ended, so its row can say whether
    *  the agent is still owed a resume. Absent on local rows and rows from older relays. */
   reportsUserEndedSessions?: true
+  /** The pane's OSC 7501 facet, stitched on at publish only (ProgramStatusFacetStore); never stored. */
+  programStatus?: ProgramStatusFacet
+  /** Marks a publish where only `programStatus` changed: state subscribers must not read a new state. */
+  programStatusOnly?: true
 }
 
 // `claudeRunningNonAgentTask` is persisted on purpose: it is the one child-work fact the row's
-// `mainAgent` cannot express (a shell beside the agents), and hydration reads it to decide whether a
+// `mainAgent` cannot express (a shell, a cron or an owed task notification beside the agents), and hydration reads it to decide whether a
 // settled main agent may be seeded. It replaced the derived `claudeLeadBoundaryChildOnly` flag.
 export type PersistedAgentHookEventPayload = Omit<
   EnrichedAgentHookEventPayload,
   | 'authorityRestartId'
   | 'launchToken'
+  | 'hostTurnRevision'
   | 'promptInteractionKey'
+  | 'programStatus'
+  | 'programStatusOnly'
   | 'restoredUnconfirmed'
   // Why: revision counters are in-memory and the authority id is regenerated per process, so
   // a stored observation could only rehydrate as a stale ordering claim from a dead authority.
@@ -134,6 +148,8 @@ export type LastStatusFile = {
   version: number
   entries: Record<string, PersistedAgentHookEventPayload>
   authorityCommitments?: Record<string, PersistedAgentHookAuthorityCommitment>
+  /** Proven agent exits whose rows were reconciled away; absent from older files. */
+  agentExits?: PersistedAgentExitEvidence[]
 }
 
 export type AgentPromptSentDedupeEntry = {
@@ -155,6 +171,19 @@ export type UserEndedAgentSession = {
   launchToken?: string
   /** The relay route it arrived on; absent for the local hook server. */
   connectionId?: string
+  /** The ending hook's own process, when the hook reports one. */
+  sender?: AgentProcessIdentity
+}
+
+export type ClearPaneStateOptions = {
+  /** Why the pane keeps its resume identity (default: its terminal was lost); false keeps none. */
+  retainIdentity?: RetainedIdentityCause | false
+  /** The owner's process, marked ended; the retained identity carries it. */
+  endedPresence?: AgentProcessPresence
+  preserveTmuxInnerSubjects?: boolean
+  statusUnavailable?: true
+  /** The pane's PTY is retired, not just its agent. */
+  forgetAgentExit?: true
 }
 
 export type ServerStatusLineListener = ((event: ClaudeStatusLineRateLimits) => void) | null

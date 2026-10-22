@@ -59,7 +59,7 @@ vi.mock('../../serve-update-handoff', () => ({
 vi.mock('../../updater-lifecycle-diagnostics', () => ({
   recordUpdaterLifecycle: recordUpdaterLifecycleMock
 }))
-vi.mock('../../../shared/child-process/run-process', () => ({ runProcess: vi.fn() }))
+vi.mock('@orca/process-host', () => ({ runProcess: vi.fn() }))
 vi.mock('../../../shared/mac-self-update-public-key', () => ({
   readMacSelfUpdatePublicKey: () => runningBuild.publicKey
 }))
