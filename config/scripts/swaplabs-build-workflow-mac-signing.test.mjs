@@ -60,7 +60,7 @@ describe('swaplabs fork build macOS signing', () => {
     const secretNames = [...WORKFLOW_CODE.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(
       (match) => match[1]
     )
-    // The one non-signing secret, read only by notify-devvms (checked below).
+    // The one non-signing secret, read only by the notify jobs (checked below).
     expect(new Set(secretNames)).toEqual(
       new Set([...Object.values(SWAPLABS_SIGNING_SECRETS), DEVVMS_DISPATCH_SECRET])
     )
@@ -70,7 +70,7 @@ describe('swaplabs fork build macOS signing', () => {
     expect(new Set(variableNames)).toEqual(new Set([SWAPLABS_SIGNING_VARIABLE]))
     for (const [name, job] of Object.entries(jobs)) {
       const text = JSON.stringify(job)
-      if (name === 'notify-devvms') {
+      if (name === 'notify-devvms' || name === 'notify-build') {
         expect([...text.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1])).toEqual([
           DEVVMS_DISPATCH_SECRET
         ])

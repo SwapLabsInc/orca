@@ -243,11 +243,11 @@ describe('swaplabs fork build publish policy', () => {
     expect(discard.run.match(/gh release delete[^\n]*/)[0]).not.toContain('--cleanup-tag')
   })
 
-  // notify-devvms is the one deliberate exception: it dispatches to SwapLabsInc/SwapLabs
-  // with its own token (swaplabs-build-workflow-devvms-notify.test.mjs).
+  // The notify jobs are the deliberate exceptions: they dispatch to SwapLabsInc/SwapLabs with
+  // its own token (swaplabs-build-workflow-devvms-notify and -build-note tests).
   it('keeps every gh call on this repository', () => {
     for (const [name, job] of Object.entries(jobs)) {
-      if (name === 'notify-devvms') {
+      if (name === 'notify-devvms' || name === 'notify-build') {
         continue
       }
       for (const step of runSteps(job)) {
