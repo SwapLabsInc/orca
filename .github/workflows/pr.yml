@@ -962,7 +962,9 @@ jobs:
       - name: Install WebKit for the drawer check
         id: webkit
         background: true
-        run: pnpm exec playwright-core install --with-deps webkit
+        run: |
+          bash .github/scripts/prepare-ubuntu-apt.sh
+          pnpm exec playwright-core install --with-deps webkit
 
       # The entry lives in mobile/ so one React resolves; without this every RN import is nothing.
       - uses: ./.github/actions/install-mobile-dependencies
@@ -1084,7 +1086,7 @@ jobs:
     name: package
     needs: [code_paths, preflight]
     if: needs.code_paths.outputs.package == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Let the serial Docker gates reach their own deadlines and report cleanup failures.
     timeout-minutes: 90
 

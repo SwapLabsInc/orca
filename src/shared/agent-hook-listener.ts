@@ -1,4 +1,4 @@
-import { readAgentProcessIdentity } from './agent-process-presence'
+import { readHookAgentProcess } from './agent-process-presence'
 import { resolveAgentStatusIdentity } from './agent-status-identity'
 import { sameAgentStatusTerminalOwner } from './agent-status-terminal-owner'
 import { normalizeAgentStatusPayload, type AgentMainAgentStatus } from './agent-status-types'
@@ -155,6 +155,7 @@ export function normalizeHookPayload(
   }
   // Why before the guard: a retained resume identity lends the next agent in the pane nothing.
   const previousStatus = statusRowToComplete(state.lastStatusByPaneKey.get(paneKey))
+  const agentProcess = readHookAgentProcess(source, record.agentProcess)
   const previousReceivedAt =
     previousStatus &&
     'receivedAt' in previousStatus &&
@@ -178,6 +179,7 @@ export function normalizeHookPayload(
         agentPresence: previousStatus.providerSessionOnly ? undefined : previousStatus.agentPresence
       },
       incoming: source,
+      incomingProcess: agentProcess,
       now: Date.now()
     }).inheritedFromActivePane
   ) {
@@ -223,9 +225,6 @@ export function normalizeHookPayload(
     }
   }
 
-  // Why: presence needs the agent's own process; without it the hook cannot speak for liveness.
-  const agentProcess =
-    source === 'claude' ? readAgentProcessIdentity(record.agentProcess) : undefined
   const agentPresence = agentProcess
     ? { agent: source, process: agentProcess, sessionOwner: true as const }
     : undefined

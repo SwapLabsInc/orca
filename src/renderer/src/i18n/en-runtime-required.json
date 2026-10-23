@@ -425,6 +425,9 @@
         },
         "editor": {
           "save": {
+            "notUtf8": {
+              "refused": "This file isn't UTF-8 text, so it wasn't saved."
+            },
             "sectionStale": {
               "notice": "This file changed on disk since this section loaded."
             },
@@ -2156,6 +2159,8 @@
           "01f45d3d8a": "sidebar",
           "021538e1d1": "SSH disconnected",
           "1d66d84f0b": "string",
+          "57eaa61b55": "Hide child workspaces",
+          "8cb634cda6": "Show child workspaces",
           "93aebe4529": "Folder",
           "automationCreated": "Created by automation",
           "branchFolderPathIdentity": "Branch or folder path",
@@ -2516,7 +2521,13 @@
             "6d9793d4bc": "Resource Manager - Terminals",
             "996295bff2": "orphan terminal",
             "9e2525c89f": "Resident memory held by Orca plus the processes under each worktree's terminals.",
+            "bd19fd7a59": "Kill all sessions",
+            "c9382662bb": "Restart daemon",
             "e7ccce7e87": "of system RAM"
+          },
+          "SkillUpdateStatusSegment": {
+            "successMany": "Updated {{value0}} skills",
+            "successOne": "Updated {{value0}}"
           },
           "SshStatusSegment": {
             "3d0128b105": "connected",
@@ -2525,6 +2536,7 @@
             "bc5a3fd41a": "partial",
             "connectedHostCount_one": "{{count}} host",
             "connectedHostCount_other": "{{count}} hosts",
+            "connecting": "Connecting…",
             "d09ec41831": "Remote Hosts",
             "fbb3f9f05e": "conflict",
             "fd9a3c600e": "error",
@@ -3415,6 +3427,12 @@
   },
   "menu": {
     "quitApp": "Quit {{appName}}"
+  },
+  "resourceManager": {
+    "pty": {
+      "localOwnedCount_one": "{{count}} Orca PTY on this computer",
+      "localOwnedCount_other": "{{count}} Orca PTYs on this computer"
+    }
   },
   "runtimeRpc": {
     "startupFailure": {
