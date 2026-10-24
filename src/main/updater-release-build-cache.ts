@@ -8,20 +8,12 @@ type LoadBuilds = (channel: ReleaseChannel, sourceId: ReleaseSourceId) => Promis
 type CacheEntry = { builds: Promise<ReleaseBuild[]>; expiresAt: number }
 
 export type ReleaseBuildListOptions = {
-  /** Bypass the cache — the refresh button, so a build published a minute ago shows up on demand. */
   force?: boolean
   /** Which release source to list; defaults to the primary. */
   source?: ReleaseSourceId
 }
 
-/**
- * Per-channel cache of listed release builds.
- *
- * Why: the picker reloads on every settings mount and every channel click, and
- * each load was one GitHub API request. Serving repeats from here keeps a few
- * minutes of browsing at one request per channel, and sharing the in-flight
- * promise collapses two concurrent loads of one channel into a single request.
- */
+// Repeated picker mounts/channel switches share API results and in-flight requests.
 export class ReleaseBuildListCache {
   private readonly entries = new Map<string, CacheEntry>()
 
@@ -41,8 +33,7 @@ export class ReleaseBuildListCache {
     const builds = this.load(channel, sourceId)
     const entry: CacheEntry = { builds, expiresAt: this.now() + this.ttlMs }
     this.entries.set(key, entry)
-    // Why: a failed load must not be served for the next five minutes; drop it so
-    // the next call retries. Only evict our own entry — a forced reload may have replaced it.
+    // Retry failed loads, but do not evict a newer forced reload.
     builds.catch(() => {
       if (this.entries.get(key) === entry) {
         this.entries.delete(key)

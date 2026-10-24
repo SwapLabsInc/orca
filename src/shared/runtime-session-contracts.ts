@@ -2,7 +2,7 @@ import type { MobileProjectSectionCatalog } from './mobile-project-sections-cont
 import type { AgentStatusOrchestrationContext } from './agent-status-types'
 import type { DelegatedWorktreeEdge } from './worktree/delegated-worktree-edge'
 import type { RemoteServerUpdateSupport } from './remote-server-update'
-import type { RemoteRuntimeSharedConnectionDiagnostics } from './remote-runtime-shared-control-types'
+import type { RemoteRuntimeSharedConnectionDiagnostics } from './remote-runtime/control/remote-runtime-shared-control-types'
 import type { RuntimeHostConnectionState } from './runtime-host-connection-state'
 import type { RuntimeCapability } from './protocol-version'
 import type {

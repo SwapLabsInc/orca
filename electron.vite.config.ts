@@ -12,7 +12,7 @@ import { createViteCacheRetentionPlugin } from './config/build-plugins/vite-cach
 import { MAIN_BUILD_ENTRY_POINTS } from './config/build-plugins/main-build-entry-points'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
 import { resolveBuildSourceCommit } from './config/scripts/build-source-commit.mjs'
-import { SWAPLABS_UPDATE_DEFINES } from './config/build-plugins/swaplabs-update-defines'
+import { withSwaplabsUpdateDefines } from './config/build-plugins/swaplabs-update-defines'
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
   'stream-json',
@@ -22,6 +22,10 @@ const BUNDLED_MAIN_DEPENDENCIES = new Set([
   'tldts',
   'smol-toml',
   'fflate',
+  // Linear save confirmation; bundled like orcad so packaging needs no extra node_modules.
+  'unified',
+  'remark-parse',
+  'remark-gfm',
   // Why: Windows NSIS deploys app.asar before external resources; bootstrap must
   // not race the later resources/node_modules copy.
   'zod'
@@ -219,7 +223,7 @@ function createMainBootstrapPlugin() {
  */
 const MAIN_MINIFY: 'oxc' | false = process.env.ORCA_UNMINIFIED_MAIN === '1' ? false : 'oxc'
 
-export const electronViteConfig: UserConfig = {
+export const electronViteConfig: UserConfig = withSwaplabsUpdateDefines({
   main: {
     build: {
       // Why: 'esbuild' makes rolldown disable its own minifier and re-print every
@@ -269,7 +273,6 @@ export const electronViteConfig: UserConfig = {
       ORCA_POSTHOG_WRITE_KEY: ORCA_POSTHOG_WRITE_KEY_LITERAL,
       ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL,
       ORCA_BUILD_COMMIT: ORCA_BUILD_COMMIT_LITERAL,
-      ...SWAPLABS_UPDATE_DEFINES,
       ...DARK_BUILD_DEFINES
     },
     // Why: @xterm/headless declares "exports": null in package.json, which
@@ -296,8 +299,6 @@ export const electronViteConfig: UserConfig = {
     cacheDir: resolve('.cache/vite/renderer'),
     define: {
       ORCA_BUILD_COMMIT: ORCA_BUILD_COMMIT_LITERAL,
-      // LOCAL: the renderer's `release-channel.ts` derives repos from the update-source registry.
-      ...SWAPLABS_UPDATE_DEFINES,
       ...DARK_BUILD_DEFINES
     },
     resolve: {
@@ -340,7 +341,7 @@ export const electronViteConfig: UserConfig = {
       }
     }
   }
-}
+})
 
 export default defineConfig(({ command }) => {
   if (command !== 'serve') {

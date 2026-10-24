@@ -45,10 +45,7 @@ import {
 import { formatDaemonSocketIdentity } from './daemon-endpoint-ownership'
 import { readVerifiedDaemonPid } from './daemon-pid-identity'
 
-// Why: the adapter decides a runtime resolver replacement, but the launcher completes it — and by
-// then the daemon has usually self-retired (dropping its last authenticated client is enough), so
-// there is nothing left to kill and the launcher's own confirmed-kill gate would report nothing.
-// The adapter hands the reason across so the launch it triggers reports what actually drove it.
+// Carry the adapter's cause into launch reporting even if the outgoing daemon self-retires first.
 let attributedReplaceReason: DaemonReplaceReason | null = null
 
 // The fork fallback's readiness wait plus the lease and adapter connects must still fit the gate.
@@ -59,8 +56,7 @@ export function attributeNextDaemonReplacement(reason: DaemonReplaceReason): voi
   attributedReplaceReason = reason
 }
 
-// Why every adoption path calls this: a daemon whose AppImage files are gone answers RPCs for
-// hours, so whichever branch decided to keep it, fresh terminals must not land on it.
+// Check every adoption: severed AppImage daemons can answer RPCs but must not receive new terminals.
 function createPreservedDaemonHandle(
   runtimeDir: string,
   pidPath: string,
@@ -120,8 +116,7 @@ export function createOutOfProcessLauncher(
     // A holder, not a `let`: set inside the preflight's callback, which narrowing cannot see.
     const drain: { handOver: DaemonDrainHandOver | null } = { handOver: null }
     const entryPath = getDaemonEntryPath()
-    // Why here: everything up to the fork is one recovery, so the adoption connect and the
-    // preflight's probes share a single absolute budget rather than each carrying its own.
+    // Adoption and preflight share one absolute recovery budget.
     const launchStartedAtMs = Date.now()
     const recoveryDeadlineMs = launchStartedAtMs + DAEMON_RECOVERY_BUDGET_MS
     const pidPath = suppliedPidPath ?? getDaemonPidPath(runtimeDir)
@@ -131,22 +126,18 @@ export function createOutOfProcessLauncher(
     if (recoverUncommittedDaemonDrains(runtimeDir, socketPath, pidPath, PROTOCOL_VERSION) > 0) {
       console.warn('[daemon] Undid a drain an interrupted launch left unfinished')
     }
-    // One-shot: whichever launch consumes it owns the attribution, so a later unrelated launch can't
-    // reuse it. The write in the respawn closure reaches here without an intervening await, which is
-    // what makes a bare module-scoped slot safe — keep it that way or a concurrent launch can steal it.
+    // Consume before any await; the respawn closure must write this slot without yielding to another launch.
     const attributedReason = attributedReplaceReason
     attributedReplaceReason = null
-    // Why first: adoption, the preflight probes and health checks all talk to this endpoint, and a
-    // relocated one is only safe to talk to once its directories are proven private and ours.
+    // Prove endpoint directories private and ours before adoption or health probes.
     ensureDaemonSocketDir(socketPath)
     let adoptionClient: DaemonClient | null = new DaemonClient({
       socketPath,
       tokenPath
     })
     try {
-      // Why: acquire the full pair before control-only probes so an expired inherited deadline can't fire in the probe-to-adoption gap.
-      // Why bounded: unbudgeted this grants a fresh 5s to each of four connect/hello steps, so a
-      // wedged endpoint burns more before recovery starts than recovery itself is allowed.
+      // Acquire the full pair before control-only probes so an inherited deadline cannot expire in between.
+      // Bound all connect/hello steps by recovery time instead of giving each a fresh timeout.
       await adoptionClient.ensureConnectedWithin(daemonRecoveryProbeTimeoutMs(recoveryDeadlineMs))
       await reconcileDaemonPidOwnership(adoptionClient, pidPath)
     } catch {
@@ -184,7 +175,7 @@ export function createOutOfProcessLauncher(
         runtimeDir,
         socketPath,
         tokenPath,
-        // Why: must equal the identity the AppImage daemon records, or a survivor never matches.
+        // Match the identity recorded by surviving AppImage daemons.
         entryPath:
           extractedGeneration?.identityPath ??
           (appImage ? appImageDaemonIdentityPath(appImage) : entryPath),
@@ -217,8 +208,7 @@ export function createOutOfProcessLauncher(
         return preservedHandle
       }
 
-      // Why only once launching: the first start of a release unpacks its copy in the background,
-      // and a short wait lets this new daemon run from it instead of a mount it would outlive.
+      // Wait only for a new launch so first-release extraction can free it from the current mount.
       if (
         generation &&
         'fallback' in generation &&
@@ -246,10 +236,9 @@ export function createOutOfProcessLauncher(
       if (macHandle) {
         return macHandle
       }
-      // Why: on win32 packaged, stage a daemon-host copy in userData so its image escapes the NSIS updater's kill zone; lazy so it's off first-paint. Fail-open: null → in-dir host.
+      // Lazily stage the Windows host outside the NSIS updater's kill zone; null falls back to the installed host.
       const relocatedHost = materializeRelocatedDaemonHost()
       pruneDaemonHostStaging()
-      // Fork the relocated entry when available; otherwise the install-dir entry.
       const forkEntryPath = relocatedHost ? relocatedHost.entryPath : entryPath
       if (generation && 'fallback' in generation) {
         console.warn(
@@ -282,14 +271,12 @@ export function createOutOfProcessLauncher(
         if (!(error instanceof DaemonEndpointUnavailableError) || error.reason !== 'occupied') {
           throw error
         }
-        // Why adopt rather than retry: another daemon proved it owns the endpoint and is
-        // answering on it. Forking again would lose the same race, and reporting a startup
-        // failure strands this app on local non-persistent PTYs beside a healthy daemon.
+        // Adopt the endpoint winner; retrying launch loses the same race and strands persistent sessions.
         console.warn(
           '[daemon] Endpoint was taken by another daemon during startup — adopting it instead'
         )
         abandonUnfinishedDrain(drain.handOver, socketPath, pidPath)
-        // Why pidPath: adopting repairs a PID record that names the wrong incarnation.
+        // Adoption repairs PID records that name another incarnation.
         return await holdDaemonAdoptionLease(createPreservedDaemonHandle(runtimeDir, pidPath), {
           socketPath,
           tokenPath,
@@ -308,7 +295,7 @@ export function createOutOfProcessLauncher(
           unlinkOwnedDaemonPidFile(pidPath, launched.identity.pid, launched.identity.launchNonce)
           throw error
         }
-        // Why: another client may have adopted this live process; keep its pid record until exit, but remove one published after an early exit.
+        // Another client may adopt this child; remove its PID record only after exit.
         let pidRecordRemoved = false
         const removeExitedPidRecord = (): void => {
           if (pidRecordRemoved) {
@@ -329,16 +316,8 @@ export function createOutOfProcessLauncher(
       // Why first: the rescue below adopts whatever answers the endpoint, and an incumbent that
       // never lost its name must have its PID record back to be adopted like any other.
       abandonUnfinishedDrain(drain.handOver, socketPath, pidPath)
-      // Why: the launcher may now fork onto an endpoint it could not classify, because the
-      // publisher is the real guard — and that guard works by refusing to overwrite what it
-      // cannot prove dead, so the child exits instead of splitting the brain. Correct, but
-      // giving up here costs the user every persistent session for the whole run. Something
-      // answering the endpoint now is a daemon worth adopting, not a reason to fall back to
-      // local PTYs.
-      // Why unbudgeted: the recovery deadline bounds the adopt-or-replace decision, and this runs
-      // after it — past the kill, the fork and the lease. Clamping to the remainder yields a 1ms
-      // probe that loses to its own timer against a live socket, turning the rescue into the total
-      // daemon loss it exists to prevent.
+      // A publisher refuses endpoints it cannot prove dead; try adopting the owner before falling back to local PTYs.
+      // Recovery time bounds the replacement decision; rescue adoption needs its own usable probe budget.
       if (await probeSocket(socketPath)) {
         console.warn(
           '[daemon] DEGRADED MODE: adopting the daemon that owns the endpoint after a replacement could not publish onto it. Existing sessions keep working; fresh terminals run on the local provider WITHOUT daemon persistence until you restart the daemon (Manage Sessions → Restart).'
@@ -346,7 +325,7 @@ export function createOutOfProcessLauncher(
         try {
           return await preserveDaemon('degraded-new-pty-fallback')
         } catch {
-          // It stopped answering between the probe and the adoption; report the launch failure.
+          // Rescue adoption failed; preserve the original launch error.
         }
       }
       throw error
