@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
-import type { TaskPageGitHubMutationIntent } from '@/components/task-page-github-work-item-mutation-patches'
+import type { TaskPageGitHubMutationIntent } from '@/components/task-page/github/task-page-github-work-item-mutation-patches'
 import {
   normalizeGitHubReviewerLogins,
   parseGitHubReviewerInputLogins
@@ -17,7 +17,7 @@ import type {
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
 import type { Repo } from '../../../shared/repo-types'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
-import type { TaskPageGitHubWorkItemMutationRunner } from './task-page-linear-jira-list-model'
+import type { TaskPageGitHubWorkItemMutationRunner } from './task-page/linear/task-page-linear-jira-list-model'
 import { buildRequestedReviewUsers } from './task-page-github-review-model'
 
 type ReviewerActionsInput = {

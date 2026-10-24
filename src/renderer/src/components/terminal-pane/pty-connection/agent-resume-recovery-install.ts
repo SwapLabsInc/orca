@@ -66,8 +66,7 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
     const startup = buildCandidateResumeStartup({
       candidate,
       cmdOverrides: state.settings?.agentCmdOverrides ?? {},
-      agentDefaultArgs: state.settings?.agentDefaultArgs,
-      agentDefaultEnv: state.settings?.agentDefaultEnv,
+      settings: state.settings,
       platform: target.platform,
       shell: target.shell
     })

@@ -223,19 +223,7 @@ async function resolveVersionsFromManifests(
   return resolved
 }
 
-/**
- * Walks the GitHub releases atom feed and returns the tag of the newest
- * release strictly greater than `currentVersion`.
- *
- * Why: electron-updater's GitHubProvider filters the feed by channel, and
- * GitHub's /latest/download redirect can move between check and download.
- * By resolving the newest tag ourselves and pinning the generic provider at
- * `/releases/download/<tag>`, the manifest and downloaded asset stay tied to
- * the same release.
- *
- * Returns null if the fetch fails, the feed has no parseable tags, or
- * nothing in the feed is newer than `currentVersion`.
- */
+// Concrete tags keep manifests and downloaded assets on the same release.
 type FetchNewerReleaseTagOptions = {
   includePrerelease?: boolean
   releaseFilter?: 'perf'
@@ -291,8 +279,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
   }
   tags.sort((left, right) => compareVersions(right.version, left.version))
 
-  // Why: perf builds are explicit opt-in; regular prerelease checks should
-  // stay on the main RC/stable series even though perf tags are semver-newer.
+  // Perf builds require explicit opt-in, even when semver considers them newer.
   const candidates =
     options.releaseFilter === 'perf' && isPrimarySource
       ? tags.filter(({ tag }) => isPerfPrereleaseTag(tag))
@@ -306,8 +293,7 @@ export async function fetchNewerReleaseTagsWithReadiness(
     return { tags: [], state: 'no-newer' }
   }
 
-  // Why: a cancelled release can leave several feed entries without manifests,
-  // but update checks must not stall on an unbounded run of 5s probes.
+  // Bound probes when cancelled releases leave multiple entries without manifests.
   const probeCandidates = candidates.slice(
     newestNewerIndex,
     newestNewerIndex + MAX_MANIFEST_PROBE_CANDIDATES

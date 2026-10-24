@@ -2,7 +2,7 @@ import {
   isRecoverableRemoteRuntimeConnectionError,
   toRemoteRuntimeClientErrorLike,
   type RemoteRuntimeClientErrorLike
-} from '../../../../shared/remote-runtime-client-error-classification'
+} from '../../../../shared/remote-runtime/remote-runtime-client-error-classification'
 
 /**
  * What `removeProject` actually did.

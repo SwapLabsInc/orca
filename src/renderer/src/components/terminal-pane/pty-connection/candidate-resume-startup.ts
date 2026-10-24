@@ -3,7 +3,8 @@ import { buildAgentResumeStartupPlan } from '@/lib/tui-agent-startup'
 import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
 import {
   resolveTuiAgentLaunchArgs,
-  resolveTuiAgentLaunchEnv
+  resolveTuiAgentLaunchEnv,
+  type AgentLaunchProfileSettings
 } from '../../../../../shared/tui-agent-launch-defaults'
 import type { TuiAgent } from '../../../../../shared/tui-agent'
 import type { AgentStartupShell } from '../../../../../shared/tui-agent-startup-shell'
@@ -22,8 +23,7 @@ import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
 export function buildCandidateResumeStartup(args: {
   candidate: AgentResumeCandidate
   cmdOverrides: Partial<Record<TuiAgent, string>>
-  agentDefaultArgs: Partial<Record<TuiAgent, string>> | undefined
-  agentDefaultEnv: Partial<Record<TuiAgent, Record<string, string>>> | undefined
+  settings: AgentLaunchProfileSettings | null | undefined
   platform: NodeJS.Platform
   /** Optional exactly as the plan builder takes it: absent means the host default. */
   shell?: AgentStartupShell
@@ -33,8 +33,8 @@ export function buildCandidateResumeStartup(args: {
     agent: candidate.agent,
     providerSession: candidate.providerSession,
     cmdOverrides: args.cmdOverrides,
-    agentArgs: resolveTuiAgentLaunchArgs(candidate.agent, args.agentDefaultArgs),
-    agentEnv: resolveTuiAgentLaunchEnv(candidate.agent, args.agentDefaultEnv),
+    agentArgs: resolveTuiAgentLaunchArgs(candidate.agent, args.settings),
+    agentEnv: resolveTuiAgentLaunchEnv(candidate.agent, args.settings, args.platform),
     platform: args.platform,
     ...(args.shell ? { shell: args.shell } : {})
   })

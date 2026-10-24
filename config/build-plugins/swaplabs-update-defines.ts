@@ -1,3 +1,4 @@
+import type { UserConfig } from 'electron-vite'
 import { parseReleaseSources } from '../../src/shared/release-sources'
 import { parseMacSelfUpdatePublicKey } from '../../src/shared/mac-self-update-public-key'
 
@@ -21,7 +22,19 @@ const ORCA_SWAPLABS_UPDATE_PUBLIC_KEY_LITERAL =
     ? JSON.stringify(parseMacSelfUpdatePublicKey(orcaSwapLabsUpdatePublicKey))
     : 'null'
 
-export const SWAPLABS_UPDATE_DEFINES = {
+const SWAPLABS_UPDATE_DEFINES = {
   ORCA_RELEASE_SOURCES: ORCA_RELEASE_SOURCES_LITERAL,
   ORCA_SWAPLABS_UPDATE_PUBLIC_KEY: ORCA_SWAPLABS_UPDATE_PUBLIC_KEY_LITERAL
+}
+
+/** The renderer too: its `release-channel.ts` derives repos from the update-source registry. */
+export function withSwaplabsUpdateDefines(config: UserConfig): UserConfig {
+  return {
+    ...config,
+    main: { ...config.main, define: { ...SWAPLABS_UPDATE_DEFINES, ...config.main?.define } },
+    renderer: {
+      ...config.renderer,
+      define: { ...SWAPLABS_UPDATE_DEFINES, ...config.renderer?.define }
+    }
+  }
 }
