@@ -1,7 +1,7 @@
 import { MAX_EDIT_LINES } from '../../../../shared/native-chat-edit-model'
 import { describe, expect, it } from 'vitest'
 import type { NativeChatBlock, NativeChatMessage } from '../../../../shared/native-chat-types'
-import { foldToolMessages } from './native-chat-tool-fold'
+import { foldToolMessages } from '../../../../shared/native-chat/tools/native-chat-tool-fold'
 import { buildDiffSummaries, buildEditCards } from '../../../../shared/native-chat-edit-cards'
 import { nativeChatTurnDiffEditFile, nativeChatTurnDiffs } from './native-chat-turn-diffs'
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
 import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
+import { updaterMainWindow } from './updater-test-main-window'
 
 const {
   appMock,
@@ -62,8 +63,7 @@ describe('updater', () => {
       quitAndInstall,
       getUpdateStatus
     } = await loadUpdaterModule()
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The updater reads only webContents.send from this window fixture.
-    setupAutoUpdater({ webContents: { send } } as never, {
+    setupAutoUpdater(updaterMainWindow(send), {
       getLastUpdateCheckAt: () => Date.now(),
       onBeforeQuit,
       onBeforeQuitFailure: 'abort'

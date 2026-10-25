@@ -34,6 +34,7 @@ import { installTitleSpawnBell } from './title-spawn-bell'
 import { installAgentTaskCompleteNotify } from './agent-task-complete-notify'
 import { installPaneHostCapabilityFlags } from './pane-host-capability-flags'
 import { installPtyInputRecovery } from './pty-input-recovery'
+import { installAgentPreReadyTypedDraft } from './agent-pre-ready-typed-draft'
 import { installPtyInputForward } from './pty-input-forward'
 import { installPtyResizeGeometry } from './pty-resize-geometry'
 import { installSessionReconcileDispose } from './session-reconcile-dispose'
@@ -191,6 +192,7 @@ export function connectPanePty(
   // Must follow installPtyInputRecovery: it registers the chooser's pane handler under
   // `session.transport`, which that installer is what assigns.
   installAgentResumeRecovery(session)
+  installAgentPreReadyTypedDraft(session)
   // Async reattach/exit callbacks can outlive the PaneManager that created
   // them. Keep their layout writes keyed by the durable leaf identity and
   // admit them only while this transport still owns the pane slot.

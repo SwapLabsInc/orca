@@ -9,7 +9,7 @@ import {
   editFilesFromPatchText,
   type NativeChatEditFileSummary
 } from './native-chat-edit-patch-files'
-import { pairToolBlocks } from './native-chat-tool-fold'
+import { pairToolBlocks } from './native-chat/tools/native-chat-tool-pairs'
 
 /** A diff card's own words. Desktop maps these onto `translate`; mobile renders them. */
 export const NATIVE_CHAT_DIFF_CARD_COPY = {
