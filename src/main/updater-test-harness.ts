@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { afterAll, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { clearTrackedRealTimers, trackRealTimers } from './updater-test-timer-tracking'
-import { createSourceFeedMocks } from './updater-release-source-feed.fixture'
+import { createSourceFeedMocks } from './updater-release-source-feed.test-fixture'
 
 type UpdaterSpy = Mock<(...args: unknown[]) => unknown>
 type LinuxPackageType = 'deb' | 'rpm' | 'non-root' | 'unusable'

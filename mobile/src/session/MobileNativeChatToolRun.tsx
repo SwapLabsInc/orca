@@ -26,7 +26,7 @@ import {
 } from '../../../src/shared/native-chat-tool-activity'
 import { nativeChatToolRunIconName } from '../../../src/shared/native-chat-tool-icon'
 import { nativeChatToolLineIdentity } from '../../../src/shared/native-chat-tool-line-identity'
-import { pairNativeChatToolResults } from '../../../src/shared/native-chat-tool-pairing'
+import { pairNativeChatToolResults } from '../../../src/shared/native-chat/tools/native-chat-tool-pairing'
 import { nativeChatToolRunOutcome } from '../../../src/shared/native-chat-tool-run-outcome'
 import {
   NATIVE_CHAT_TOOL_RUN_SENTENCE_ENGLISH,

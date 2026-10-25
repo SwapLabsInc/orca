@@ -164,6 +164,7 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       // binding that scanned it, so a retired one is dropped here and a successor's is left be.
       // Without that, the stale chooser stayed up and reached the successor's handler.
       clearPendingAgentResumeChoicesForOwner(session.cacheKey, session.transport)
+      session.discardAgentPreReadyDraft?.()
       session.cleanupKittyFileReader()
       session.disposeSpawnDeferral()
       session.startupTiming?.finish('disposed')
