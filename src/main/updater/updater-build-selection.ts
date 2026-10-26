@@ -37,7 +37,6 @@ import {
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
 
-/** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   private readonly releaseBuildCache = new ReleaseBuildListCache((channel, sourceId) =>
     listReleaseBuilds(channel, process.platform, getReleaseSourceOrPrimary(sourceId), process.arch)
@@ -153,7 +152,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     })
   }
 
-  /** Pins the updater at one exact release tag and checks it, so a dev can move to any published build on any channel — including an older one. */
+  /** Pin any published channel/tag, including deliberate downgrades. */
   protected async checkForPinnedBuild(target: PinnedBuildTarget): Promise<void> {
     const { channel, tag } = target
     if (!app.isPackaged) {
@@ -171,7 +170,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       })
       return
     }
-    // Why here as well as in the picker: the renderer disables the option, but IPC is reachable regardless, and there is no artifact to install on a platform the dev workflows do not build for.
+    // Enforce platform artifact availability in main; renderer-disabled options do not protect IPC.
     if (!isChannelSupportedOnPlatform(channel, process.platform)) {
       this.sendStatus({
         state: 'error',
@@ -278,7 +277,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       }
 
       const updater = this.getAutoUpdater()
-      // Why: an intentional jump to an older tag must not be filtered out as "not newer".
+      // Explicit older-tag jumps must bypass newer-only filtering.
       updater.allowDowngrade = true
       updater.disableDifferentialDownload = true
       updater.allowPrerelease = true

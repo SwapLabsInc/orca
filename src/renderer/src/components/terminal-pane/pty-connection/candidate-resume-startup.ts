@@ -48,6 +48,8 @@ export function buildCandidateResumeStartup(args: {
     env: { ...startupPlan.env, ORCA_AGENT_LAUNCH_TOKEN: launchToken },
     launchConfig: startupPlan.launchConfig,
     resumeProviderSession: candidate.providerSession,
+    // Automatic and built from recorded facts, like a cold restore: the host refuses it for a chat's conversation.
+    resumeOrigin: 'saved',
     launchToken,
     // Neither is true here: this pane had no live entry and no record — that is why the
     // recovery path ran at all. Saying otherwise would make the spawn consume a record

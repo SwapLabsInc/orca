@@ -38,7 +38,7 @@ import { repairDuplicatePtyPanesOnStart } from '../runtime/moved-pane-owner-reke
 import { WslUsageReporter } from '../telemetry/wsl-usage-reporter'
 import { reportMacSelfUpdateLaunchOutcome } from '../updater/mac-self-update/mac-self-update-launch-outcome'
 
-// Headless serve never opens a window, so the sweep still has to run off a timer there.
+// Headless serve has no first window; timer fallback must still sweep trash.
 const WORKTREE_TRASH_SWEEP_FALLBACK_MS = 15_000
 
 export async function initializeReadyRuntimeServices(): Promise<void> {
@@ -46,7 +46,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
   if (!store) {
     throw new Error('Store must be initialized before ready services')
   }
-  // Why before any listing: a delete a quit or crash interrupted must show as Deleting from first paint.
+  // Load interrupted deletion records before listings so first paint shows Deleting.
   await loadWorktreeRemovalRecordsForStore(store)
   initializeMainProcessObservers()
   initializeMainProcessAccountServices()
@@ -62,7 +62,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
     onTabsChanged: (worktreeId) => runtime.notifyMobileSessionTabsChanged(worktreeId)
   })
   runtime.setAgentBrowserBridge(state.agentBrowserBridge)
-  // Why: daemons a crashed or SIGKILL'd previous run left behind answer to nobody; nothing else reclaims them.
+  // Reclaim browser daemons orphaned by prior crashes/SIGKILL.
   void state.agentBrowserBridge.sweepOrphanedSessions()
   const browserClientAutomationDispatcher = new RpcDispatcher({ runtime })
   configureBrowserClientPageAutomationRuntime({
@@ -71,7 +71,8 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
     executeRpc: async (method, params, signal) => {
       const response = await browserClientAutomationDispatcher.dispatch(
         { id: randomUUID(), authToken: 'local-browser-client-automation', method, params },
-        { signal }
+        // Why: forwarded automation comes from a remote agent's CLI; the cursor and tab badge key off it.
+        { signal, caller: { kind: 'local-cli' } }
       )
       if (!response.ok) {
         throw new BrowserClientPageCommandError(response.error.code)
@@ -79,14 +80,10 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
       return response.result
     }
   })
-  // Emulator bridge (serve-sim). macOS-only feature (gated in CLI/runtime); always ship like agent-browser.
-  // Why: externally started serve-sim processes must stay independent — only Orca-managed/attached helpers belong to a workspace.
+  // Only Orca-managed emulator helpers belong to workspaces; external serve-sim stays independent. macOS capability gates live in CLI/runtime.
   state.emulatorBridge = new EmulatorBridge()
   runtime.setEmulatorBridge(state.emulatorBridge)
-  // Why: older releases renamed removed checkouts into a trash root and deleted them in the background,
-  // so a quit mid-delete left directories on disk; drain them. Removals this version recorded are
-  // finished by the same delete. Why deferred: both touch disk on the same libuv threadpool the
-  // window's first paint and worktree-catalog hydration read on, and startup consumes neither.
+  // Finish recorded deletes and old trash left across crashes; defer disk sweeps so they do not compete with first paint/catalog hydration.
   runAfterFirstWindowShown(() => {
     void sweepStaleWorktreeTrash(
       collectWorktreeTrashSweepRoots(store.getRepos(), store.getSettings())
@@ -95,7 +92,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
     })
     runtime.finishInterruptedWorktreeRemovals()
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
-  // Why deferred: nothing on the startup path needs it, and it only rewrites plugin files that changed.
+  // Defer noncritical plugin-file refresh past first paint.
   runAfterFirstWindowShown(() => {
     refreshInstalledOpenCodeStatusPlugins(store.getSettings())
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
@@ -117,8 +114,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
     })
   }
   nativeTheme.themeSource = store.getSettings().theme ?? 'system'
-  // Why here, after PATH hydration: the first Codex launch usually finds Codex's hook hash ready,
-  // and launches find the reconcile in flight before CLI detection ends.
+  // Wait for shell PATH before probing Codex; start reconciliation early so first launch can share it.
   startCodexHooks({
     pathReady: app.isPackaged ? hydrateAgentCliShellPath() : Promise.resolve(),
     isEnabled: () => isAgentStatusHooksEnabledForAgent(store.getSettings(), 'codex'),
@@ -136,9 +132,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
       shouldHydrateShellPath: app.isPackaged
     })
   }
-  // Why: process-gone metrics only see survivors, and the gone-time host memory
-  // read lands after the corpse released its pages; both need a live pre-gone
-  // sample to compare against in crash reports.
+  // Sample live processes: gone-time metrics omit dead children and already-released memory.
   startPreGoneCrashSampling()
   app.on('child-process-gone', (_event, details) => {
     recordProcessGoneCrash('child', details.type, details.reason, details.exitCode ?? null, {
@@ -158,7 +152,7 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
       void handleGpuChildCrash(details.reason, details.exitCode ?? null, crashedAt)
     }
   })
-  // Switch point: awaited, as it queues behind in-flight writes and every later phase must read its tree.
+  // Await duplicate-pane repair behind queued writes; all later phases must read the repaired tree.
   if (ORCA_LAYOUT_OWNER_IS_MAIN) {
     await repairDuplicatePtyPanesOnStart(store, runtime)
   }

@@ -12,7 +12,6 @@ import type { UpdateCheckVariant } from './updater-types'
 import { ReleaseFeedPreflightError } from './updater-state'
 import { UpdaterInstallExecution } from './updater-install-execution'
 
-/** Owns concrete release-feed pinning and the one-shot prerelease fallback. */
 export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
   protected clearPrereleaseFallbackContextIfSettled(): void {
     if (
@@ -86,7 +85,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     const primaryEventSuppression = this.pendingPrereleaseFallback.suppressedPrimaryEventFailure
     if (primaryEventSuppression?.failureKey === failureKey) {
       const isPrimaryPromisePair = primaryEventSuppression.error === error
-      // Why: after fallback checking starts, same-message errors may be the fallback's, so message matching alone isn't safe.
+      // After fallback starts, identical messages may be its own errors; message matching alone is unsafe.
       if (isPrimaryPromisePair || !this.pendingPrereleaseFallback.fallbackCheckingForUpdateSeen) {
         this.pendingPrereleaseFallback.suppressedPrimaryEventFailure = null
         this.clearPrereleaseFallbackContextIfSettled()
@@ -125,7 +124,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     attemptId: number | null = this.activeUpdateCheckAttemptId
   ): Promise<ReleaseFeedPreflightResult> {
     const autoUpdater = this.getAutoUpdater()
-    // Why: the latest/download redirect can move between check and download, so pin the concrete tag (prerelease users resolve any channel, stable only stable).
+    // Pin the concrete tag because latest/download can move between check and download; stable checks exclude prereleases.
     const currentVersion = app.getVersion()
     const runningSource = this.getRunningReleaseSource()
     if (runningSource === null && isMultiSourceBuild()) {
@@ -162,7 +161,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
         ...(isPrimarySource ? {} : { source })
       }
     )
-    // A timed-out preflight must not overwrite a newer check's feed.
+    // Timed-out preflight must never replace a newer attempt's feed.
     if (attemptId === null || !this.isActiveUpdateCheckAttempt(attemptId)) {
       console.info(`[updater] release feed preflight superseded: current=${currentVersion}`)
       return 'superseded'
@@ -184,7 +183,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
             retryLaunched: false
           }
         : null
-    // Why: console.info is captured by Console.app/--enable-logging — our only field visibility into the updater.
+    // Console.app/--enable-logging captures console.info for field diagnostics.
     if (newerTag) {
       this.clearPublishingWindowLastGoodCheck()
       const url = getReleaseDownloadUrl(newerTag, source)
@@ -197,7 +196,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     if (releaseTagsResult.state === 'not-ready') {
       this.clearPrereleaseFallbackContext()
       if (releaseTagsResult.lastGoodTag) {
-        // Why: during a publish window the newest tag is unsafe; a verified last-good concrete feed lets electron-updater emit a real result.
+        // While the newest tag publishes, a verified last-good feed lets electron-updater emit a real result.
         const url = getReleaseDownloadUrl(releaseTagsResult.lastGoodTag, source)
         console.info(
           `[updater] release feed pinned to last-good: current=${currentVersion} source=${source.id} includePrerelease=${includePrerelease} → ${url}`
@@ -277,7 +276,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     if (attemptId === null) {
       return false
     }
-    // Why: a published tag can briefly lack its platform manifest mid-release; walk back once to the previous feed for a normal not-available result.
+    // A published tag may lack its manifest briefly; retry once on the previous feed for normal not-available handling.
     this.pendingPrereleaseFallback.retryLaunched = true
     this.pendingPrereleaseFallback.userInitiated = Boolean(userInitiated)
     this.pendingPrereleaseFallback.suppressedPrimaryPromiseFailureKey =

@@ -1,7 +1,7 @@
 /** A pane's sleeping record is its only resume handle after a host restart, so a status update
  *  that carries no resume identity must leave it alone (#22270). */
 import { describe, expect, it } from 'vitest'
-import { MAX_LIVE_AGENT_STATUSES } from './agent-status'
+import { MAX_LIVE_AGENT_STATUSES } from './agent-status/agent-status-capacity-eviction'
 import { createTestStore, makeTab, seedStore } from './store-test-helpers'
 
 function seedTab(store: ReturnType<typeof createTestStore>, rootedLeafId?: string): void {

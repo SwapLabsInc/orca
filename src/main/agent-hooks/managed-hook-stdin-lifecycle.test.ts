@@ -291,7 +291,7 @@ describe('Windows managed hook stdin structure', () => {
     expect(warm, 'encoded PowerShell warm-up').toMatchObject({ code: 0, timedOut: false })
   }, 60_000)
 
-  it('exits immediately when Orca env is missing and keeps drain for other failures', async () => {
+  it('places missing-context guards before Windows stdin readers', async () => {
     const home = mkdtempSync(join(tmpdir(), 'orca-hook-stdin-windows-'))
     homedirMock.mockReturnValue(home)
     seedCmdAutoRunTarget(home)
@@ -412,7 +412,7 @@ describe('Windows managed hook stdin structure', () => {
               : [scriptPath]
           const result = await runHookProcess(executable, args, hookEnvironment())
           expect(result.exitCode, `${fileName} exit code`).toBe(0)
-          // Only missing-context Windows paths permit broken writers; in-pane hooks must drain.
+          // Missing-context guards exit before reading stdin, so writers may see a broken pipe.
           for (const error of result.stdinErrors) {
             expect(WRITER_BROKEN_BY_EARLY_EXIT, `${fileName} stdin error`).toContain(error.code)
           }

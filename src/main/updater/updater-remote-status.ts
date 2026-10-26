@@ -12,7 +12,6 @@ import { UpdaterNudge } from './updater-nudge'
 import type { UpdateInstallMode } from './updater-state'
 import { readServerUpdateHelpUrlEnv } from './server-update-help-url-env'
 
-/** Exposes updater state to runtime RPC callers without leaking internal mutators. */
 export abstract class UpdaterRemoteStatus extends UpdaterNudge {
   // Why a field: read once at startup, so a bad value warns once rather than on every status poll.
   private readonly serverUpdateHelpUrl = readServerUpdateHelpUrlEnv()
