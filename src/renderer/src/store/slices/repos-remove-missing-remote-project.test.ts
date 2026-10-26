@@ -1,10 +1,5 @@
 /**
- * #11994: a project deleted on the paired Orca host stayed in the client's sidebar and
- * could not be removed there. `repo.rm` answers `repo_not_found` (it is already gone on
- * the host) and `removeProject` wrapped its whole body in one try/catch, so the rejection
- * aborted the local purge before the `set()` — the ghost row survived and nothing was
- * surfaced to the user. Only `repo_not_found` is tolerated; any other failure must keep
- * the row, and the error toast is opt-in so bulk/background callers stay silent.
+ * Treat only repo_not_found as already removed and purge client ghost rows (#11994). Other failures retain rows; toasts remain opt-in for single-project callers while bulk/background aggregate errors.
  *
  * A later pass splits "any other failure" in two. A host that answers and refuses is a failure and
  * toasts as before. A host that never answers is `owner-unverifiable`: the row is still kept —

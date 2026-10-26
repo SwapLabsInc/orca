@@ -1,11 +1,11 @@
 import type { TerminalLossAgentResume } from '../agent-hooks/server'
 import {
-  agentProviderSessionIdentityKey,
   agentProviderSessionsEqual,
   type AgentProviderSessionMetadata,
   type ResumableTuiAgent,
   type SleepingAgentLaunchConfig
 } from '../../shared/agent-session-resume'
+import { agentProviderSessionIdentityKey } from '../../shared/agent-provider-session-identity-key'
 import {
   resolveAgentStartupPlanInputs,
   type AgentStartupSettings

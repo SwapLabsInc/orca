@@ -23,6 +23,7 @@ import { isForeignTurnHook } from './server-foreign-turn-hook'
 import { resolveCancelVerdictLatch } from './server-cancel-verdict-latch'
 import { AgentHookServerStatusApplication } from './server-status-application'
 import { claimsPaneAfterExit } from './agent-exit-evidence'
+import { readStatusRowsForUpdate } from './server-retained-identity'
 
 export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusApplication {
   protected readonly claudeOwedNotificationExpiry = new ClaudeOwedNotificationExpiryTimers(
@@ -81,14 +82,8 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
     ) {
       this.forgetAgentExit(payload.paneKey)
     }
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Main admits enriched legacy rows; the shared view declares their base event type.
-    const stored = this.state.lastStatusByPaneKey.get(payload.paneKey) as
-      | EnrichedAgentHookEventPayload
-      | undefined
+    const { stored, previous } = readStatusRowsForUpdate(this.state, payload.paneKey)
     const rowBefore = mutationBefore ?? stored
-    // Why: a retained identity's status fields are placeholders from an agent that is gone; a new
-    // event must not inherit its agent type, permission hold, verdict or terminal.
-    const previous = stored?.providerSessionOnly ? undefined : stored
     const terminalHandle =
       payload.terminalHandle ??
       (previous?.terminalHandle && this.sameTerminalOwner(previous, payload)
@@ -125,6 +120,7 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
       incoming: terminalOwnedPayload.payload.agentType,
       // Relay presence is the execution host's owner verdict, not the sender's identity.
       incomingProcess: payload.connectionId ? undefined : incoming.agentPresence?.process,
+      incomingSession: terminalOwnedPayload.providerSession?.id,
       now
     })
     if (
@@ -136,8 +132,8 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
       this.commitStatusRowMutation(rowBefore, previous)
       return previous
     }
-    if (payload.hookEventName === 'UserPromptSubmit') {
-      // Repeated prompt text still opens a new turn; OSC must not inherit the old completion stamp.
+    // Any submitted prompt (incl. a replayed Codex start) opens a new turn; OSC must not inherit the old stamp.
+    if (payload.hookEventName === 'UserPromptSubmit' || payload.hasExplicitPrompt === true) {
       this.activeHookTurnCompletedAtByPaneKey.delete(payload.paneKey)
     }
     if (terminalOwnedPayload.connectionId) {

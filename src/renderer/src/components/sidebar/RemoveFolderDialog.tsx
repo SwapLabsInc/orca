@@ -29,8 +29,7 @@ import {
   selectWorktreesByRepo
 } from '@/store/workspace-record-selectors'
 
-// Why: interpolated into the sentence so locales control where the name sits;
-// U+0000 cannot appear in a real project name, so the split is unambiguous.
+// NUL cannot occur in project names, so translated name-token splitting is unambiguous.
 const NAME_TOKEN = '\u0000'
 
 // Why: a local removal returns in milliseconds, so show the spinner only once the call is slow
@@ -74,10 +73,7 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
     return () => window.clearTimeout(timer)
   }, [isRemoving])
 
-  // Why: for an SSH project the files live on the remote host's disk, not the
-  // user's — "still on your disk" would be misleading. Name the host (using the
-  // removed-target label when it's a ghost) so the user knows where it remains
-  // and that re-adding that host recovers it.
+  // Remote files remain on the named host’s disk; ghost-host labels explain where recovery is possible.
   const sshConnectionId = useAppStore(
     (s) =>
       s.repos
@@ -151,9 +147,7 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
             { count: openTerminalCount }
           )
 
-  // Why: fragment concatenation around the styled name cannot be reordered by
-  // SOV locales (#9294). Translate one full sentence with the name as a
-  // sentinel token, then split on it to re-apply the inline emphasis.
+  // Translate the whole sentence for reorderable locales, then restore emphasis at the name sentinel.
   const description = ownerUnverifiable
     ? canForgetLocally
       ? translate(
@@ -186,7 +180,7 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const [descriptionBeforeName, descriptionAfterName] = description.split(NAME_TOKEN)
 
   const handleConfirm = useCallback(async () => {
-    // Why: without the opener's host a bare id could remove another host's row (#13071).
+    // Require the opener’s host so same-ID rows on other hosts cannot be removed.
     if (!repoId || !hostId) {
       closeModal()
       return

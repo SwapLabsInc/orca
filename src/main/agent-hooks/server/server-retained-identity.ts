@@ -7,6 +7,7 @@ import {
 } from '../../../shared/agent-session-resume'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 import { isWslHookRelayConnectionId } from '../../../shared/wsl-hook-relay-contract'
+import type { HookListenerState } from '../../../shared/agent-hook-listener/listener-state'
 
 /** Why a pane's live row gave way to a retained identity. */
 export type RetainedIdentityCause = 'agent-ended' | 'terminal-loss'
@@ -24,6 +25,21 @@ export function isResumableIdentityRow(row: EnrichedAgentHookEventPayload): bool
     row.resumeAfterTerminalLoss === true ||
     row.retainedForLiveness !== true
   )
+}
+
+/** The pane's stored row, and the row a new event builds on. A retained identity's status fields
+ *  are placeholders from an agent that is gone, so a new event must not inherit its agent type,
+ *  permission hold, verdict or terminal. */
+export function readStatusRowsForUpdate(
+  state: Pick<HookListenerState, 'lastStatusByPaneKey'>,
+  paneKey: string
+): {
+  stored: EnrichedAgentHookEventPayload | undefined
+  previous: EnrichedAgentHookEventPayload | undefined
+} {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Main admits enriched legacy rows; the shared view declares their base event type.
+  const stored = state.lastStatusByPaneKey.get(paneKey) as EnrichedAgentHookEventPayload | undefined
+  return { stored, previous: stored?.providerSessionOnly ? undefined : stored }
 }
 
 /** The hidden `providerSessionOnly` remnant a dropped row leaves, marked by why it was dropped. */

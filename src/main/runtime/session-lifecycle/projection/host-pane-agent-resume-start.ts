@@ -1,7 +1,7 @@
 // SwapLabs fork (#30): a re-created pane that has no sleeping record of its own still resumes the
 // agent its execution host's hook store kept for it when the pane's terminal was lost.
 
-import { OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs } from './build-headless-mobile-session-browser-tabs'
+import { OrcaRuntimeWithDelegatedWorktreeEdgeSync } from './delegated-worktree-edge-graph-sync'
 import { findPaneSleepingRecord } from './pane-sleeping-record'
 import {
   HostPaneAgentResumes,
@@ -22,7 +22,7 @@ function hostPaneId(worktreeId: string, tab: RuntimeMobileSessionTerminalTab): s
   return `${worktreeId}\0${tab.parentTabId}\0${tab.leafId}`
 }
 
-export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs {
+export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntimeWithDelegatedWorktreeEdgeSync {
   protected abstract resolveAgentLaunchRuntime(
     scope: TerminalWorkspaceLaunchScope,
     agent: TuiAgent | undefined
