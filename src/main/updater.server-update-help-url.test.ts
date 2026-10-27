@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as UpdaterModule from './updater'
 import type { LinuxPackageType } from './linux-update-package-type'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import { updaterMainWindow } from './updater-test-main-window'
 
 const { appMock, getLinuxPackageTypeMock, moduleFactories, resetUpdaterMocks } = await vi.hoisted(
   async () => (await import('./updater-test-harness')).createUpdaterMocks()
@@ -48,8 +49,7 @@ describe('server update help link on the remote-update support', () => {
       vi.stubEnv('ORCA_SERVER_UPDATE_HELP_URL', helpUrl)
     }
     const updater = await loadUpdaterModule()
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the updater only reaches `webContents.send` on its window, and electron itself is mocked.
-    updater.setupAutoUpdater({ webContents: { send: vi.fn() } } as never, {
+    updater.setupAutoUpdater(updaterMainWindow(vi.fn()), {
       getLastUpdateCheckAt: () => Date.now(),
       installMode
     })

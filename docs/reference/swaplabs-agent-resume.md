@@ -2,10 +2,11 @@
 
 `LOCAL:` the SwapLabs fork keeps a pane's agent resumable when the pane's
 terminal is lost, and lets a paired host resume that agent when it re-creates the
-pane (fork PR #30). Upstream has no equivalent for a pane without a saved
-sleeping record. This page describes the fork's rules as they stand on top of
-upstream's agent-status store (`src/main/agent-hooks/server/`), so a sync can
-check them against upstream's changes.
+pane (fork PR #30). Upstream now resumes such a pane from its hook rows
+(#34054); the fork decides which rows survive a lost terminal and which of them
+may come back. This page describes the fork's rules as they stand on top of upstream's
+agent-status store (`src/main/agent-hooks/server/`) and resume path, so a sync
+can check them against upstream's changes.
 
 ## Resume identity after terminal loss
 
@@ -67,23 +68,29 @@ the host is re-creating:
 
 ## Host resume when a pane is re-created
 
-Upstream resumes a re-created pane from a pane-owned sleeping record
-(`materializePendingMobileSessionTerminal`, `resolvePaneOwnedResumeStartup`),
-with the recorded launch flags only. That path runs unchanged wherever such a
-record exists. The fork's hook-store resume (`host-pane-agent-resume.ts`) runs
-only as the fallback when upstream finds no record for the pane, which is the
-case on a headless host after a reboot or a daemon loss:
+Upstream resumes a re-created pane from its pane-owned sleeping record, with the
+recorded launch flags only. A pane with no record resumes the conversation its
+own local hook rows name (#34054, `hookRowPaneResumeRecord`). Both run in
+`resolvePaneOwnedResumeStartup`. On a headless host after a reboot or a daemon
+loss there is no record, so the hook-row resume runs, with four fork rules
+(`host-pane-agent-resume-start.ts`):
 
+- It resumes only the session `selectTerminalLossResume` names for the pane.
+  Any other session in the pane's rows, such as one the user ended, gets a plain
+  shell and stays resumable by hand. Upstream's own vetoes (two conversations, or
+  one held in another pane) still launch the tab's agent fresh, as upstream does.
 - It launches `claude <settings default args> --resume <id>`. Upstream's
   recorded-recipe rule does not apply here, because the remnant has no recipe;
-  aligning the flags is an open follow-up.
-- It runs once per session and once per pane; concurrent activations share one
-  spawn, and a failed spawn falls back to a plain shell and keeps the identity.
-- It suppresses upstream's fresh-agent launch for the tab when the hook store
-  has rows for the pane.
-- It skips a workspace whose `connectionId` is set. Upstream's managed `orcad`
-  SSH hosts project catalogs with `connectionId = null`, so a fork-built `orcad`
-  on such a host runs the hook-store resume for its own panes.
+  aligning the flags is an open follow-up (#40).
+- It declares no restore intent, so the host paces it but never defers it or
+  holds it behind a pause, such as the one an unclean terminal-host death sets.
+  Upstream's record resumes wait (#41).
+- A failed resume spawn falls back to a plain shell and keeps the identity.
+
+Concurrent activations of one pane share one re-creation
+(`trackHostPaneRecreation`), so the agent resumes once. Everything else is
+upstream's path: its saved-resume admission (`resumeOrigin: 'saved'`), resume
+claims (`agentSessionResumeClaims`) and resume folder (`launchCwd`).
 
 ## Known gaps
 

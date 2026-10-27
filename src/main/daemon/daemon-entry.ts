@@ -1,5 +1,6 @@
+import '../memory/host-malloc-tunables-claim'
 import { readFileSync } from 'node:fs'
-import { handedOverEndpointArg, startDaemon, type DaemonHandle } from './daemon-main'
+import { startDaemon, type DaemonHandle } from './daemon-main'
 import { createPtySubprocess } from './pty-subprocess'
 import { warmWindowsConptyOnce } from './windows-conpty-warmup'
 import { warmPwshAvailabilityCache } from '../pwsh'
@@ -251,7 +252,6 @@ async function main(): Promise<void> {
     ...(pidPath ? { pidPath } : {}),
     ...(launchNonce ? { launchNonce } : {}),
     ...(pidPath ? { startedAtMs } : {}),
-    ...handedOverEndpointArg(process.argv.slice(2)),
     ...(entryPath ? { entryPath } : {}),
     ...(appVersion ? { appVersion } : {}),
     ...(spawnerExecPath ? { spawnerExecPath } : {}),

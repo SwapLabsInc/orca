@@ -28,7 +28,6 @@ type AutoUpdaterMock = {
 type AppMock = {
   isPackaged: boolean
   getVersion: Mock<() => string>
-  getPath: Mock<(name: string) => string>
   on: Mock<(event: string, handler: (...args: unknown[]) => void) => AppMock>
   prependListener: Mock<(event: string, handler: (...args: unknown[]) => void) => AppMock>
   emit: (event: string, ...args: unknown[]) => void
@@ -61,12 +60,13 @@ type UpdaterModuleFactories = {
   }
   updaterPrereleaseFeed: () => {
     fetchNewerReleaseTagsWithReadiness: (...args: unknown[]) => Promise<unknown>
+    fetchLatestStableReleaseTag: () => Promise<string | null>
   } & ReturnType<typeof createSourceFeedMocks>['members']
   localBuildSwitch: () => { chooseLocalBuild: UpdaterSpy }
   localBuildFeedServer: () => { startLocalBuildFeed: UpdaterSpy }
 }
 
-export type UpdaterMocks = {
+export type UpdaterMocks = ReturnType<typeof createSourceFeedMocks>['mocks'] & {
   appMock: AppMock
   browserWindowMock: { getAllWindows: Mock<() => unknown[]> }
   nativeUpdaterMock: { on: UpdaterSpy }
@@ -83,8 +83,7 @@ export type UpdaterMocks = {
   armExitWatchdogMock: UpdaterSpy
   disarmExitWatchdogMock: UpdaterSpy
   fetchNewerReleaseTagsMock: UpdaterSpy
-  /** Resolves `{ kind: 'ready' }` unless a test says the pinned tag's manifest disagrees. */
-  verifyReleaseTagManifestMock: UpdaterSpy
+  fetchLatestStableReleaseTagMock: Mock<() => Promise<string | null>>
   chooseLocalBuildMock: UpdaterSpy
   startLocalBuildFeedMock: UpdaterSpy
   closeLocalBuildFeedMock: UpdaterSpy
@@ -182,12 +181,12 @@ export function createUpdaterMocks(): UpdaterMocks {
   const appMock: AppMock = {
     isPackaged: true,
     getVersion: vi.fn(() => '1.0.51'),
-    getPath: vi.fn(() => '/Applications/Orca.app/Contents/MacOS/Orca'),
     on: appOn,
     prependListener: appPrependListener,
     emit: appEmit,
     quit: vi.fn()
   }
+  const sourceFeed = createSourceFeedMocks(appMock)
   const browserWindowMock = {
     getAllWindows: vi.fn(() => [])
   }
@@ -208,7 +207,7 @@ export function createUpdaterMocks(): UpdaterMocks {
   const armExitWatchdogMock = vi.fn()
   const disarmExitWatchdogMock = vi.fn()
   const fetchNewerReleaseTagsMock = vi.fn()
-  const sourceFeed = createSourceFeedMocks()
+  const fetchLatestStableReleaseTagMock = vi.fn<() => Promise<string | null>>()
   const chooseLocalBuildMock = vi.fn()
   const startLocalBuildFeedMock = vi.fn()
   const closeLocalBuildFeedMock = vi.fn()
@@ -239,6 +238,7 @@ export function createUpdaterMocks(): UpdaterMocks {
       disarmUpdateInstallExitWatchdog: disarmExitWatchdogMock
     }),
     updaterPrereleaseFeed: () => ({
+      fetchLatestStableReleaseTag: fetchLatestStableReleaseTagMock,
       fetchNewerReleaseTagsWithReadiness: async (...args: unknown[]) => {
         const result = await fetchNewerReleaseTagsMock(...args)
         return Array.isArray(result)
@@ -279,7 +279,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     shouldApplyNudgeMock.mockReset().mockReturnValue(false)
     fetchChangelogMock.mockReset().mockResolvedValue(null)
     fetchNewerReleaseTagsMock.mockReset().mockResolvedValue([])
-    sourceFeed.reset()
+    fetchLatestStableReleaseTagMock.mockReset().mockResolvedValue('v1.0.51')
     chooseLocalBuildMock.mockReset()
     closeLocalBuildFeedMock.mockReset()
     startLocalBuildFeedMock.mockReset().mockResolvedValue({
@@ -296,7 +296,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     clearTrackedRealTimers()
   })
 
-  return {
+  return sourceFeed.extend({
     appMock,
     browserWindowMock,
     nativeUpdaterMock,
@@ -313,11 +313,11 @@ export function createUpdaterMocks(): UpdaterMocks {
     armExitWatchdogMock,
     disarmExitWatchdogMock,
     fetchNewerReleaseTagsMock,
-    verifyReleaseTagManifestMock: sourceFeed.verifyReleaseTagManifestMock,
+    fetchLatestStableReleaseTagMock,
     chooseLocalBuildMock,
     startLocalBuildFeedMock,
     closeLocalBuildFeedMock,
     moduleFactories,
     resetUpdaterMocks
-  }
+  })
 }

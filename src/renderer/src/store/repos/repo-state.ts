@@ -29,7 +29,6 @@ import type {
 } from '../../../../shared/folder-workspace-path-status'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { ConfirmedUnsavedDiscards } from '../slices/worktrees/teardown/removed-workspace-unsaved-files'
-import type { RemoveProjectOutcome } from './project-removal-outcome'
 
 export const ERROR_TOAST_DURATION = 60_000
 
@@ -119,6 +118,10 @@ export type AllHostCatalogFetchOptions = {
   remoteHosts?: 'include' | 'skip'
 }
 
+export type AllHostRepoCatalogFetchOptions = AllHostCatalogFetchOptions & {
+  onHostLoaded?: (hostId: ExecutionHostId) => Promise<void>
+}
+
 export type ProjectRemovalFailure = {
   projectId: string
   reason: string
@@ -158,8 +161,8 @@ export type RuntimeCatalogFetchOptions = {
 
 export type RepoSlice = {
   repos: readonly Repo[]
-  projects: readonly Project[]
-  projectHostSetups: readonly ProjectHostSetup[]
+  endpointProjects: readonly Project[]
+  endpointProjectHostSetups: readonly ProjectHostSetup[]
   projectGroups: readonly ProjectGroup[]
   folderWorkspaces: readonly FolderWorkspace[]
   folderWorkspacePathStatuses: Record<string, FolderWorkspacePathStatusCacheEntry>
@@ -172,7 +175,7 @@ export type RepoSlice = {
   pendingSshRepoReadoptions: readonly SshRepoReadoption[]
   recordSshRepoReadoptions: (readoptions: readonly SshRepoReadoption[]) => void
   fetchRepos: (options: RuntimeCatalogFetchOptions) => Promise<void>
-  fetchReposForAllHosts: (options?: AllHostCatalogFetchOptions) => Promise<void>
+  fetchReposForAllHosts: (options?: AllHostRepoCatalogFetchOptions) => Promise<void>
   awaitLocalRepoCatalogSettlement: () => Promise<void>
   fetchRuntimeEnvironmentRepos: (environmentId: string) => Promise<Repo[]>
   fetchProjectGroups: (options: RuntimeCatalogFetchOptions) => Promise<void>
@@ -270,8 +273,6 @@ export type RepoSlice = {
   ) => Promise<boolean>
   // options.hostId is required: a bare id can resolve to another host's row (#13071). Removes nothing when that host has no row.
   // options.errorFeedback defaults to 'silent' so bulk/background callers keep their own aggregate reporting.
-  // options.mode 'forget-local' clears this client's records without calling the owning host; the
-  // returned 'owner-unverifiable' is what earns a caller the right to offer it.
   removeProject: (
     projectId: string,
     options: {
@@ -279,9 +280,10 @@ export type RepoSlice = {
       errorFeedback?: 'toast' | 'silent'
       automaticCleanup?: boolean
       confirmedDiscards?: ConfirmedUnsavedDiscards
-      mode?: 'delete-on-host' | 'forget-local'
+      /** Paired servers only: skip the unreachable server now and replay its repo.rm on reconnect. */
+      localOnly?: boolean
     }
-  ) => Promise<RemoveProjectOutcome>
+  ) => Promise<void>
   updateProject: (
     projectId: string,
     updates: ProjectUpdate,

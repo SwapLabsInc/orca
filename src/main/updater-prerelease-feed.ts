@@ -8,12 +8,24 @@ import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-
 import {
   AssetProbeBudget,
   probeReleaseManifest,
+  requestGitHubReleaseHead,
   type ReleaseManifestProbe
 } from './updater-release-asset-readiness'
-import { getReleaseAtomFeedUrl, getReleaseTagHrefPattern } from './updater-release-urls'
+import {
+  getLatestReleasePageUrl,
+  getReleaseAtomFeedUrl,
+  getReleaseTagHrefPattern,
+  getReleaseTagPathPattern
+} from './updater-release-urls'
 import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
+import { isSourceVersion, judgeManifestProbe } from './updater-release-tag-manifest'
 
 export { getReleaseDownloadUrl } from './updater-release-urls'
+export {
+  verifyReleaseTagManifest,
+  type ReleaseTagManifestVerdict,
+  type ReleaseTagTarget
+} from './updater-release-tag-manifest'
 
 const FETCH_TIMEOUT_MS = 5000
 const MAX_MANIFEST_PROBE_CANDIDATES = 6
@@ -42,68 +54,6 @@ export function isPerfPrereleaseTag(tag: string): boolean {
     identifiers[0] === 'rc' &&
     /^\d+$/.test(identifiers[1]) &&
     identifiers[2] === 'perf'
-  )
-}
-
-function isSourceVersion(version: string, source: ReleaseSource): boolean {
-  return isValidVersion(version) && getVersionReleaseSource(version) === source.id
-}
-
-/** The manifest names what electron-updater installs; only the advertised build of this source may be offered under the tag. */
-function manifestNamesAdvertisedVersion(
-  probe: ReleaseManifestProbe,
-  version: string,
-  source: ReleaseSource
-): boolean {
-  return (
-    probe.version !== null &&
-    isSourceVersion(probe.version, source) &&
-    compareVersions(probe.version, version) === 0
-  )
-}
-
-/** What a tag's manifest proves about the build advertised as `version`: `mismatch` names another build or source. */
-export type ReleaseTagManifestVerdict =
-  | { kind: 'ready' }
-  | { kind: 'not-ready' }
-  | { kind: 'unavailable' }
-  | { kind: 'mismatch'; manifestVersion: string }
-
-function judgeManifestProbe(
-  probe: ReleaseManifestProbe,
-  version: string,
-  source: ReleaseSource
-): ReleaseTagManifestVerdict {
-  if (probe.version !== null && !manifestNamesAdvertisedVersion(probe, version, source)) {
-    return { kind: 'mismatch', manifestVersion: probe.version }
-  }
-  // Why: a manifest that names no version cannot prove which build it installs.
-  return {
-    kind: probe.readiness === 'ready' && probe.version === null ? 'not-ready' : probe.readiness
-  }
-}
-
-/** A tag, the version it advertises, and the repo its feed reads — a dev channel's repo is not its source's own. */
-export type ReleaseTagTarget = {
-  tag: string
-  version: string
-  repo: string
-}
-
-/** Reads the manifest published under the target's tag in its repo and says whether it installs the advertised version of `source` on this platform. */
-export async function verifyReleaseTagManifest(
-  target: ReleaseTagTarget,
-  source: ReleaseSource
-): Promise<ReleaseTagManifestVerdict> {
-  return judgeManifestProbe(
-    await probeReleaseManifest(
-      target.tag,
-      target.repo,
-      undefined,
-      getMacSelfUpdateSourceFor(source)
-    ),
-    target.version,
-    source
   )
 }
 
@@ -223,6 +173,32 @@ async function resolveVersionsFromManifests(
   return resolved
 }
 
+export async function fetchLatestStableReleaseTag(
+  source: ReleaseSource = PRIMARY_RELEASE_SOURCE
+): Promise<string | null> {
+  try {
+    // Resolve only the release-page redirect; installer redirects continue on to signed storage URLs.
+    const latestUrl = getLatestReleasePageUrl(source)
+    const response = await requestGitHubReleaseHead(latestUrl)
+    if (!response?.redirectUrl || response.statusCode < 300 || response.statusCode >= 400) {
+      return null
+    }
+    const target = new URL(response.redirectUrl, latestUrl)
+    const match = target.pathname.match(getReleaseTagPathPattern(source))
+    if (target.origin !== 'https://github.com' || !match) {
+      return null
+    }
+    const tag = decodeURIComponent(match[1])
+    const version = normalizeTagToVersion(tag)
+    if (!isValidVersion(version) || isPrereleaseVersion(version)) {
+      return null
+    }
+    return (await probeReleaseManifest(tag, source.repo)).readiness === 'ready' ? tag : null
+  } catch {
+    return null
+  }
+}
+
 // Concrete tags keep manifests and downloaded assets on the same release.
 type FetchNewerReleaseTagOptions = {
   includePrerelease?: boolean
@@ -320,8 +296,8 @@ export async function fetchNewerReleaseTagsWithReadiness(
     }
     return [{ tag, version, readiness: verdict.kind }]
   })
-  // Why not-ready rather than no-newer: the primary source answers no-newer with GitHub's
-  // /releases/latest/download redirect, which serves the very release skipped above. A verified
+  // Why not-ready rather than no-newer: the primary source answers no-newer by pinning the tag
+  // GitHub's /releases/latest names, which is the very release skipped above. A verified
   // last-good tag gives electron-updater a real result instead, and the publishing-window retry
   // notices a re-upload under the same tag.
   if (!manifestResults.some(({ version }) => compareVersions(version, currentVersion) > 0)) {

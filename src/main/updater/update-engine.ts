@@ -1,4 +1,9 @@
-import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
+import type {
+  LoginHandler,
+  ProgressInfo,
+  UpdateDownloadedEvent,
+  UpdateInfo
+} from 'electron-updater'
 import type { ElectronAutoUpdater } from '../electron-updater-loader'
 
 /** The electron-updater events the state machine listens to, with electron-updater's own payloads. */
@@ -9,6 +14,7 @@ export type UpdateEngineEvents = {
   'update-available': (info: UpdateInfo) => void
   'update-downloaded': (event: UpdateDownloadedEvent) => void
   'download-progress': (info: ProgressInfo) => void
+  login: LoginHandler
 }
 
 /** The feed a check reads: one concrete release tag's download directory. */

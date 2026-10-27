@@ -33,25 +33,13 @@ async function clearSshHostWorkspacesImpl(
   }
 
   // Use the explicit SSH owner so a shared repo ID cannot resolve to a local or focused-host project.
-  // Why: forward the mode too. Without it a project on a runtime-owned SSH target would have its
-  // ephemeral VM destroyed during an operation defined as touching nothing outside this client.
   for (const repoId of resolution.hostRepoIds) {
     try {
-      const outcome = await store.removeProject(
-        repoId,
-        forgetLocalOnly
-          ? { hostId, mode: 'forget-local' as const, confirmedDiscards }
-          : { hostId, confirmedDiscards }
-      )
-      if (outcome.status !== 'removed') {
-        failedIds.push(repoId)
-      }
+      await store.removeProject(repoId, { hostId, confirmedDiscards })
     } catch {
       failedIds.push(repoId)
     }
-    // Why: removeProject reports its own outcome, but a returned status is not proof of the
-    // durable change. Verify the host's repo row is actually gone; if it lingers, the removal
-    // did not succeed.
+    // Project removal may swallow errors; verify that the host-qualified repo row actually disappeared.
     const stillPresent = useAppStore
       .getState()
       .repos.some((repo) => repo.id === repoId && getRepoExecutionHostId(repo) === hostId)

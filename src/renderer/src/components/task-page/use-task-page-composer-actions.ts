@@ -1,3 +1,4 @@
+import { selectCanonicalProjectHostSetups } from '@/store/project-host-setup-selector'
 import type { TaskPageJiraListEffectsModel } from '../use-task-page-jira-list-effects'
 import { useCallback } from 'react'
 import type { LinearIssue } from '../../../../shared/linear/issue-types'
@@ -11,8 +12,8 @@ import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { bindTaskPageJiraItemSourceContext } from '../task-page-jira-item-source-context'
 import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
-import { shouldHideTaskPageListChrome } from '@/components/task-page-list-chrome-visibility'
-import { getJiraIssueWorkspaceSeed } from '../task-page-source-context'
+import { shouldHideTaskPageListChrome } from './task-page-list-chrome-visibility'
+import { getJiraIssueWorkspaceSeed } from './task-page-source-context'
 import { findJiraIssueDefaultRepo } from '../../../../shared/jira/jira-project-reference'
 import { getRepoWorkspaceCreationTargetHint } from '@/lib/project-host-workspace-target'
 export function useTaskPageComposerActions(model: TaskPageJiraListEffectsModel) {
@@ -220,7 +221,10 @@ export function useTaskPageComposerActions(model: TaskPageJiraListEffectsModel) 
         taskSourceContext,
         initialRepoId: mappedRepo?.id,
         initialWorkspaceTarget: mappedRepo
-          ? getRepoWorkspaceCreationTargetHint(mappedRepo, useAppStore.getState().projectHostSetups)
+          ? getRepoWorkspaceCreationTargetHint(
+              mappedRepo,
+              selectCanonicalProjectHostSetups(useAppStore.getState())
+            )
           : undefined,
         prefilledName: getJiraIssueWorkspaceSeed(issue),
         telemetrySource: 'sidebar'

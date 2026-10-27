@@ -12,7 +12,7 @@ import {
 } from '../../../../../shared/agent-session-resume'
 import { resumeRecordFromStatus } from '../../../../../shared/agent-resume-record-from-status'
 import type { TerminalTab } from '../../../../../shared/terminal-tab-types'
-import { findTabForAgentEntry } from '../agent-status-pane-key-tab-binding'
+import { findTabForAgentEntry } from './agent-status-pane-key-tab-binding'
 
 /** Omission is not evidence. `interrupted` is refreshed from every payload, so a payload that says
  *  nothing about it must not clear a prior marker — the row then reads as passive hibernation and

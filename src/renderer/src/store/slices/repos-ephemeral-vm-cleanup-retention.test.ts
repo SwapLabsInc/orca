@@ -55,30 +55,6 @@ it('retains a runtime-owned SSH project when VM cleanup fails', async () => {
   )
 })
 
-// forget-local promises to touch nothing outside this client, and this project's removal exists
-// to destroy its VM — both cannot hold, so the mode is refused rather than silently leaking a
-// live VM or quietly breaking the promise.
-it('refuses forget-local for a runtime-owned SSH project instead of leaking its VM', async () => {
-  const runtimeRepo: Repo = { ...sshRepo, connectionId: 'runtime-ssh-runtime-1' }
-  const store = createTestStore()
-  store.setState({ repos: [runtimeRepo], activeRepoId: runtimeRepo.id })
-
-  const outcome = await store.getState().removeProject(runtimeRepo.id, {
-    hostId: getRepoExecutionHostId(runtimeRepo),
-    errorFeedback: 'toast',
-    mode: 'forget-local'
-  })
-
-  expect(outcome).toEqual({ status: 'failed' })
-  expect(store.getState().repos).toEqual([runtimeRepo])
-  expect(ephemeralVmCleanup).not.toHaveBeenCalled()
-  expect(reposRemoveForHost).not.toHaveBeenCalled()
-  expect(toast.error).toHaveBeenCalledWith(
-    expect.any(String),
-    expect.objectContaining({ description: expect.stringContaining('destroying that VM') })
-  )
-})
-
 const vmServerRepo: Repo = {
   ...sshRepo,
   id: 'vm-repo',
@@ -221,23 +197,4 @@ it("destroys the VM when the renderer's catalog predates the VM's server", async
 
   expect(ephemeralVmCleanup).toHaveBeenCalledWith({ runtimeId: 'runtime-1' })
   expect(store.getState().repos).toEqual([])
-})
-
-// A recipe VM's project now lives on the VM's managed server, so the refusal must cover that
-// shape too, not only a runtime-owned SSH connection.
-it("refuses forget-local for a project on a recipe VM's managed server", async () => {
-  const store = createTestStore()
-  store.setState({ repos: [vmServerRepo], runtimeEnvironments: [vmServer] })
-
-  const outcome = await store.getState().removeProject(vmServerRepo.id, {
-    hostId: 'runtime:env-vm',
-    mode: 'forget-local'
-  })
-
-  expect(outcome).toEqual({ status: 'failed' })
-  expect(store.getState().repos).toEqual([vmServerRepo])
-  expect(ephemeralVmListRuntimes).not.toHaveBeenCalled()
-  expect(ephemeralVmCleanup).not.toHaveBeenCalled()
-  expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
-  expect(reposRemoveForHost).not.toHaveBeenCalled()
 })

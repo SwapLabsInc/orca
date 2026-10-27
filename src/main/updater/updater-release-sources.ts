@@ -15,6 +15,8 @@ import type {
   ReleaseSourceStatus
 } from '../../shared/update-status-types'
 import { isExternallyManagedLinuxInstall } from '../linux-update-package-type'
+import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
+import type { UpdateCheckVariant } from './updater-types'
 
 /**
  * Why main decides the install mode: it is the verdict `downloadUpdate` and the pinned check
@@ -69,5 +71,20 @@ export async function listReleaseSourceStatuses(
         }
       }
     })
+  )
+}
+
+/** A routine check on a build no configured source owns reads no feed; the diagnostic says why. */
+export function recordRoutineCheckSkippedForUnknownSource(
+  current: string,
+  variant: UpdateCheckVariant
+): void {
+  recordUpdaterLifecycle(
+    'routine_check_skipped_unknown_source',
+    { current, variant },
+    {
+      level: 'warn',
+      message: `routine ${variant} check skipped: no configured release source owns ${current}`
+    }
   )
 }
