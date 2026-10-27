@@ -97,11 +97,9 @@ docs/**
 !docs/STYLEGUIDE.md
 !docs/styleguide/
 !docs/styleguide/**
+!docs/agents-md-refs/
+!docs/agents-md-refs/**
 !docs/reference/
-!docs/reference/cross-platform-support.md
-!docs/reference/git-workflow.md
-!docs/reference/test-antipatterns.md
-!docs/reference/component-fixtures.md
 !docs/reference/swaplabs-fork-builds.md
 !docs/reference/swaplabs-agent-resume.md
 !docs/agent-skill-sharing-implementation-checklist.md

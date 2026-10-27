@@ -4,8 +4,7 @@ import type { DaemonFileLog } from './daemon-file-log'
 import { readTerminalSpawnAdmissionArg } from './terminal-spawn-gate'
 import { automaticWorkMarkerPathFor } from './automatic-work-run-marker-store'
 import { defaultHostTerminalLedgerDir } from './host-terminal-ledger'
-// Re-exported so daemon-entry.ts reads the hand-over without another import line.
-export { handedOverEndpointArg } from './daemon-endpoint-handover'
+import { handedOverEndpointArg } from './daemon-endpoint-handover'
 
 export type DaemonStartOptions = {
   socketPath: string
@@ -55,7 +54,10 @@ export async function startDaemon(opts: DaemonStartOptions): Promise<DaemonHandl
     ...(opts.publishEndpointOwnership
       ? { publishEndpointOwnership: opts.publishEndpointOwnership }
       : {}),
-    ...(opts.handedOverEndpoint ? { handedOverEndpoint: opts.handedOverEndpoint } : {}),
+    // LOCAL: like spawnAdmission, a draining launch's hand-over arrives on argv (daemon-drain.ts).
+    ...(opts.handedOverEndpoint
+      ? { handedOverEndpoint: opts.handedOverEndpoint }
+      : handedOverEndpointArg(process.argv)),
     ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
     ...(opts.appVersion ? { appVersion: opts.appVersion } : {}),
     ...(opts.spawnerExecPath ? { spawnerExecPath: opts.spawnerExecPath } : {}),

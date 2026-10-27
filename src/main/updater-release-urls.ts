@@ -19,6 +19,16 @@ export function getLatestReleaseDownloadUrl(source: ReleaseSource): string {
   return `https://github.com/${source.repo}/releases/latest/download`
 }
 
+/** The page `/releases/latest` redirects to names the newest non-prerelease's tag. */
+export function getLatestReleasePageUrl(source: ReleaseSource): string {
+  return `https://github.com/${source.repo}/releases/latest`
+}
+
+/** Matches this source's `/releases/tag/<tag>` page path, capturing the tag. */
+export function getReleaseTagPathPattern(source: ReleaseSource): RegExp {
+  return new RegExp(`^/${escapeRegex(source.repo)}/releases/tag/([^/]+)$`)
+}
+
 export function getReleaseAtomFeedUrl(source: ReleaseSource): string {
   return `https://github.com/${source.repo}/releases.atom`
 }

@@ -1,13 +1,12 @@
 import type { BrowserWindow } from 'electron'
 import { vi, type Mock } from 'vitest'
+import { updaterMainWindow } from './updater-test-main-window'
 
-/** Test-only: the one surface the updater touches on its main window is `webContents.send`. */
+/** Test-only: upstream's updater window fake, with its `webContents.send` spy handed back. */
 export function createUpdaterMainWindowFake(): {
   mainWindow: BrowserWindow
   send: Mock<(channel: string, payload: unknown) => void>
 } {
   const send = vi.fn<(channel: string, payload: unknown) => void>()
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the updater reads nothing but webContents.send off its main window, and every suite asserts through this spy.
-  const mainWindow = { webContents: { send } } as unknown as BrowserWindow
-  return { mainWindow, send }
+  return { mainWindow: updaterMainWindow(send), send }
 }

@@ -86,17 +86,19 @@ function getManifestVersion(parsed: ParsedManifest | null): string | null {
   return version && isValidVersion(version) ? version : null
 }
 
-function getGitHubReleaseAssetReadiness(assetUrl: string): Promise<ReleaseReadiness> {
+type ReleaseHeadResponse = { statusCode: number; redirectUrl?: string }
+
+export function requestGitHubReleaseHead(assetUrl: string): Promise<ReleaseHeadResponse | null> {
   return new Promise((resolve) => {
     const request = net.request({ method: 'HEAD', url: assetUrl, redirect: 'manual' })
     let settled = false
-    const settle = (readiness: ReleaseReadiness): void => {
+    const settle = (response: ReleaseHeadResponse | null): void => {
       if (settled) {
         return
       }
       settled = true
       clearTimeout(timeout)
-      resolve(readiness)
+      resolve(response)
     }
     const timeout = setTimeout(() => {
       try {
@@ -104,29 +106,33 @@ function getGitHubReleaseAssetReadiness(assetUrl: string): Promise<ReleaseReadin
       } catch {
         // The request may already have been cancelled by Electron.
       }
-      settle('unavailable')
+      settle(null)
     }, FETCH_TIMEOUT_MS)
 
-    request.on('redirect', (statusCode) => {
-      // Why: GitHub's 302 proves the asset exists without probing its signed storage URL.
-      settle(statusCode >= 300 && statusCode < 400 ? 'ready' : 'unavailable')
+    request.on('redirect', (statusCode, _method, redirectUrl) => {
+      // GitHub's redirect proves existence without fetching the signed storage URL.
+      settle({ statusCode, redirectUrl })
     })
-    request.on('response', (response) => {
-      settle(
-        response.statusCode === 404
-          ? 'not-ready'
-          : response.statusCode >= 200 && response.statusCode < 300
-            ? 'ready'
-            : 'unavailable'
-      )
-    })
-    request.on('error', () => settle('unavailable'))
+    request.on('response', (response) => settle({ statusCode: response.statusCode }))
+    request.on('error', () => settle(null))
     try {
       request.end()
     } catch {
-      settle('unavailable')
+      settle(null)
     }
   })
+}
+
+async function getGitHubReleaseAssetReadiness(assetUrl: string): Promise<ReleaseReadiness> {
+  const response = await requestGitHubReleaseHead(assetUrl)
+  if (!response) {
+    return 'unavailable'
+  }
+  const ready =
+    response.redirectUrl !== undefined
+      ? response.statusCode >= 300 && response.statusCode < 400
+      : response.statusCode >= 200 && response.statusCode < 300
+  return response.statusCode === 404 ? 'not-ready' : ready ? 'ready' : 'unavailable'
 }
 
 async function getReleaseAssetReadiness(

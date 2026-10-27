@@ -210,7 +210,7 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
       // Deliver forced status before a queued check starts the next cycle.
       if (options?.force) {
         this.currentStatus = decoratedStatus
-        this.mainWindowRef?.webContents.send('updater:status', decoratedStatus)
+        this.sendToMainWindow('updater:status', decoratedStatus)
       }
       this.launchPendingUserInitiatedCheckAfterInFlight(pendingUserInitiatedCheckVariant)
       return
@@ -219,7 +219,7 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
       return
     }
     this.currentStatus = decoratedStatus
-    this.mainWindowRef?.webContents.send('updater:status', decoratedStatus)
+    this.sendToMainWindow('updater:status', decoratedStatus)
     this.startPinnedAutoDownloadIfRequested(decoratedStatus)
   }
 

@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import React, { useCallback, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -14,11 +13,8 @@ import { translate } from '@/i18n/i18n'
 import {
   getRepoExecutionHostId,
   isRuntimeOwnedSshTargetId,
-  normalizeExecutionHostId,
-  parseExecutionHostId
+  normalizeExecutionHostId
 } from '../../../../shared/execution-host'
-import { selectExecutionHostDisplayLabel } from '@/lib/execution-host-display-label'
-import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 import { countOpenRepoTerminalTabs } from '@/store/repos/repo-removal'
 import { getRecipeVmSshTargetForHost } from '@/lib/recipe-vm-managed-host'
 import { RemovalUnsavedFilesNotice } from './RemovalUnsavedFilesNotice'
@@ -32,10 +28,6 @@ import {
 // NUL cannot occur in project names, so translated name-token splitting is unambiguous.
 const NAME_TOKEN = '\u0000'
 
-// Why: a local removal returns in milliseconds, so show the spinner only once the call is slow
-// enough to read as one — a remote host, not a flicker (docs/STYLEGUIDE.md).
-const REMOVING_SPINNER_DELAY_MS = 200
-
 const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const activeModal = useAppStore((s) => s.activeModal)
   const modalData = useAppStore((s) => s.modalData)
@@ -47,31 +39,6 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
   const displayName = typeof modalData.displayName === 'string' ? modalData.displayName : ''
   const hostId =
     typeof modalData.hostId === 'string' ? normalizeExecutionHostId(modalData.hostId) : null
-
-  // Why: no answer arrived from the owning host on the first attempt, so what it did is unknown.
-  // The dialog stays open on that answer and re-offers the removal as a client-only forget.
-  const [ownerUnverifiable, setOwnerUnverifiable] = useState(false)
-  const [isRemoving, setIsRemoving] = useState(false)
-  const [showRemovingSpinner, setShowRemovingSpinner] = useState(false)
-  // Why: Cancel stays live while the host is being asked, and this dialog unmounts when the modal
-  // closes. Bumping on teardown fences a late answer out of the invocation that replaced it.
-  const removalTokenRef = useRef(0)
-  useEffect(() => {
-    setOwnerUnverifiable(false)
-    setIsRemoving(false)
-    return () => {
-      removalTokenRef.current += 1
-    }
-  }, [isOpen, repoId, hostId])
-
-  useEffect(() => {
-    if (!isRemoving) {
-      setShowRemovingSpinner(false)
-      return
-    }
-    const timer = window.setTimeout(() => setShowRemovingSpinner(true), REMOVING_SPINNER_DELAY_MS)
-    return () => window.clearTimeout(timer)
-  }, [isRemoving])
 
   // Remote files remain on the named host’s disk; ghost-host labels explain where recovery is possible.
   const sshConnectionId = useAppStore(
@@ -90,25 +57,6 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
       sshConnectionId
     )
   })
-  // Why: removeProject addresses exactly the opener's hostId, so that is the host the copy names.
-  const resolvedOwnerLabel = useAppStore((s) => {
-    if (!hostId) {
-      return null
-    }
-    const label = selectExecutionHostDisplayLabel(s, hostId)
-    const parsed = parseExecutionHostId(hostId)
-    // Why: with the environment record gone — the very case this copy describes — the resolver
-    // answers the routing id itself, and a slug like `env-a1b2` names nothing to the user.
-    return parsed?.kind === 'runtime' && label === parsed.environmentId ? null : label
-  })
-  const ownerLabel =
-    resolvedOwnerLabel ??
-    translate('auto.components.sidebar.RemoveFolderDialog.unnamedOwnerHost', 'that host')
-
-  // Why: the client-only forget goes through repos.removeForHost, which a paired web client does
-  // not implement — it has one runtime and no records of its own to clear. Offering the button
-  // there would guarantee a failure, so that client gets the explanation without the action.
-  const canForgetLocally = !isPairedWebClientWindow()
 
   const onRecipeVmServer = useAppStore(
     (s) =>
@@ -148,19 +96,8 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
           )
 
   // Translate the whole sentence for reorderable locales, then restore emphasis at the name sentinel.
-  const description = ownerUnverifiable
-    ? canForgetLocally
-      ? translate(
-          'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiable',
-          'Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. Removing it now clears this computer’s records only and sends nothing to {{host}}; if the project is still registered there, it comes back when that host reconnects.',
-          { name: NAME_TOKEN, host: ownerLabel }
-        )
-      : translate(
-          'auto.components.sidebar.RemoveFolderDialog.removeDescriptionOwnerUnverifiableWeb',
-          'Orca could not reach {{host}}, so whether {{name}} was removed there is unknown — the request may never have arrived, or it may have been carried out and the reply lost. This client keeps no records of its own to clear, so reconnect {{host}} and try again.',
-          { name: NAME_TOKEN, host: ownerLabel }
-        )
-    : onRecipeVmServer || isRuntimeOwnedSshTargetId(sshConnectionId)
+  const description =
+    onRecipeVmServer || isRuntimeOwnedSshTargetId(sshConnectionId)
       ? translate(
           'auto.components.sidebar.RemoveFolderDialog.removeDescriptionVmRecipe',
           'This removes {{name}} from Orca. Its VM recipe determines whether the environment and its files are permanently deleted.',
@@ -179,34 +116,17 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
           )
   const [descriptionBeforeName, descriptionAfterName] = description.split(NAME_TOKEN)
 
-  const handleConfirm = useCallback(async () => {
+  const handleConfirm = useCallback(() => {
     // Require the opener’s host so same-ID rows on other hosts cannot be removed.
-    if (!repoId || !hostId) {
-      closeModal()
-      return
-    }
-    const token = removalTokenRef.current
-    setIsRemoving(true)
-    const outcome = await removeProject(repoId, {
-      hostId,
-      errorFeedback: 'toast',
-      confirmedDiscards: confirmUnsavedDiscard(useAppStore.getState, unsavedTargets),
-      ...(ownerUnverifiable ? { mode: 'forget-local' as const } : {})
-    })
-    // Why: this invocation was cancelled or replaced while the host was being asked. closeModal is
-    // global, so acting now would dismiss whichever dialog the user opened next.
-    if (token !== removalTokenRef.current) {
-      return
-    }
-    setIsRemoving(false)
-    // Why: an unanswered host is not a failure to report and not a removal to celebrate — keep
-    // the dialog open so the only honest remaining action is the one the user now sees.
-    if (outcome.status === 'owner-unverifiable') {
-      setOwnerUnverifiable(true)
-      return
+    if (repoId && hostId) {
+      void removeProject(repoId, {
+        hostId,
+        errorFeedback: 'toast',
+        confirmedDiscards: confirmUnsavedDiscard(useAppStore.getState, unsavedTargets)
+      })
     }
     closeModal()
-  }, [closeModal, hostId, ownerUnverifiable, removeProject, repoId, unsavedTargets])
+  }, [closeModal, hostId, removeProject, repoId, unsavedTargets])
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -238,21 +158,9 @@ const RemoveFolderDialog = React.memo(function RemoveFolderDialog() {
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             {translate('auto.components.sidebar.RemoveFolderDialog.d36883e046', 'Cancel')}
           </Button>
-          {ownerUnverifiable && !canForgetLocally ? null : (
-            <Button
-              variant="destructive"
-              disabled={isRemoving}
-              onClick={() => void handleConfirm()}
-            >
-              {showRemovingSpinner ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              {ownerUnverifiable
-                ? translate(
-                    'auto.components.sidebar.RemoveFolderDialog.removeFromOrcaOnly',
-                    'Remove from Orca'
-                  )
-                : translate('auto.components.sidebar.RemoveFolderDialog.4dc5b5065b', 'Remove')}
-            </Button>
-          )}
+          <Button variant="destructive" onClick={handleConfirm}>
+            {translate('auto.components.sidebar.RemoveFolderDialog.4dc5b5065b', 'Remove')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,11 +1,11 @@
 import { app } from 'electron'
 import {
+  fetchLatestStableReleaseTag,
   fetchNewerReleaseTagsWithReadiness,
   getReleaseDownloadUrl
 } from '../updater-prerelease-feed'
 import { isMissingUpdateManifestFailure, isPrereleaseVersion } from '../updater-fallback'
-import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
-import { getLatestReleaseDownloadUrl } from '../updater-release-urls'
+import { recordRoutineCheckSkippedForUnknownSource } from './updater-release-sources'
 import { getReleaseSourceOrPrimary, isMultiSourceBuild } from '../../shared/release-sources'
 import type { CheckFailureSource, ReleaseFeedPreflightResult } from './updater-state'
 import type { UpdateCheckVariant } from './updater-types'
@@ -132,14 +132,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
       // primary's would offer upstream's release over it. Only an explicit pinned jump may cross.
       this.clearPrereleaseFallbackContext()
       this.clearPublishingWindowLastGoodCheck()
-      recordUpdaterLifecycle(
-        'routine_check_skipped_unknown_source',
-        { current: currentVersion, variant },
-        {
-          level: 'warn',
-          message: `routine ${variant} check skipped: no configured release source owns ${currentVersion}`
-        }
-      )
+      recordRoutineCheckSkippedForUnknownSource(currentVersion, variant)
       return 'not-available'
     }
     // Why sticky: routine checks only ever read the running build's own source, so a fork build is never offered upstream's newer semver.
@@ -250,10 +243,20 @@ export abstract class UpdaterReleaseFeed extends UpdaterInstallExecution {
     }
     this.clearPrereleaseFallbackContext()
     this.clearPublishingWindowLastGoodCheck()
-    const url = getLatestReleaseDownloadUrl(source)
-    console.info(
-      `[updater] release feed fallback: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
-    )
+    const stableTag = await fetchLatestStableReleaseTag(source)
+    if (!this.isActiveUpdateCheckAttempt(attemptId)) {
+      console.info(`[updater] release feed preflight superseded: current=${currentVersion}`)
+      return 'superseded'
+    }
+    if (!stableTag) {
+      throw new ReleaseFeedPreflightError(
+        'manifest-unavailable',
+        'default',
+        'Unable to resolve a ready stable release on GitHub'
+      )
+    }
+    const url = getReleaseDownloadUrl(stableTag, source)
+    console.info(`[updater] stable fallback feed pinned: current=${currentVersion} → ${url}`)
     autoUpdater.setFeedURL({ provider: 'generic', url })
     return 'ready'
   }

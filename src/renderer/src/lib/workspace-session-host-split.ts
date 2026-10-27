@@ -153,6 +153,9 @@ export function splitWorkspaceSessionByHost(
   hostIdByWorktreeId: HostIdByWorktreeId,
   options: {
     worktreeIdByTabId?: Map<string, string>
+    /** Hosts whose rows this write speaks for in full: a field it carries replaces theirs even when
+     *  none of their workspaces has an entry left, or main's fieldwise patch keeps the stale rows (#23914). */
+    emptyContainerHostIds?: readonly ExecutionHostId[]
     sleepingRecordOrigins?: SleepingRecordOriginHosts
   } = {}
 ): HostSessionSlices {
@@ -181,6 +184,10 @@ export function splitWorkspaceSessionByHost(
     // Seed explicit empty containers locally so merge preserves their presence.
     if (ownership !== 'global' && ownership !== 'hostPrivate') {
       localSlice[field] ??= Array.isArray(value) ? [] : {}
+      for (const hostId of options.emptyContainerHostIds ?? []) {
+        const slice = ensureSlice(slices, hostId, templates)
+        Object.assign(slice, { [field]: slice[field] ?? (Array.isArray(value) ? [] : {}) })
+      }
     }
     switch (ownership) {
       case 'global':

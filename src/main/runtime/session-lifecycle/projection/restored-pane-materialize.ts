@@ -5,10 +5,7 @@ import type {
   MobileTerminalCommand,
   MobileTerminalResumeCommand
 } from '../../terminal/launch/mobile-terminal-startup'
-import {
-  HOST_PANE_AGENT_REPORTED,
-  OrcaRuntimeWithHostPaneAgentResumeStart
-} from './host-pane-agent-resume-start'
+import { OrcaRuntimeWithHostPaneAgentResumeStart } from './host-pane-agent-resume-start'
 import { parseAppSshPtyId } from '../../../../shared/ssh-pty-id'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import { isUnclaimedRunningSleepRecord, markResumedRecordLive } from './sleep-record-pane-claim'
@@ -175,19 +172,8 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
   ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     // Recover undelivered startup commands (#7587) or recorded agent sessions (#27147, #27777); live-session attach skips startup commands, preventing double launches.
     const resumeStartup = await this.resolvePaneOwnedResumeStartup(worktreeId, tab)
-    // SwapLabs: with no record for the pane, the host's hook store may still resume its lost agent.
-    const hostResume =
-      resumeStartup === undefined
-        ? await this.startHostPaneAgentResume(worktreeId, tab, {
-            automatic,
-            targetsHost,
-            targetGroupId,
-            sessionId
-          })
-        : null
-    if (hostResume && hostResume !== HOST_PANE_AGENT_REPORTED) {
-      return hostResume
-    }
+    // SwapLabs #30: a refused resume of the hook store's session still opens the pane's shell.
+    const hostHookResume = this.resumesFromHostHookStore(worktreeId, tab, resumeStartup)
     // After a claimed-record resume starts, mark that record live.
     const paneKey = `${tab.parentTabId}:${tab.leafId}`
     const resumedRecord =
@@ -197,7 +183,7 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
     let agentStartup: MobileTerminalCommand | MobileTerminalResumeCommand = resumeStartup ?? {}
     const resumeClaim =
       resumeStartup && 'resumeClaim' in resumeStartup ? resumeStartup.resumeClaim : null
-    if (resumeStartup === undefined && hostResume !== HOST_PANE_AGENT_REPORTED && tab.launchAgent) {
+    if (resumeStartup === undefined && tab.launchAgent) {
       let workspace
       try {
         workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
@@ -234,7 +220,7 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
             ? {
                 resumeProviderSession: agentStartup.resumeProviderSession,
                 resumeOrigin: 'saved' as const,
-                spawnIntent: automatic ? 'automatic-restore' : 'user-resume'
+                spawnIntent: this.restoreSpawnIntent(hostHookResume, automatic)
               }
             : {}),
           launchRuntime: agentStartup.launchRuntime,
@@ -283,6 +269,17 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
       return created
     } catch (err) {
       resumeClaim?.settleFailure(dispatched, err)
+      const shell = hostHookResume
+        ? this.openShellAfterRefusedHostResume(
+            worktreeId,
+            tab,
+            { automatic, targetsHost, targetGroupId, sessionId },
+            err
+          )
+        : null
+      if (shell) {
+        return await shell
+      }
       if (
         !(automatic && isWorktreeTerminalsSleepingError(err)) &&
         sessionId &&

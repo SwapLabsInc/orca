@@ -125,6 +125,8 @@ describe('re-creating a pane whose terminal was lost', () => {
     expect(spawn.mock.calls[0]![0].command).toMatch(
       new RegExp(`^claude .*--dangerously-skip-permissions.*--model.*opus.*--resume.*${SESSION}`)
     )
+    // Why undeclared: a restore intent would let an unclean-death pause hold the resume back.
+    expect(spawn.mock.calls[0]![0]).not.toHaveProperty('spawnIntent')
     expect(activated.tabs[0]).toMatchObject({
       type: 'terminal',
       status: 'ready',
