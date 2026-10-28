@@ -122,6 +122,7 @@ describe('run facts: the controller write funnel', () => {
     })
 
     expect(run.firstUserInputAt()).not.toBeNull()
+    expect(run.runtime.terminalRunFacts.readTypedInput(PTY_ID)?.unsubmitted).toBe(true)
   })
 
   it('records a dispatched agent prompt before its first write', async () => {
@@ -167,6 +168,7 @@ describe('run facts: the controller write funnel', () => {
     expect(run.kinds).toEqual(['orchestration'])
     expect(run.firstUserInputAt()).not.toBeNull()
     expect(run.runtime.terminalRunFacts.readLastDrivingInputAt(PTY_ID)).toBeNull()
+    expect(run.runtime.terminalRunFacts.readTypedInput(PTY_ID)).toBeNull()
   })
 
   it('records nothing for a client query reply', async () => {

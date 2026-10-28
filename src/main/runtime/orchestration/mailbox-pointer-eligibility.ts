@@ -31,14 +31,21 @@ export type OrchestrationPointerBatch = {
   heldDeliveryId: string | undefined
 }
 
+/** Mail that only proves a worker is alive: `check` returns it, but it never warrants typing a
+ *  pointer on its own, which would land in whatever the user is typing to the agent. */
+export const LIVENESS_ONLY_POINTER_TYPES: readonly string[] = ['heartbeat']
+
 /** Both delivery lanes share this synchronous SQL selection; unfiltered waiters preempt all pointers.
  * Concrete waiter types are excluded byte-exactly in SQL; no JavaScript post-filter is needed.
- * An unacked batch defers rather than drops: only mail it does not hold is eligible, once each. */
+ * An unacked batch defers rather than drops: only mail it does not hold is eligible, once each.
+ * A batch of only `silentTypes` selects nothing; that mail stays undelivered, so the next pointer
+ * counts it as `check` will. */
 export function selectOrchestrationPointerBatch(input: {
   db: OrchestrationDb
   mailboxHandle: string
   waiters: ReadonlySet<OrchestrationMessageWaiter> | undefined
   reservedTypes: ReadonlySet<string> | undefined
+  silentTypes?: readonly string[]
 }): OrchestrationPointerBatch {
   if (hasUnfilteredOrchestrationWaiter(input.waiters)) {
     return { messages: [], heldDeliveryId: undefined }
@@ -50,14 +57,21 @@ export function selectOrchestrationPointerBatch(input: {
     }
   }
   const held = input.db.getOutstandingMailboxDelivery?.(input.mailboxHandle)
-  return {
-    messages: input.db.getUndeliveredUnreadMessages(input.mailboxHandle, undefined, {
-      excludeTypes: [...excludedTypes],
+  const select = (excludeTypes: string[], limit: number) =>
+    input.db.getUndeliveredUnreadMessages(input.mailboxHandle, undefined, {
+      excludeTypes,
       excludeIds: held?.messageIds,
-      limit: ORCHESTRATION_DELIVERY_BATCH_LIMIT
-    }),
-    heldDeliveryId: held?.id
-  }
+      limit
+    })
+  const messages = select([...excludedTypes], ORCHESTRATION_DELIVERY_BATCH_LIMIT)
+  const silentTypes = input.silentTypes ?? []
+  const silentOnly =
+    silentTypes.length > 0 &&
+    messages.every((message) => silentTypes.includes(message.type)) &&
+    // A full page of silent mail can hide newer mail past it, which still warrants this pointer.
+    (messages.length < ORCHESTRATION_DELIVERY_BATCH_LIMIT ||
+      select([...excludedTypes, ...silentTypes], 1).length === 0)
+  return { messages: silentOnly ? [] : messages, heldDeliveryId: held?.id }
 }
 
 export function shouldReleaseOrchestrationPointer(

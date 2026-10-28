@@ -4,12 +4,22 @@ import {
 } from '../persistence/loading-store/pty-binding-span'
 import { isUntypedTerminalInput } from '../../shared/terminal-untyped-input'
 import { isDrivingInputKind, type TerminalInputKind } from '../../shared/terminal-input-kind'
+import { typedPromptInputEffect } from './terminal-typed-prompt-input'
 
 export type TerminalRunFacts = {
   /** This process was started for its pane, not reattached, adopted or cold-restored. */
   freshSpawn: boolean
   /** When input first drove this process, from any client or driver; null if none has. */
   firstUserInputAt: number | null
+}
+
+/** Keys a client typed into the PTY's current process that could edit an agent's prompt. */
+export type TerminalTypedInput = {
+  at: number
+  /** Grows with every such input on any PTY, so a reader can tell whether more arrived since. */
+  serial: number
+  /** Whether keys arrived after the last submit or clear, so a draft may be waiting unsent. */
+  unsubmitted: boolean
 }
 
 export type TerminalSpawnCommit = Parameters<typeof spawnCommitBindingOrigin>[0] & {
@@ -43,6 +53,8 @@ export class TerminalRunFactsRegister {
   // Why apart from the run record: input must count on a PTY main adopted without a commit.
   private readonly lastInputAtByPtyId = new Map<string, number>()
   private readonly lastDrivingInputAtByPtyId = new Map<string, number>()
+  private readonly typedInputByPtyId = new Map<string, TerminalTypedInput>()
+  private typedInputSerial = 0
   private readonly pendingByPtyId = new Map<
     string,
     { incarnationId: string | null; firstInputAt: number | null }
@@ -90,6 +102,7 @@ export class TerminalRunFactsRegister {
     if (!sameProcess) {
       this.lastInputAtByPtyId.delete(commit.id)
       this.lastDrivingInputAtByPtyId.delete(commit.id)
+      this.typedInputByPtyId.delete(commit.id)
     }
     this.runsByPtyId.set(commit.id, {
       incarnationId,
@@ -117,6 +130,7 @@ export class TerminalRunFactsRegister {
     if (isDrivingInputKind(inputKind)) {
       if (inputKind === 'driving') {
         this.lastDrivingInputAtByPtyId.set(ptyId, now)
+        this.recordTypedInput(ptyId, data, now)
       }
       for (const listener of this.inputListeners) {
         listener(ptyId, now)
@@ -142,6 +156,11 @@ export class TerminalRunFactsRegister {
   /** Like readLastInputAt, but only `driving` input, so Orca's own launch and orchestration writes don't count. */
   readLastDrivingInputAt(ptyId: string): number | null {
     return this.lastDrivingInputAtByPtyId.get(ptyId) ?? null
+  }
+
+  /** The last `driving` keys that could edit an agent's prompt; null if none reached this process. */
+  readTypedInput(ptyId: string): Readonly<TerminalTypedInput> | null {
+    return this.typedInputByPtyId.get(ptyId) ?? null
   }
 
   /** A run main never saw committed reads as not fresh, which keeps today's close-on-exit. */
@@ -171,6 +190,19 @@ export class TerminalRunFactsRegister {
     this.runsByPtyId.delete(ptyId)
     this.lastInputAtByPtyId.delete(ptyId)
     this.lastDrivingInputAtByPtyId.delete(ptyId)
+    this.typedInputByPtyId.delete(ptyId)
     this.pendingByPtyId.delete(ptyId)
+  }
+
+  private recordTypedInput(ptyId: string, data: string, now: number): void {
+    const effect = typedPromptInputEffect(data)
+    if (effect) {
+      this.typedInputSerial += 1
+      this.typedInputByPtyId.set(ptyId, {
+        at: now,
+        serial: this.typedInputSerial,
+        unsubmitted: effect === 'edit'
+      })
+    }
   }
 }

@@ -13,6 +13,7 @@ import type {
   OrchestrationMailboxPointerState
 } from './mailbox-pointer-state'
 import type { WriteSettlement } from '../../../shared/pty-write-settlement'
+import { hasTypedSincePointerWrite } from './mailbox-pointer-typing-hold'
 
 type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
   mailboxOwner: OrchestrationMailboxOwner
@@ -25,6 +26,7 @@ type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
   getMessageWaiters: (mailboxHandle: string) => ReadonlySet<TWaiter> | undefined
   isLeafPtyProvenAbsent: (ptyId: string) => Promise<boolean>
   isPtyAwaitingUserInput: (ptyId: string) => boolean
+  readTypedInputSerial: (ptyId: string) => number | null
   writePty: (ptyId: string, data: string) => WriteSettlement | Promise<WriteSettlement>
   settle: (ptyId: string, flight: OrchestrationMailboxDeliveryFlight) => void
   redrive: (mailboxHandle: string, force?: boolean) => void
@@ -53,6 +55,7 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
   let redriveClearedPointer = true
   let submitted = false
   let releaseWithoutRedrive = false
+  let leftToUser = false
   let finalizeReservation = true
   let preserveAmbiguousDelivery = false
   let deferredUntilIdle = false
@@ -90,6 +93,15 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
           exactTarget.leaf.lastAgentStatus === 'working')
       if (!exactTarget?.leaf.writable || !sameMailbox) {
         clearAndRedrive = true
+      } else if (
+        hasTypedSincePointerWrite(
+          deps.readTypedInputSerial(input.ptyId),
+          input.flight.typedInputSerialAtWrite
+        )
+      ) {
+        // Keys after the pointer text share its composer, so Enter would send the user's draft too;
+        // the pointer stays there for them to send or delete, and its mail stays for `check`.
+        leftToUser = true
       } else if (
         (exactTarget.leaf.lastAgentStatusObservedLive &&
           exactTarget.leaf.lastAgentStatus === null) ||
@@ -154,7 +166,7 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
             // Runtime teardown can close the DB while this delayed submit is settling.
             rollbackPersisted = false
           }
-        } else if (submitted || releaseWithoutRedrive) {
+        } else if (submitted || releaseWithoutRedrive || leftToUser) {
           try {
             deps.getDb()?.settleMailboxPointerEnter(messageIds, reservationTarget, [expectedPhase])
           } catch {
@@ -162,7 +174,7 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
           }
         }
         released =
-          submitted || clearAndRedrive || releaseWithoutRedrive
+          submitted || clearAndRedrive || releaseWithoutRedrive || leftToUser
             ? deps.state.clearWatermark(input.mailboxHandle, input.newestSequence, input.ptyId)
             : deps.state.deactivateWatermark(input.mailboxHandle, input.newestSequence, input.ptyId)
       }

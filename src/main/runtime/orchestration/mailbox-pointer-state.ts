@@ -8,6 +8,8 @@ export type OrchestrationMailboxDeliveryFlight = {
   idleObservedWhileDeferred: boolean
   /** The incarnation that staged this flight, so retirement can name the rows it owns. */
   processIncarnation?: string
+  /** The user's typed-input serial when the pointer text was written; later keys share its composer. */
+  typedInputSerialAtWrite?: number
 }
 
 export type ParkedOrchestrationMailboxDelivery = {

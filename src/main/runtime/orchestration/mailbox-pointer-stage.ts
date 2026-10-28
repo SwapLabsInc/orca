@@ -92,6 +92,7 @@ export function stageOrchestrationMailboxPointer<TWaiter extends OrchestrationMe
     args.state.deactivateWatermark(args.mailboxHandle, args.newestSequence, ptyId)
     args.settle(ptyId, flight)
   }
+  flight.typedInputSerialAtWrite = args.deps.readTypedInputSerial(ptyId) ?? undefined
   try {
     const writeResult = args.deps.writePty(
       ptyId,
@@ -157,6 +158,7 @@ function finishPointerWriteAndStageEnter<TWaiter extends OrchestrationMessageWai
           getMessageWaiters: args.deps.getMessageWaiters,
           isLeafPtyProvenAbsent: args.deps.isLeafPtyProvenAbsent,
           isPtyAwaitingUserInput: args.deps.isPtyAwaitingUserInput,
+          readTypedInputSerial: args.deps.readTypedInputSerial,
           writePty: args.deps.writePty,
           settle: args.settle,
           redrive: args.redrive

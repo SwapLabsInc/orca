@@ -42,6 +42,7 @@ function pointerDeps(
     }),
     isLeafPtyProvenAbsent: async () => false,
     isPtyAwaitingUserInput: () => false,
+    readTypedInputSerial: () => null,
     redriveMailbox: vi.fn(),
     writePty
   }
