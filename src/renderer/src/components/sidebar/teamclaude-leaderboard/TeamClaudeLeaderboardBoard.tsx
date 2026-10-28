@@ -42,7 +42,7 @@ function LeaderboardRow({ entry }: { entry: TeamClaudeLeaderboardEntry }): React
           </span>
         </div>
       </HoverCardTrigger>
-      <HoverCardContent side="right" sideOffset={8} className="w-64 p-3 text-xs">
+      <HoverCardContent side="right" sideOffset={8}>
         {entry.clients.map((client) => (
           <div key={client} className="break-all">
             {client}
