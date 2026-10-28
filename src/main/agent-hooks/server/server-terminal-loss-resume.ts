@@ -3,7 +3,11 @@ import {
   selectTerminalLossAgentResume,
   type TerminalLossAgentResume
 } from './server-retained-identity'
-import type { EnrichedAgentHookEventPayload, UserEndedAgentSession } from './server-types'
+import type {
+  EnrichedAgentHookEventPayload,
+  IncomingAgentHookEvent,
+  UserEndedAgentSession
+} from './server-types'
 import { launchTokenHash } from '../../../shared/agent-hook-spool'
 import { isSameAgentProcess } from '../../../shared/agent-process-presence'
 
@@ -47,6 +51,17 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
       { paneKey, sessionId, launchToken, connectionId },
       isReplay === true
     )
+  }
+
+  /** Marks the row of a relay that reports user-ended sessions: only its rows prove the user did not
+   *  quit the agent, so only they may be resumed after the pane's terminal is lost. */
+  protected withRelayUserEndedSessionReports(
+    envelope: { reportsUserEndedSessions?: unknown },
+    event: IncomingAgentHookEvent
+  ): IncomingAgentHookEvent & { reportsUserEndedSessions?: true } {
+    return envelope.reportsUserEndedSessions === true
+      ? { ...event, reportsUserEndedSessions: true }
+      : event
   }
 
   /** The agent reported that the user ended its session: the pane keeps the identity for a manual
