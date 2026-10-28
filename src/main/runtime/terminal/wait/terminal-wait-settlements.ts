@@ -21,6 +21,7 @@ import { leafTuiIdleEvidence, ptyTuiIdleEvidence } from '../../tui-idle-evidence
 import { TUI_IDLE_QUIESCENCE_MS } from '../../orca-runtime-postlude'
 import { USER_INPUT_HOLD_CAP_MS } from '../../claude-open-dialog-hold'
 import { detectTerminalComposerDraft } from '../../../../shared/terminal-composer-draft'
+import { isUserTypingToPointerTarget } from '../../orchestration/mailbox-pointer-typing-hold'
 
 import type { OrcaRuntimeWithResolveWaiter } from '../../orca-runtime-resolve-waiter'
 
@@ -215,7 +216,10 @@ export abstract class OrcaRuntimeWithResolveExitWaiters extends OrcaRuntimeWithB
 
   /** An unsent draft would be submitted with the injected text; the cap bounds an abandoned or misread one. */
   private isPtyHoldingDelivery(ptyId: string): boolean {
-    if (this.isPtyAwaitingUserInput(ptyId)) {
+    if (
+      this.isPtyAwaitingUserInput(ptyId) ||
+      isUserTypingToPointerTarget(this.terminalRunFacts.readTypedInput(ptyId), Date.now())
+    ) {
       return true
     }
     const lastInputAt = this.terminalRunFacts.readLastDrivingInputAt(ptyId)

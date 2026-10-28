@@ -57,6 +57,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput: () => false,
+        readTypedInputSerial: () => null,
         writePty,
         settle,
         redrive: vi.fn()
@@ -163,6 +164,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput: () => false,
+        readTypedInputSerial: () => null,
         writePty,
         settle,
         redrive: vi.fn()
@@ -225,6 +227,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput,
+        readTypedInputSerial: () => null,
         writePty,
         settle,
         redrive: vi.fn()
@@ -257,6 +260,72 @@ describe('orchestration mailbox pointer submit', () => {
     await vi.waitFor(() => expect(settle).toHaveBeenCalledOnce())
     expect(writePty).toHaveBeenCalledOnce()
     expect(writePty).toHaveBeenCalledWith(ptyId, '\r')
+  })
+
+  // Keys typed behind the pointer share its composer; a held Enter would send them too.
+  it('never presses a held Enter once the user typed after the pointer', async () => {
+    const ptyId = 'pty-question'
+    const mailboxHandle = 'run:run-1'
+    const leaf = {
+      tabId: 'tab-1',
+      leafId: 'leaf-1',
+      ptyId,
+      writable: true,
+      lastAgentStatus: 'idle' as const,
+      lastAgentStatusObservedLive: true,
+      lastOscTitle: '✳ Claude Code'
+    }
+    const target = { leaf, terminalHandle: 'term-question', processIncarnation: 'inc-question' }
+    const db = new OrchestrationDb(':memory:')
+    const message = db.insertMessage({ from: 'a', to: mailboxHandle, subject: 'mail' })
+    const reservation = { ptyId, processIncarnation: target.processIncarnation }
+    db.stageMailboxPointerEnter([message.id], reservation)
+    db.markMailboxPointerWriteAttempted([message.id], reservation)
+    const state = new OrchestrationMailboxPointerState()
+    const flight = state.beginFlight(ptyId)
+    flight.typedInputSerialAtWrite = 4
+    state.setWatermark(mailboxHandle, 1, ptyId, 'tab-1:leaf-1')
+    let dialogOpen = true
+    let typedInputSerial = 4
+    const writePty = vi.fn(settledWriteStub())
+    const settle = vi.fn(() => state.settleFlight(ptyId, flight))
+
+    submitOrchestrationMailboxPointer(
+      {
+        mailboxOwner: { resolve: () => mailboxHandle } as never,
+        state,
+        getDb: () => db,
+        resolveSubmitTarget: () => target,
+        getMessageWaiters: () => undefined,
+        isLeafPtyProvenAbsent: async () => false,
+        isPtyAwaitingUserInput: () => dialogOpen,
+        readTypedInputSerial: () => typedInputSerial,
+        writePty,
+        settle,
+        redrive: vi.fn()
+      },
+      {
+        leaf,
+        mailboxHandle,
+        messages: [{ id: message.id, type: 'status' }],
+        newestSequence: 1,
+        ptyId,
+        flight,
+        expectedTarget: target
+      }
+    )
+    await vi.waitFor(() => expect(flight.deferredUntilIdle).toBe(true))
+
+    typedInputSerial = 5
+    dialogOpen = false
+    state.takeDeferredEnter(ptyId)?.()
+    await vi.waitFor(() => expect(settle).toHaveBeenCalledOnce())
+
+    expect(writePty).not.toHaveBeenCalled()
+    expect(db.getMessageById(message.id)).toMatchObject({ read: 0, pointer_enter_pending: 0 })
+    expect(db.getMessageById(message.id)?.delivered_at).not.toBeNull()
+    expect(state.hasActiveWatermark(mailboxHandle)).toBe(false)
+    db.close()
   })
 
   it.each([
@@ -308,6 +377,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput: () => false,
+        readTypedInputSerial: () => null,
         writePty,
         settle,
         redrive
@@ -439,6 +509,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput: () => false,
+        readTypedInputSerial: () => null,
         writePty,
         settle,
         redrive: vi.fn()
@@ -501,6 +572,7 @@ describe('orchestration mailbox pointer submit', () => {
         getMessageWaiters: () => undefined,
         isLeafPtyProvenAbsent: async () => false,
         isPtyAwaitingUserInput: () => false,
+        readTypedInputSerial: () => null,
         writePty: vi.fn(settledWriteStub()),
         settle,
         redrive

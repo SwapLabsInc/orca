@@ -1,6 +1,7 @@
 import type { PointerDeliveryDependencies } from './mailbox-pointer-delivery-contract'
 import {
   hasUnfilteredOrchestrationWaiter,
+  LIVENESS_ONLY_POINTER_TYPES,
   selectOrchestrationPointerBatch,
   type OrchestrationMessageWaiter
 } from './mailbox-pointer-eligibility'
@@ -114,7 +115,8 @@ export class OrchestrationMailboxPointerDelivery<TWaiter extends OrchestrationMe
       db,
       mailboxHandle,
       waiters,
-      reservedTypes: options.reservedTypes
+      reservedTypes: options.reservedTypes,
+      silentTypes: LIVENESS_ONLY_POINTER_TYPES
     })
     if (unread.length === 0 || !leaf.writable || !leaf.ptyId) {
       return

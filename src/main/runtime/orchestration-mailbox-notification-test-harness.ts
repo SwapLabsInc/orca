@@ -9,6 +9,7 @@ import type { TuiAgent } from '../../shared/tui-agent'
 import type Database from '../sqlite/sync-database'
 import { OrcaRuntimeService } from './orca-runtime'
 import { OrchestrationDb } from './orchestration/db'
+import type { MessageType } from './orchestration/types'
 import { RpcDispatcher } from './rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
 import type { RuntimeStore } from './runtime-store-contract'
@@ -49,12 +50,17 @@ export function createBoundRun(db: OrchestrationDb, objective: string) {
   })
 }
 
-export function insertDirectRunMessage(db: OrchestrationDb, runId: string, subject: string) {
+export function insertDirectRunMessage(
+  db: OrchestrationDb,
+  runId: string,
+  subject: string,
+  type: MessageType = 'status'
+) {
   const message = db.insertMessage({
     from: 'term_worker',
     to: TERMINAL_HANDLE,
     subject,
-    type: 'status',
+    type,
     runId,
     deliveryContract: 'current_delivery'
   })

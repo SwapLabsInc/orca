@@ -33,6 +33,8 @@ export type PointerDeliveryDependencies<TWaiter extends OrchestrationMessageWait
     ptyId: string
   ) => OrchestrationMailboxPointerSubmitTarget | null
   isLeafPtyProvenAbsent: (ptyId: string) => Promise<boolean>
+  /** Serial of the last keys a client typed into the PTY (TerminalTypedInput); null if none. */
+  readTypedInputSerial: (ptyId: string) => number | null
   redriveMailbox: (mailboxHandle: string, reservedTypes?: ReadonlySet<string>) => void
   writePty: (ptyId: string, data: string) => WriteSettlement | Promise<WriteSettlement>
 }

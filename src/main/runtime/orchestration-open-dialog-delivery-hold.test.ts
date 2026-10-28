@@ -87,12 +87,12 @@ describe('mailbox delivery into a pane awaiting the user', () => {
   )
 
   it.each([
-    ['sent', 'driving', '\x1b[2J\x1b[H', 5000],
-    ['abandoned past the cap', 'driving', '', USER_INPUT_HOLD_CAP_MS],
-    ["not for Orca's own launch draft", 'launch', '', 0]
+    ['sent', 'driving', '\r', '\x1b[2J\x1b[H', 5000],
+    ['abandoned past the cap', 'driving', null, '', USER_INPUT_HOLD_CAP_MS],
+    ["not for Orca's own launch draft", 'launch', null, '', 0]
   ] as const)(
     'holds the pointer while the composer has an unsent draft; %s',
-    async (_label, inputKind, screenAfter, waitAfterMs) => {
+    async (_label, inputKind, keysAfter, screenAfter, waitAfterMs) => {
       vi.useFakeTimers()
       const db = createDatabase('orca-composer-draft-delivery-hold-')
       const { runtime, write } = createRuntime(db, {
@@ -112,6 +112,9 @@ describe('mailbox delivery into a pane awaiting the user', () => {
       await vi.advanceTimersByTimeAsync(10_000)
       expect(write).toHaveBeenCalledTimes(inputKind === 'launch' ? 2 : 0)
 
+      if (keysAfter) {
+        runtime.terminalRunFacts.recordInput(PTY_ID, inputKind, keysAfter)
+      }
       runtime.onPtyData(PTY_ID, screenAfter, 3)
       await vi.advanceTimersByTimeAsync(waitAfterMs)
 
