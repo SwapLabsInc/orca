@@ -3751,7 +3751,12 @@ export function createRemoteRuntimePtyTransport(
 
     attach(options) {
       settleSignInConnectWait()
-      recoveryInputHold.expect(null)
+      // Why: like the local attach, keys typed before it reach the terminal this pane names, never another.
+      recoveryInputHold.expect(
+        opts.bufferInputUntilConnect && opts.releasePreconnectInput?.() !== false
+          ? restoredInputEndpoint(options.existingPtyId)
+          : null
+      )
       attachPane(options, false)
     },
 
