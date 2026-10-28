@@ -6,6 +6,7 @@ import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { resolveLeftTitlebarChromeLayout } from '@/lib/titlebar-left-chrome'
 import { shouldShowWorktreeCreationSurface } from '@/lib/worktree-creation-surface'
 import { useAppStore } from '../store'
+import { measureTitlebarLeftMinWidth } from './titlebar-left-min-width'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import { selectActiveTerminalChromeState } from '../store/active-terminal-chrome-selector'
 import { useSystemPrefersDark } from '../components/terminal-pane/use-system-prefers-dark'
@@ -94,6 +95,7 @@ export function useAppChromeLayout() {
 
   const titlebarLeftControlsRef = useRef<HTMLDivElement | null>(null)
   const [collapsedSidebarHeaderWidth, setCollapsedSidebarHeaderWidth] = useState(0)
+  const [titlebarLeftMinWidth, setTitlebarLeftMinWidth] = useState(0)
   useLayoutEffect(() => {
     const controls = titlebarLeftControlsRef.current
     if (!controls) {
@@ -102,6 +104,7 @@ export function useAppChromeLayout() {
 
     const updateWidth = (): void => {
       setCollapsedSidebarHeaderWidth(controls.getBoundingClientRect().width)
+      setTitlebarLeftMinWidth(measureTitlebarLeftMinWidth(controls))
     }
 
     updateWidth()
@@ -109,8 +112,16 @@ export function useAppChromeLayout() {
       updateWidth()
     })
     observer.observe(controls)
+    // Why: the zoom-scaled traffic-light pad can grow while the full-width row keeps its size.
+    for (const group of controls.children) {
+      observer.observe(group)
+      for (const control of group.children) {
+        observer.observe(control)
+      }
+    }
     return () => observer.disconnect()
   }, [
+    activeView,
     isFullScreen,
     settings?.showTitlebarAppName,
     showSidebar,
@@ -142,6 +153,7 @@ export function useAppChromeLayout() {
     // Retained workbench panes need a separate visibility condition.
     terminalWorkbenchVisible: workspaceChromeActive,
     titlebarLeftControlsRef,
+    titlebarLeftMinWidth,
     workspaceChromeActive
   }
 }

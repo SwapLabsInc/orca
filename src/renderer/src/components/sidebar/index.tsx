@@ -46,11 +46,14 @@ export const WORKTREE_SIDEBAR_RESIZE_HANDLE_LINE_CLASS_NAME =
 type SidebarProps = {
   worktreeScrollOffsetRef: React.MutableRefObject<number>
   worktreeScrollAnchorRef: React.MutableRefObject<VirtualizedScrollAnchor>
+  /** Width the titlebar header above the sidebar needs for its non-shrinking controls. */
+  headerMinWidth?: number
 }
 
 function Sidebar({
   worktreeScrollOffsetRef,
-  worktreeScrollAnchorRef
+  worktreeScrollAnchorRef,
+  headerMinWidth = 0
 }: SidebarProps): React.JSX.Element {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -139,10 +142,12 @@ function Sidebar({
     }
   }, [agentDashboardDrawerOpen, setAgentDashboardDrawerOpen, showAgentDashboard])
 
+  // Why: zooming out widens the traffic-light pad past MIN_WIDTH; render at least that wide without rewriting the stored width.
+  const minWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, headerMinWidth))
   const { containerRef, onResizeStart, isResizing } = useSidebarResize<HTMLDivElement>({
     isOpen: sidebarOpen,
-    width: sidebarWidth,
-    minWidth: MIN_WIDTH,
+    width: Math.max(sidebarWidth, minWidth),
+    minWidth,
     maxWidth: MAX_WIDTH,
     deltaSign: 1,
     setWidth: setSidebarWidth,
