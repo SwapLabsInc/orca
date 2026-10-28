@@ -981,6 +981,11 @@ html.native-shell .app-layout {
   user-select: none;
 }
 
+/* Why: the sidebar alone sizes the left column; wider header controls clip instead of widening it past a shrunk sidebar. */
+.titlebar-left:not(.titlebar-left-floating) {
+  contain: inline-size;
+}
+
 /* Why: when the sidebar is collapsed this header floats over the tab strip,
    so keep the standard titlebar surface instead of the sidebar tint. */
 .titlebar-left-floating {
