@@ -1387,6 +1387,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'ssh.updateTarget': SshTargetUpdate,
   'stats.summary': null,
   'status.get': null,
+  'teamclaude.leaderboard': null,
   'terminal.adoptOrphans': TerminalAdoptOrphans,
   'terminal.agentStatus': TerminalHandle,
   'terminal.clearBuffer': TerminalHandle,
