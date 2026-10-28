@@ -59,6 +59,9 @@ function WorktreeSidebar({
       <Sidebar
         worktreeScrollOffsetRef={scrollRefs.scrollOffsetRef}
         worktreeScrollAnchorRef={scrollRefs.scrollAnchorRef}
+        headerMinWidth={
+          layout.leftTitlebarChromeLayout.shouldMount ? layout.titlebarLeftMinWidth : 0
+        }
       />
     </RecoverableRenderErrorBoundary>
   )
