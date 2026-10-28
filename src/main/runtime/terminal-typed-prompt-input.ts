@@ -1,3 +1,5 @@
+import { KITTY_UNMODIFIED_ENTER_INPUTS } from '../../shared/agent-question-answered-intent'
+
 // Why built from escaped strings: keep literal control bytes out of source.
 const MOUSE_REPORTS_ONLY_RE = new RegExp(
   // oxlint-disable-next-line no-control-regex -- mouse reports are ESC-framed sequences by definition.
@@ -12,7 +14,11 @@ export function typedPromptInputEffect(data: string): 'submit' | 'edit' | null {
   if (data.length === 0 || MOUSE_REPORTS_ONLY_RE.test(data)) {
     return null
   }
-  if (CLEAR_INPUT_ONLY_RE.test(data) || data.endsWith('\x03')) {
+  if (
+    CLEAR_INPUT_ONLY_RE.test(data) ||
+    data.endsWith('\x03') ||
+    KITTY_UNMODIFIED_ENTER_INPUTS.some((enter) => data.endsWith(enter))
+  ) {
     return 'submit'
   }
   // Why not LF or ESC CR: agent composers insert a newline for Ctrl+J and Meta/Shift+Enter.

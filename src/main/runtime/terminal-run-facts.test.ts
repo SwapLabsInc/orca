@@ -164,6 +164,8 @@ describe('terminal run facts', () => {
     ['Ctrl+C', ['hi', '\x03'], false],
     ["an agent TUI's clear burst", ['hi', '\x15\x15\x0b'], false],
     ['Shift+Enter as ESC CR', ['hi', '\x1b\r'], true],
+    ['Kitty Enter', ['hi', '\x1b[13u'], false],
+    ['Kitty Enter with an explicit no-modifier', ['hi', '\x1b[13;1u'], false],
     ['Shift+Enter as CSI u', ['\r', '\x1b[13;2u'], true],
     ['Ctrl+J', ['\r', '\n'], true],
     ['a bracketed paste', ['\r', '\x1b[200~a\rb\x1b[201~'], true]

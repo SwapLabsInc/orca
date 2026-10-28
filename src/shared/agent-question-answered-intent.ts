@@ -20,12 +20,14 @@ export function isAskUserQuestionTool(toolName: string | undefined): boolean {
   return normalized === 'askuserquestion' || normalized === 'requestuserinput'
 }
 
+/** Kitty keyboard-protocol encodings of an unmodified Enter; Shift+Enter is `\x1b[13;2u`. */
+export const KITTY_UNMODIFIED_ENTER_INPUTS: readonly string[] = ['\x1b[13u', '\x1b[13;1u']
+
 const QUESTION_ANSWER_ENTER_INPUTS: ReadonlySet<string> = new Set([
   '\r',
   '\n',
   '\r\n',
-  '\x1b[13u',
-  '\x1b[13;1u'
+  ...KITTY_UNMODIFIED_ENTER_INPUTS
 ])
 const QUESTION_ANSWER_DIGIT_INPUTS: ReadonlySet<string> = new Set('123456789')
 
