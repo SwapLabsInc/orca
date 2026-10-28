@@ -20515,6 +20515,27 @@
       "scrollDisplayEquation": "Scroll display equation"
     }
   },
+  "teamclaudeLeaderboard": {
+    "rawTotal": "{{tokens}} raw tokens, cache reads included",
+    "updated": "Updated {{age}}",
+    "stale": "Stale",
+    "title": "TeamClaude today",
+    "empty": "No usage today yet",
+    "ariaLabel": "TeamClaude leaderboard",
+    "person": "Person",
+    "freshTokens": "Fresh",
+    "outputTokens": "Output",
+    "rankUp": "Up from #{{rank}}",
+    "rankDown": "Down from #{{rank}}",
+    "ahead": "{{tokens}} ahead",
+    "behind": "{{tokens}} behind #{{rank}}",
+    "tied": "tied for #{{rank}}",
+    "notRanked": "No usage today",
+    "leader": "{{person}} leads with {{tokens}}",
+    "rank": "#{{rank}} of {{of}} today",
+    "selfTokens": "{{tokens}} tokens",
+    "unavailable": "Leaderboard unavailable"
+  },
   "quitAndStopAllSessions": {
     "confirm": "Stop Sessions and Quit",
     "cancel": "Cancel",
