@@ -19,7 +19,7 @@ import {
 } from '../../../shared/claude-compact-completion'
 import { launchTokenHash } from '../../../shared/agent-hook-spool'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
-import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
+import { RelaySessionGenerations } from './server-relay-sessions'
 import {
   AGENT_STATUS_LEGACY_UNADVERTISED_PEER_CAPABILITIES,
   canAdmitLegacyAgentStatus,
@@ -33,6 +33,13 @@ import {
 import { AgentHookServerIngestStructuredChildren } from './server-ingest-structured-children'
 
 export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestStructuredChildren {
+  private readonly relaySessions = new RelaySessionGenerations()
+
+  /** Call as each relay link starts, before its first envelope. */
+  beginRemoteRelaySession(connectionId: string): void {
+    this.relaySessions.begin(connectionId)
+  }
+
   /** Relay payloads cross the SSH trust boundary and require canonical validation here. */
   ingestRemote(envelope: RemoteAgentStatusEnvelope, connectionId: string | null): void {
     if (
@@ -80,10 +87,6 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       if (expectedLaunchTokenHash && actualLaunchTokenHash !== expectedLaunchTokenHash) {
         return
       }
-    }
-    if (envelope.userEndedSessionId !== undefined) {
-      this.retireRelayUserEndedSession(envelope, physicalPaneKey, trimmedConnectionId)
-      return
     }
     if (envelope.tabId !== undefined && typeof envelope.tabId !== 'string') {
       return
@@ -139,7 +142,8 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
     }
     const validatedPayload = normalizeAgentStatusPayload(envelope.payload)
     if (!validatedPayload) {
-      return
+      // No status admits a relay's user-ended notice, so it is read where every host drops it.
+      return this.retireRelayUserEndedSession(envelope, physicalPaneKey, trimmedConnectionId)
     }
     if (
       envelope.source !== undefined &&
@@ -251,10 +255,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       env: envelope.env,
       expectedEnv: this.env
     })
-    const event: AgentHookEventPayload & {
-      authorityRestartId?: string
-      reportsUserEndedSessions?: true
-    } = {
+    const event = this.withRelayUserEndedSessionReports(envelope, {
       paneKey,
       agentPresence: readAgentProcessPresence(envelope.agentPresence),
       source: effectiveSource,
@@ -288,9 +289,13 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
         typeof envelope.claudeRunningNonAgentTask === 'boolean'
           ? envelope.claudeRunningNonAgentTask
           : undefined,
-      ...(envelope.reportsUserEndedSessions === true ? { reportsUserEndedSessions: true } : {}),
+      codexRosterAuthority: this.relaySessions.codexRosterAuthority(
+        trimmedConnectionId,
+        normalizedPayload,
+        envelope.shedFields
+      ),
       payload: normalizedPayload
-    }
+    })
     this.recordCurrentAuthorityObservation(event)
     this.applyNormalizedStatus(
       event,

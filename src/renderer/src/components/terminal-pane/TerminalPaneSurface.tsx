@@ -28,6 +28,7 @@ import {
   TerminalPaneSshReconnectPortals
 } from './TerminalPaneRuntimePortals'
 import type { TerminalPaneController } from './use-terminal-pane-controller'
+import { canCloseTerminalPane, terminalPaneCloseLabel } from './terminal-pane-close-affordance'
 import { useAppStore } from '@/store'
 import { getKnownExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
@@ -258,7 +259,12 @@ export function TerminalPaneSurface({
         onOpenChange={contextMenu.setOpen}
         menuPoint={contextMenu.point}
         menuOpenedAtRef={contextMenu.menuOpenedAtRef}
-        canClosePane={contextMenu.paneCount > 1}
+        canClosePane={canCloseTerminalPane({
+          paneCount: contextMenu.paneCount,
+          showSplitButton,
+          isTabPinned
+        })}
+        closePaneLabel={terminalPaneCloseLabel(contextMenu.paneCount)}
         canExpandPane={contextMenu.paneCount > 1}
         canEqualizePaneSizes={contextMenu.paneCount > 1 && expandedPaneId === null}
         menuPaneIsExpanded={
