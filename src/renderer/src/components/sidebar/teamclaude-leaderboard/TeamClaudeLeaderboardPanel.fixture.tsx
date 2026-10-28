@@ -109,7 +109,7 @@ export const midPackMinWidth = defineFixture({
   render: () => <SidebarFrame view={okView('alex', DEFAULT_ORDER)} initiallyExpanded />
 })
 
-export const midPackRowTooltip = defineFixture({
+export const midPackRowDetails = defineFixture({
   width: SIDEBAR_WIDTH,
   render: () => <SidebarFrame view={okView('alex', DEFAULT_ORDER)} initiallyExpanded />,
   interact: async (frame) => {

@@ -1,5 +1,5 @@
 import { CloudOff } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useNow } from '@/hooks/use-now'
 import { translate } from '@/i18n/i18n'
 import { formatUiRelativeTime } from '@/i18n/relative-time-format'
@@ -15,8 +15,8 @@ const BOARD_GRID_CLASS =
 
 function LeaderboardRow({ entry }: { entry: TeamClaudeLeaderboardEntry }): React.JSX.Element {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <HoverCard>
+      <HoverCardTrigger asChild>
         <div
           role="row"
           tabIndex={0}
@@ -41,22 +41,22 @@ function LeaderboardRow({ entry }: { entry: TeamClaudeLeaderboardEntry }): React
             {formatUsageTokens(entry.outputTokens)}
           </span>
         </div>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8} className="max-w-64">
+      </HoverCardTrigger>
+      <HoverCardContent side="right" sideOffset={8} className="w-64 p-3 text-xs">
         {entry.clients.map((client) => (
           <div key={client} className="break-all">
             {client}
           </div>
         ))}
-        <div className="opacity-70">
+        <div className="text-muted-foreground">
           {translate(
             'teamclaudeLeaderboard.rawTotal',
             '{{tokens}} raw tokens, cache reads included',
             { tokens: formatUsageTokens(entry.totalTokens) }
           )}
         </div>
-      </TooltipContent>
-    </Tooltip>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 

@@ -1,6 +1,5 @@
 import { ChevronUp, CloudOff } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatUsageTokens } from '@/components/stats/usage-overview-model'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
@@ -73,23 +72,18 @@ function standingLines(view: OkView): { headline: string; detail: string | null 
 function UnavailableLine({ message }: { message: string }): React.JSX.Element {
   return (
     <section aria-label={sectionLabel()} className={SECTION_CLASS}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            tabIndex={0}
-            data-teamclaude-leaderboard="unavailable"
-            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-2xs text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-worktree-sidebar-ring/50"
-          >
-            <TeamClaudeLeaderboardTrophy rank={null} />
-            <span className="truncate">
-              {translate('teamclaudeLeaderboard.unavailable', 'Leaderboard unavailable')}
-            </span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={4} className="max-w-64 break-words">
-          {message}
-        </TooltipContent>
-      </Tooltip>
+      <div
+        data-teamclaude-leaderboard="unavailable"
+        className="flex min-w-0 items-start gap-2 px-1 py-0.5 text-2xs text-muted-foreground"
+      >
+        <TeamClaudeLeaderboardTrophy rank={null} />
+        <span className="min-w-0">
+          <span className="block truncate">
+            {translate('teamclaudeLeaderboard.unavailable', 'Leaderboard unavailable')}
+          </span>
+          <span className="block break-words text-3xs">{message}</span>
+        </span>
+      </div>
     </section>
   )
 }
