@@ -8,6 +8,7 @@ import { Button } from '../ui/button'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
+import { updaterMessageText } from '@/lib/updater-message-copy'
 import { getUpdateCheckClickOptions, getUpdateCheckHint } from '@/lib/update-check-click-options'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
 import { GeneralRemoteServerUpdates } from './GeneralRemoteServerUpdates'
@@ -379,7 +380,7 @@ function SingleSourceUpdateHint({
       )}
       {updateStatus.state === 'error' && (
         <UpdateErrorHint
-          message={updateStatus.message}
+          message={updaterMessageText(updateStatus)}
           checkFailed={checkFailed}
           plain={updateStatus.recovery?.kind === 'linux-package-install'}
           manualInstallUrl={updateStatus.manualInstallUrl ?? null}
