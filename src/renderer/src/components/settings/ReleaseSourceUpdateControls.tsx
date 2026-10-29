@@ -5,6 +5,7 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { translate } from '@/i18n/i18n'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
+import { updaterMessageText } from '@/lib/updater-message-copy'
 import {
   compareReleaseVersions,
   getReleaseNotesUrlForVersion
@@ -344,7 +345,7 @@ export function ReleaseSourceUpdateHint({
     case 'error':
       return (
         <UpdateErrorHint
-          message={updateStatus.message}
+          message={updaterMessageText(updateStatus)}
           checkFailed={checkFailed && updateStatus.recovery?.kind !== 'linux-package-install'}
           plain={updateStatus.recovery?.kind === 'linux-package-install'}
           manualInstallUrl={updateStatus.manualInstallUrl ?? null}

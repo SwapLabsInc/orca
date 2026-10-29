@@ -1,6 +1,5 @@
 import { app } from 'electron'
 import {
-  DEV_CHANNEL_PLATFORM_LABEL,
   getReleaseRepoForChannel,
   getVersionChannel,
   hasDedicatedReleaseRepo,
@@ -36,6 +35,8 @@ import {
 } from './updater-build-selection-refusals'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from './updater-menu-checks'
 import { listReleaseSourceStatuses } from './updater-release-sources'
+import { updaterCodedMessage } from '../../shared/updater-failure-copy'
+import { updaterErrorMessage } from './updater-coded-error'
 
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   private readonly releaseBuildCache = new ReleaseBuildListCache((channel, sourceId) =>
@@ -174,7 +175,9 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     if (!isChannelSupportedOnPlatform(channel, process.platform)) {
       this.sendStatus({
         state: 'error',
-        message: `${RELEASE_CHANNEL_LABELS[channel]} builds are produced only for ${DEV_CHANNEL_PLATFORM_LABEL}.`,
+        ...updaterCodedMessage('channelUnsupportedPlatform', {
+          channel: RELEASE_CHANNEL_LABELS[channel]
+        }),
         userInitiated: true
       })
       return
@@ -205,7 +208,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       }
       this.sendStatus({
         state: 'error',
-        message: `${RELEASE_CHANNEL_LABELS[channel]} builds are unsigned, and this signed build only installs updates signed by Orca's publisher. Download the installer from the release page and run it once — updates work normally from there, including back to Stable.`,
+        ...updaterCodedMessage('unsignedDevChannel', { channel: RELEASE_CHANNEL_LABELS[channel] }),
         userInitiated: true
       })
       return
@@ -296,14 +299,14 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
       this.handleSettledUpdateCheckPromise(attemptId)
     } catch (error) {
       this.userInitiatedCheck = false
-      // Why not getPinnedReleaseSourceForStatus: the engine's error event settles this same failure
+      // Why not pinnedReleaseSourceForStatus: the engine's error event settles this same failure
       // first and hands the feed back, and this status must repeat that one, not strip its source.
       const releaseSource = source.id !== runningSource ? source.id : undefined
       this.clearAvailableUpdateContext()
       this.restoreReleaseUpdateSource()
       this.sendSettledCheckStatus({
         state: 'error',
-        message: String((error as Error)?.message ?? error),
+        ...updaterErrorMessage(error),
         userInitiated: true,
         ...readUpdateErrorPresentation(error),
         ...(releaseSource ? { releaseSource } : {})

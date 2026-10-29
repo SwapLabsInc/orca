@@ -4,10 +4,11 @@ import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getRetainedLinuxPackageManualInstallStatus } from '../linux-package-downloaded-status'
 import type { UpdateCheckOptions, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseSourceId } from '../../shared/release-sources'
-import { pickUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
 import type { UpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
+import { errorStatusFields, repeatsErrorStatusFields } from './updater-error-status-fields'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterStatus } from './updater-status'
+import type { UpdaterCodedMessage } from '../../shared/updater-failure-copy'
 import {
   AUTO_UPDATE_CHECK_INTERVAL_MS,
   AUTO_UPDATE_RETRY_INTERVAL_MS,
@@ -273,20 +274,20 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
   }
 
   protected sendErrorStatus(
-    message: string,
+    failure: string | UpdaterCodedMessage,
     userInitiated?: boolean,
     releaseSource?: ReleaseSourceId,
     /** A manual-install page or a retry verdict for the card, when the failure carries one. */
     presentation: UpdateErrorPresentation = {}
   ): void {
-    const shown = pickUpdateErrorPresentation(presentation)
+    const coded = typeof failure === 'string' ? { message: failure } : failure
+    const { message } = coded
+    const fields = errorStatusFields(releaseSource, presentation)
     if (
       this.currentStatus.state === 'error' &&
       this.currentStatus.message === message &&
       this.currentStatus.userInitiated === userInitiated &&
-      this.currentStatus.releaseSource === releaseSource &&
-      this.currentStatus.manualInstallUrl === shown.manualInstallUrl &&
-      this.currentStatus.retryable === shown.retryable
+      repeatsErrorStatusFields(this.currentStatus, fields)
     ) {
       return
     }
@@ -297,21 +298,7 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
         message: 'Windows update signature check could not run'
       })
     }
-    this.sendStatus({
-      state: 'error',
-      message,
-      userInitiated,
-      ...shown,
-      ...(releaseSource ? { releaseSource } : {})
-    })
-  }
-
-  /** The source a failed pinned jump targeted, when it is not the running one — read before the feed is handed back. */
-  protected getPinnedReleaseSourceForStatus(): ReleaseSourceId | undefined {
-    return this.activeReleaseSource !== null &&
-      this.activeReleaseSource !== this.getRunningReleaseSource()
-      ? this.activeReleaseSource
-      : undefined
+    this.sendStatus({ state: 'error', ...coded, userInitiated, ...fields })
   }
 
   /** Retain the distro-package manual-install card when settling a check; ordinary status would erase it. */
@@ -320,8 +307,18 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     if (retainedStatus) {
       this.sendStatus(retainedStatus)
     } else if (status.state === 'error') {
+      const { message, messageCode, messageParams } = status
       // Why the status itself: its manual-install page and retry verdict must reach the card intact.
-      this.sendErrorStatus(status.message, status.userInitiated, status.releaseSource, status)
+      this.sendErrorStatus(
+        {
+          message,
+          ...(messageCode === undefined ? {} : { messageCode }),
+          ...(messageParams === undefined ? {} : { messageParams })
+        },
+        status.userInitiated,
+        status.releaseSource,
+        status
+      )
     } else {
       this.sendStatus(status)
     }

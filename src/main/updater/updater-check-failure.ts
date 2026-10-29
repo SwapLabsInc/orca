@@ -1,8 +1,10 @@
 import { isBenignCheckFailure } from '../updater-fallback'
 import { readUpdateErrorPresentation } from './mac-self-update/mac-self-update-failure'
+import { pinnedReleaseSourceForStatus } from './updater-error-status-fields'
 import { ReleaseFeedPreflightError } from './updater-state'
 import type { CheckFailureSource } from './updater-state'
 import { UpdaterReleaseFeed } from './updater-release-feed'
+import { updaterCodedMessage } from '../../shared/updater-failure-copy'
 
 export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
   protected isRetryableReleaseFeedPreflightFailure(sourceError: unknown): boolean {
@@ -32,7 +34,10 @@ export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
     }
     if (this.isPinnedBuildActive) {
       // Restore the release feed before reporting a failed pinned jump or it blocks all future background checks.
-      const releaseSource = this.getPinnedReleaseSourceForStatus()
+      const releaseSource = pinnedReleaseSourceForStatus(
+        this.activeReleaseSource,
+        this.getRunningReleaseSource()
+      )
       this.clearAvailableUpdateContext()
       this.restoreReleaseUpdateSource()
       this.sendSettledCheckStatus({
@@ -89,9 +94,11 @@ export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
           // User clicks need visible feedback distinguishing incomplete releases from transport failure.
           this.sendSettledCheckStatus({
             state: 'error',
-            message: this.isStableReleaseNotReadyFailure(sourceError)
-              ? "A newer release isn't available for this device yet. Check again later."
-              : "Couldn't reach the update server. Try again in a few minutes.",
+            ...updaterCodedMessage(
+              this.isStableReleaseNotReadyFailure(sourceError)
+                ? 'releaseNotReady'
+                : 'updateServerUnreachable'
+            ),
             userInitiated: true
           })
         } else {

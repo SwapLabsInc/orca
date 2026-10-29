@@ -100,6 +100,9 @@ export type UpdateStatus = (
   | {
       state: 'error'
       message: string
+      /** Translation code for `message`; older hosts omit it and newer ones may send unknown codes. */
+      messageCode?: string
+      messageParams?: Record<string, string | number>
       /** Known download/install target; absent for check-time failures and older hosts. */
       version?: string
       /** Omitted by older hosts and for failures whose retryability is unknown. */
@@ -126,7 +129,13 @@ export type UpdateStatus = (
 
 export type ReleaseBuildListResult =
   | { ok: true; channel: ReleaseChannel; builds: ReleaseBuild[] }
-  | { ok: false; channel: ReleaseChannel; message: string }
+  | {
+      ok: false
+      channel: ReleaseChannel
+      message: string
+      messageCode?: string
+      messageParams?: Record<string, string | number>
+    }
 
 /**
  * How this install can move to a build of one release source. `in-app` runs the
