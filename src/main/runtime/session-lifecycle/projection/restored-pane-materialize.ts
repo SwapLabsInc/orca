@@ -147,6 +147,14 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
     })
   }
 
+  /** The user's Start on panes main held for a stopped WSL distro: each starts as the user's act. */
+  async startWslHeldTerminalPanes(panes: readonly RestoredPane[]): Promise<{ started: boolean }> {
+    const results = await Promise.allSettled(
+      panes.map((pane) => this.ensureRestoredPaneStarted(pane, { wslUserAct: true }))
+    )
+    return { started: results.every((result) => result.status === 'fulfilled' && result.value) }
+  }
+
   /**
    * The session a WSL move installed for this pane (its carried checkpoint, interrupted), so its
    * first start cold-restores that history once like after an app restart; undefined otherwise.
@@ -199,7 +207,8 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
       automatic = false,
       targetsHost = false,
       targetGroupId,
-      sessionId
+      sessionId,
+      wslUserAct
     }: RestoredPaneTrigger & { sessionId?: string }
   ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     // Recover undelivered startup commands (#7587) or recorded agent sessions (#27147, #27777); live-session attach skips startup commands, preventing double launches.
@@ -218,7 +227,9 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
     if (resumeStartup === undefined && tab.launchAgent) {
       let workspace
       try {
-        workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
+        workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`, undefined, {
+          wslUserAct: wslUserAct === true
+        })
         agentStartup = await this.resolveMobileSessionTerminalCommand(workspace, {
           agent: tab.launchAgent
         })
@@ -264,6 +275,7 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
             : {}),
           launchRuntime: agentStartup.launchRuntime,
           targetGroupId,
+          ...(wslUserAct ? { wslUserAct } : {}),
           onPtySpawnDispatched: () => {
             dispatched = true
           },
@@ -308,14 +320,12 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
       return created
     } catch (err) {
       resumeClaim?.settleFailure(dispatched, err)
-      const shell = hostHookResume
-        ? this.openShellAfterRefusedHostResume(
-            worktreeId,
-            tab,
-            { automatic, targetsHost, targetGroupId, sessionId },
-            err
-          )
-        : null
+      const shell = this.openShellAfterRefusedHostResume(hostHookResume, worktreeId, tab, err, {
+        automatic,
+        targetsHost,
+        targetGroupId,
+        sessionId
+      })
       if (shell) {
         return await shell
       }

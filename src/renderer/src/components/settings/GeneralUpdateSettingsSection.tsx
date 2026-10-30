@@ -21,6 +21,7 @@ import {
 } from './ReleaseSourceUpdateControls'
 import { useReleaseSourceStatuses } from './use-release-source-statuses'
 import { getReleaseNotesUrlForVersion } from '../../../../shared/release-channel'
+import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
 import {
   RELEASE_SOURCES,
   getReleaseSource,
@@ -333,6 +334,7 @@ function SingleSourceUpdateHint({
             <a
               href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
               target="_blank"
+              onClick={openAppHttpLinkFromAnchor}
               rel="noopener noreferrer"
               className="underline hover:text-foreground"
             >
@@ -367,6 +369,7 @@ function SingleSourceUpdateHint({
             <a
               href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
               target="_blank"
+              onClick={openAppHttpLinkFromAnchor}
               rel="noopener noreferrer"
               className="underline hover:text-foreground"
             >

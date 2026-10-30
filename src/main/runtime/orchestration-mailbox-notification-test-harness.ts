@@ -70,8 +70,14 @@ export function insertDirectRunMessage(
   return db.getMessageById(message.id)!
 }
 
+class MailboxRuntime extends OrcaRuntimeService {
+  get idleEvidenceSource() {
+    return this.tuiIdleEvidenceSource
+  }
+}
+
 export type MailboxNotificationHarness = {
-  runtime: OrcaRuntimeService
+  runtime: MailboxRuntime
   write: ReturnType<typeof vi.fn>
 }
 
@@ -125,10 +131,10 @@ export function createRuntime(
     headless?: boolean
     getAgentStatusSnapshot?: () => AgentStatusIpcPayload[]
     checkHookAgentPresence?: (paneKey: string) => Promise<'live' | 'unverifiable' | 'exited' | null>
-    launchAgent?: TuiAgent
+    launchAgent?: TuiAgent | null
   } = {}
 ): MailboxNotificationHarness {
-  const runtime = new OrcaRuntimeService(
+  const runtime = new MailboxRuntime(
     ORCA_LAYOUT_OWNER_IS_MAIN ? mailboxLayoutStore() : null,
     undefined,
     {
@@ -157,10 +163,14 @@ export function createRuntime(
       tabId: TAB_ID,
       leafId: LEAF_ID,
       incarnationId: 'mailbox-incarnation',
-      agentLaunchAuthority: {
-        launchToken: LAUNCH_TOKEN,
-        launchAgent: options.launchAgent ?? 'codex'
-      }
+      ...(options.launchAgent === null
+        ? {}
+        : {
+            agentLaunchAuthority: {
+              launchToken: LAUNCH_TOKEN,
+              launchAgent: options.launchAgent ?? 'codex'
+            }
+          })
     },
     options.isWsl
   )

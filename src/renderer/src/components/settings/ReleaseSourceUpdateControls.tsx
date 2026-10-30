@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { translate } from '@/i18n/i18n'
+import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
 import { updaterMessageText } from '@/lib/updater-message-copy'
 import {
@@ -32,6 +33,7 @@ function ReleaseNotesLink({ version }: { version: string }): React.JSX.Element {
     <a
       href={getReleaseNotesUrlForVersion(version)}
       target="_blank"
+      onClick={openAppHttpLinkFromAnchor}
       rel="noopener noreferrer"
       className="underline hover:text-foreground"
     >
