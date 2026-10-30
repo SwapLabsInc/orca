@@ -115,16 +115,17 @@ export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntim
 
   /**
    * The pane's plain shell after a refused hook-store resume (an auth switch, an env conflict); the
-   * hook store keeps the session for the pane's next re-creation. Null for a slept worktree, which
-   * refuses the shell too.
+   * hook store keeps the session for the pane's next re-creation. Null for any other startup, and
+   * for a slept worktree, which refuses the shell too.
    */
   protected openShellAfterRefusedHostResume(
+    hostHookResume: boolean,
     worktreeId: string,
     tab: RuntimeMobileSessionTerminalTab,
-    trigger: RestoredPaneTrigger & { sessionId?: string },
-    err: unknown
+    err: unknown,
+    trigger: RestoredPaneTrigger & { sessionId?: string }
   ): Promise<RuntimeMobileSessionCreateTerminalResult> | null {
-    if (isWorktreeTerminalsSleepingError(err)) {
+    if (!hostHookResume || isWorktreeTerminalsSleepingError(err)) {
       return null
     }
     const paneKey = makePaneKey(tab.parentTabId, tab.leafId)
