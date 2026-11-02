@@ -1,3 +1,4 @@
+import type { RelayHookAdmissionOptions } from './agent-hook-event-admission'
 import { admitRelayOpenCodeTui } from './agent-hook-request'
 import { checkHookOwnerPresence } from '../shared/agent-hook-owner-presence'
 import { normalizeHookPayload } from '../shared/agent-hook-listener'
@@ -25,8 +26,10 @@ export function ingestRelayHookSpoolRecord(
       event: AgentHookEventPayload,
       source: AgentHookSource,
       env?: string,
-      version?: string
+      version?: string,
+      admission?: RelayHookAdmissionOptions
     ) => void
+    onAccepted?: (event: AgentHookEventPayload) => void
     isPaneSurfaceRetired: (paneKey: string) => boolean
     getAgentLaunchToken: (paneKey: string) => string | undefined
     /** LOCAL: reads a spooled hook that may say the user ended its Claude session. */
@@ -55,7 +58,10 @@ export function ingestRelayHookSpoolRecord(
       host.userEndedSessions?.report({ ...host, state, env }, record.source, body, true)
     }
     if (event) {
-      host.apply(event, record.source, hookBodyEnv(body), hookBodyVersion(body))
+      host.apply(event, record.source, hookBodyEnv(body), hookBodyVersion(body), {
+        isReplay: true,
+        onAccepted: host.onAccepted
+      })
     }
   }
   const pending = host.checkAgentPresence

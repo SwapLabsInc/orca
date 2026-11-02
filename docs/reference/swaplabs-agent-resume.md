@@ -43,11 +43,19 @@ More rules:
   `SessionEnd` from another process in the pane (a nested CLI) is ignored, both
   by the local hook server and by the WSL relay before it sends a notice.
 - `/clear` needs nothing, because its `SessionStart` replaces the session.
-- A remnant's status fields are placeholders. The next event in the pane never
-  inherits its agent type, permission hold, verdict, compact ownership or
-  terminal: the shared listener and the remote ingest read the stored row
-  through `statusRowToComplete` (`src/shared/agent-hook-relay.ts`), and
-  `applyNormalizedStatus` masks it the same way.
+- A remnant's status fields are placeholders. The shared listener and the remote
+  ingest normalize the next hook in the pane without any remnant
+  (`statusRowToComplete`, `src/shared/agent-hook-relay.ts`).
+  `applyNormalizedStatus` (`readStatusRowsForUpdate`) skips only a remnant that
+  names no process, a lost terminal's, so the next event never inherits its
+  agent type, permission hold, verdict, compact ownership or terminal.
+- A remnant that names its process (left by an exit hook, a probe, a shell back
+  in the foreground, a dismissed row or a user-ended session) is the row the next
+  event builds on, as upstream's helper-session and owner checks (upstream
+  #36324, #36349) need. As in upstream, a different agent's hook in that pane
+  then counts as the old agent's child and is dropped until the old agent's
+  unfinished status goes stale (30 minutes). SwapLabsInc/orca#76 records the
+  decision.
 
 ## Which pane may resume
 

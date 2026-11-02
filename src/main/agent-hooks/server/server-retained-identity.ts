@@ -27,9 +27,9 @@ export function isResumableIdentityRow(row: EnrichedAgentHookEventPayload): bool
   )
 }
 
-/** The pane's stored row, and the row a new event builds on. A retained identity's status fields
- *  are placeholders from an agent that is gone, so a new event must not inherit its agent type,
- *  permission hold, verdict or terminal. */
+/** The pane's stored row, and the row a new event builds on. A remnant that names no process (a
+ *  lost terminal's) holds placeholders a new event must not inherit; one that names its process
+ *  stays, because upstream's helper-session and owner checks build on it. */
 export function readStatusRowsForUpdate(
   state: Pick<HookListenerState, 'lastStatusByPaneKey'>,
   paneKey: string
@@ -39,7 +39,10 @@ export function readStatusRowsForUpdate(
 } {
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Main admits enriched legacy rows; the shared view declares their base event type.
   const stored = state.lastStatusByPaneKey.get(paneKey) as EnrichedAgentHookEventPayload | undefined
-  return { stored, previous: stored?.providerSessionOnly ? undefined : stored }
+  return {
+    stored,
+    previous: stored?.providerSessionOnly && !stored.agentPresence ? undefined : stored
+  }
 }
 
 /** The hidden `providerSessionOnly` remnant a dropped row leaves, marked by why it was dropped. */

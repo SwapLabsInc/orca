@@ -108,6 +108,10 @@ describe('selectOrchestrationPointerBatch', () => {
     try {
       const heartbeat = { runId: 'run_legacy_local', from: 'w', to: MAILBOX, subject: 'alive' }
       db.insertMessages(Array.from({ length: beats }, () => ({ ...heartbeat, type: 'heartbeat' })))
+      // Inserts now store heartbeats handled; rows stored before that are still unread mail.
+      db.db
+        .prepare("UPDATE messages SET read = 0, delivered_at = NULL WHERE type = 'heartbeat'")
+        .run()
       if (other) {
         db.insertMessage({ ...heartbeat, subject: 'report', type: other })
       }

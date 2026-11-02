@@ -201,6 +201,7 @@ export type WorktreeSlice = {
       provisioningLog?: string
       checkoutProgress?: PendingWorktreeCreation['checkoutProgress']
       worktreeId?: string
+      heldChatMessage?: string
     }
   ) => void
   /** Drop pending/active creation; VM cleanup applies to cancellation/dismissal, never successful handoff. */

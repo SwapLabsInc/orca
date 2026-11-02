@@ -66,7 +66,13 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
 
   /** The agent reported that the user ended its session: the pane keeps the identity for a manual
    *  resume, but a later loss of its terminal must not bring the agent back. */
-  protected retireUserEndedSession(ended: UserEndedAgentSession, isReplay: boolean): void {
+  protected retireUserEndedSession(
+    ended: UserEndedAgentSession | undefined,
+    isReplay: boolean
+  ): void {
+    if (!ended) {
+      return
+    }
     const paneKey = this.resolvePaneKeyAlias(ended.paneKey)
     const row = this.state.lastStatusByPaneKey.get(paneKey)
     // Why: a nested CLI inherits the pane key, so only the session the row names may retire it,
