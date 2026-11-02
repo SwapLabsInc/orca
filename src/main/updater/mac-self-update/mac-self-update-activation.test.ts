@@ -52,7 +52,9 @@ vi.mock('electron', () => ({
   },
   net: { fetch: vi.fn() }
 }))
-vi.mock('../../persistence', () => ({ getCanonicalUserDataPath: () => '/Users/me/Library/Orca' }))
+vi.mock('../../persistence/loading-store/user-data-path', () => ({
+  getCanonicalUserDataPath: () => '/Users/me/Library/Orca'
+}))
 vi.mock('../../serve-update-handoff', () => ({
   hasServeUpdateSupervisor: () => supervised.serve
 }))

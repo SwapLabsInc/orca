@@ -4,7 +4,7 @@ import {
   type AgentResumeCandidate,
   type AgentResumeResolution
 } from '../../../shared/agent-resume-candidate'
-import { RESUMABLE_TUI_AGENTS } from '../../../shared/agent-session-resume'
+import { RESUMABLE_TUI_AGENTS } from '../../../shared/agent-session/lifecycle/agent-session-resume'
 import {
   resolveAgentResumeCandidate,
   type ResolveAgentResumeCandidateArgs

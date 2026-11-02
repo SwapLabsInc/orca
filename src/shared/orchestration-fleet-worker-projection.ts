@@ -146,7 +146,7 @@ export function projectFleetNextAction(
   ) {
     return { kind: 'none', argv: [] }
   }
-  // Settled workers owe only the release of a terminal they still own; worker-show would repeat the settlement.
+  // Settled workers owe only the release of a terminal they still own and nobody kept open; worker-show would repeat the settlement.
   if (SETTLED_WORKER_STATES.has(worker.workerState)) {
     // Retained is a settled answer (user request or unproven identity); releasing it undoes it.
     return worker.resource?.ownershipState === 'owned' &&

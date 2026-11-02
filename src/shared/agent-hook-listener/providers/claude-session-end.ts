@@ -1,4 +1,4 @@
-import { extractAgentProviderSession } from '../../agent-session-resume'
+import { extractAgentProviderSession } from '../../agent-session/lifecycle/agent-session-resume'
 import type { ParsedHookEnvelope } from '../hook-envelope'
 import { readFirstString } from '../interactive-tool'
 import { readString } from '../tool-input-preview'

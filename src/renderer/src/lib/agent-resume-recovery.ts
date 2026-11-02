@@ -3,7 +3,7 @@ import type {
   AgentResumeResolution
 } from '../../../shared/agent-resume-candidate'
 import type { ExecutionHostId } from '../../../shared/execution-host'
-import type { ResumableTuiAgent } from '../../../shared/agent-session-resume'
+import type { ResumableTuiAgent } from '../../../shared/agent-session/lifecycle/agent-session-resume'
 import type { AgentResumeCandidateScan } from './agent-resume-candidate-source'
 import { resolveAgentResumeCandidate } from './agent-resume-candidate-resolver'
 import { decideAgentResumeForPane, type AgentResumePaneAction } from './agent-resume-pane-decision'

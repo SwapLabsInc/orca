@@ -13,7 +13,7 @@ import type {
 import {
   agentProviderSessionsEqual,
   type SleepingAgentSessionRecord
-} from '../../../../shared/agent-session-resume'
+} from '../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import {
   resolveTuiAgentLaunchArgs,
@@ -113,21 +113,21 @@ export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntim
     return automatic ? 'automatic-restore' : 'user-resume'
   }
 
+  /** Whether a failed hook-store resume opens the pane's shell; a slept worktree refuses it. */
+  protected refusedHostResumeOpensShell(hostHookResume: boolean, err: unknown): boolean {
+    return hostHookResume && !isWorktreeTerminalsSleepingError(err)
+  }
+
   /**
    * The pane's plain shell after a refused hook-store resume (an auth switch, an env conflict); the
-   * hook store keeps the session for the pane's next re-creation. Null for any other startup, and
-   * for a slept worktree, which refuses the shell too.
+   * hook store keeps the session for the pane's next re-creation.
    */
   protected openShellAfterRefusedHostResume(
-    hostHookResume: boolean,
     worktreeId: string,
     tab: RuntimeMobileSessionTerminalTab,
     err: unknown,
     trigger: RestoredPaneTrigger & { sessionId?: string }
-  ): Promise<RuntimeMobileSessionCreateTerminalResult> | null {
-    if (!hostHookResume || isWorktreeTerminalsSleepingError(err)) {
-      return null
-    }
+  ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     const paneKey = makePaneKey(tab.parentTabId, tab.leafId)
     console.warn(`[host-pane-resume] resume spawn failed for ${paneKey}; opening a shell:`, err)
     return this.createRuntimeOwnedMobileSessionTerminal(

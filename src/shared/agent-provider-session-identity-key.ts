@@ -1,4 +1,4 @@
-import type { AgentProviderSessionMetadata } from './agent-session-resume'
+import type { AgentProviderSessionMetadata } from './agent-session/lifecycle/agent-session-resume'
 
 /** One provider session's identity as a string key, matching `agentProviderSessionsEqual`. */
 export function agentProviderSessionIdentityKey(

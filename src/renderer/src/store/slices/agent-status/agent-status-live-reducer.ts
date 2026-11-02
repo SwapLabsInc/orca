@@ -13,7 +13,7 @@ import {
   shouldRetireSleepingRecord
 } from './agent-status-sleeping-records'
 import type { AgentStatusLiveEntryBuild } from './agent-status-live-entry-builder'
-import { agentProviderSessionsEqual } from '../../../../../shared/agent-session-resume'
+import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { liveResumeRecordChange } from '../../../../../shared/agent-resume-record-from-status'
 
 export type AgentStatusLiveUpdateReduction = {

@@ -7,7 +7,7 @@ import {
   getVersionReleaseSource,
   type ReleaseSource
 } from '../../../shared/release-sources'
-import { getCanonicalUserDataPath } from '../../persistence'
+import { getCanonicalUserDataPath } from '../../persistence/loading-store/user-data-path'
 import { hasServeUpdateSupervisor } from '../../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
 import type { UpdateEngine } from '../update-engine'

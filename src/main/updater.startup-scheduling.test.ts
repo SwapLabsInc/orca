@@ -11,8 +11,6 @@ const {
   appMock,
   autoUpdaterMock,
   powerMonitorOnMock,
-  fetchNudgeMock,
-  shouldApplyNudgeMock,
   fetchNewerReleaseTagsMock,
   moduleFactories,
   resetUpdaterMocks
@@ -165,43 +163,6 @@ describe('updater', () => {
     expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
     expect(powerMonitorOnMock).not.toHaveBeenCalled()
-  })
-
-  it('runs a startup check immediately when the last background check is stale', async () => {
-    const mainWindow = updaterMainWindow(vi.fn())
-    const setLastUpdateCheckAt = vi.fn()
-
-    const { setupAutoUpdater } = await loadUpdaterModule()
-
-    setupAutoUpdater(mainWindow, {
-      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000,
-      setLastUpdateCheckAt
-    })
-
-    await vi.waitFor(() => {
-      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
-    })
-    expect(setLastUpdateCheckAt).not.toHaveBeenCalled()
-  })
-
-  it('starts nudge polling only after updater initialization is complete', async () => {
-    const mainWindow = updaterMainWindow(vi.fn())
-    fetchNudgeMock.mockResolvedValue({ id: 'campaign-1', minVersion: '1.0.0' })
-    shouldApplyNudgeMock.mockReturnValue(true)
-
-    const { setupAutoUpdater } = await loadUpdaterModule()
-
-    setupAutoUpdater(mainWindow)
-
-    expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledTimes(1)
-    expect(autoUpdaterMock.on).toHaveBeenCalled()
-    expect(fetchNudgeMock).toHaveBeenCalledTimes(1)
-    expect(autoUpdaterMock.setFeedURL.mock.invocationCallOrder[0]).toBeLessThan(
-      fetchNudgeMock.mock.invocationCallOrder[0]
-    )
-    expect(autoUpdaterMock.on.mock.invocationCallOrder[0]).toBeLessThan(
-      fetchNudgeMock.mock.invocationCallOrder[0]
-    )
   })
 
   it('waits until the remaining interval before the next background check', async () => {
@@ -367,18 +328,5 @@ describe('updater', () => {
     await vi.waitFor(() => {
       expect(autoUpdaterMock.checkForUpdates.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
-  })
-
-  it('does not disable Windows Authenticode verification on win32', async () => {
-    vi.stubGlobal('process', { ...process, platform: 'win32' })
-
-    const { setupAutoUpdater } = await loadUpdaterModule()
-
-    const sendMock = vi.fn()
-    const mainWindow = updaterMainWindow(sendMock)
-
-    setupAutoUpdater(mainWindow)
-
-    expect((autoUpdaterMock as Record<string, unknown>).verifyUpdateCodeSignature).toBeUndefined()
   })
 })

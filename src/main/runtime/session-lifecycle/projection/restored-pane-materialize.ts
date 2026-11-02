@@ -32,7 +32,7 @@ import { HistoryReader } from '../../../daemon/history-reader'
 import { servesWslMovedPaneHistory } from '../../../orcad/orcad-migration-wsl-destination'
 import { movedPaneHistorySessionId } from '../../../persistence/migrating-orcad-catalog/orcad-terminal-history-installer'
 import { makePaneKey, parsePaneKey } from '../../../../shared/stable-pane-id'
-import { agentProviderSessionsEqual } from '../../../../shared/agent-session-resume'
+import { agentProviderSessionsEqual } from '../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { worktreeIdsEqual } from '../../../../shared/worktree/id'
 
 export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHostPaneAgentResumeStart {
@@ -304,6 +304,7 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
               }
             : {}),
           ...(automatic ? { refuseSleptWorktree: true } : {}),
+          reopensPane: true,
           // Only resumes from this pane's record show the window banner.
           ...(resumedRecord ? { resumesSleepingRecord: true as const } : {})
         }
@@ -320,14 +321,13 @@ export abstract class OrcaRuntimeWithRestoredPaneStart extends OrcaRuntimeWithHo
       return created
     } catch (err) {
       resumeClaim?.settleFailure(dispatched, err)
-      const shell = this.openShellAfterRefusedHostResume(hostHookResume, worktreeId, tab, err, {
-        automatic,
-        targetsHost,
-        targetGroupId,
-        sessionId
-      })
-      if (shell) {
-        return await shell
+      if (this.refusedHostResumeOpensShell(hostHookResume, err)) {
+        return await this.openShellAfterRefusedHostResume(worktreeId, tab, err, {
+          automatic,
+          targetsHost,
+          targetGroupId,
+          sessionId
+        })
       }
       if (
         !(automatic && isWorktreeTerminalsSleepingError(err)) &&

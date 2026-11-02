@@ -1,5 +1,8 @@
 import type { ExecutionHostId } from './execution-host'
-import type { AgentProviderSessionMetadata, ResumableTuiAgent } from './agent-session-resume'
+import type {
+  AgentProviderSessionMetadata,
+  ResumableTuiAgent
+} from './agent-session/lifecycle/agent-session-resume'
 
 /** One resumable conversation an execution host holds for a workspace, normalized from
  *  whichever source named it: the pane's own sleeping record, or that host's session index. */

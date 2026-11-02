@@ -8,7 +8,7 @@ import type {
 import { RELEASE_CHANNELS, type ReleaseChannel } from '../../shared/release-channel'
 import { getReleaseSource } from '../../shared/release-sources'
 import { getTrustedUIRendererWindow, isTrustedUIRenderer } from '../ipc/ui'
-import type { Store } from '../persistence'
+import type { Store } from '../persistence/loading-store/store'
 import { logStartupMilestone } from '../startup/startup-diagnostics'
 import { applyProxyToElectronUpdaterSession } from '../updater/electron-updater-proxy-session'
 import { updaterErrorMessage } from '../updater/updater-coded-error'

@@ -3,7 +3,7 @@ import { ORCHESTRATION_CONTRACT_VERSION } from '../../../../../../shared/protoco
 import { OrcaRuntimeService } from '../../../../orca-runtime'
 import { OrchestrationDb } from '../../../../orchestration/db'
 import { ORCHESTRATION_METHODS } from '../../orchestration'
-import { eraseRpcMethods } from '../../../core'
+import { eraseRpcMethods, isStreamingMethod } from '../../../core'
 import {
   WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING,
   WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS
@@ -158,7 +158,7 @@ describe('federated worker release waits for the closing turn', () => {
     const method = eraseRpcMethods(ORCHESTRATION_METHODS).find(
       (candidate) => candidate.name === name
     )
-    if (!method) {
+    if (!method || isStreamingMethod(method)) {
       throw new Error(`Method not found: ${name}`)
     }
     return method.handler(method.params!.parse({ dispatchId: DISPATCH_ID }), {
