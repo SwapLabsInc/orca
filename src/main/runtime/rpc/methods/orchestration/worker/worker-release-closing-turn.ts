@@ -1,5 +1,6 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
+import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/types'
 import type { WorkerOutputArchiveCapture } from '../../../../orchestration/worker-output-archive'
 import { isStructuredWorkerHandle } from '../../../../../../shared/structured-worker-handle'
 
@@ -58,6 +59,18 @@ export function awaitReleaseClosingTurn(
     return Promise.resolve('not_observed')
   }
   return awaitWorkerClosingTurn(args.runtime, terminalHandle)
+}
+
+/** A federated release waits where the worker runs, before that host observes the attachment. */
+export function awaitFederatedClosingTurn(
+  runtime: ClosingTurnRuntime & Pick<OrcaRuntimeService, 'getOrchestrationDb'>,
+  dispatchId: string,
+  attachment: Pick<RemoteDispatchAttachmentRow, 'stage' | 'terminal_handle'>
+): Promise<WorkerClosingTurn> {
+  return awaitReleaseClosingTurn(
+    { runtime, db: runtime.getOrchestrationDb(), dispatchId },
+    attachment.stage === 'released' ? null : attachment.terminal_handle
+  )
 }
 
 // An unreadable store still gets the wait; reporting the read failure stays with the release.

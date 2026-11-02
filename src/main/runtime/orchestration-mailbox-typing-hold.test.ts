@@ -34,7 +34,11 @@ async function idleCoordinator(prefix: string) {
   const run = createBoundRun(db, 'Typing hold Run')
   await driveToLiveIdle(runtime)
   const arrive = (subject: string, type: MessageType = 'status') => {
-    const message = insertDirectRunMessage(db, run.id, subject, type)
+    const message = insertDirectRunMessage(db, run.id, subject)
+    if (type !== 'status') {
+      // Inserts now store heartbeats handled; a row stored before that is still unread mail.
+      db.db.prepare('UPDATE messages SET type = ? WHERE id = ?').run(type, message.id)
+    }
     runtime.notifyMessageArrived(`run:${run.id}`, type)
     return message
   }
