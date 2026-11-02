@@ -11,7 +11,7 @@ import {
 import { resolveAgentResumeLaunchTarget } from '@/lib/agent-resume-launch-target'
 import { paneAgentResumeScopePath } from '@/lib/agent-resume-workspace-scope'
 import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
-import { isResumableTuiAgent } from '../../../../../shared/agent-session-resume'
+import { isResumableTuiAgent } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 
 import { buildCandidateResumeStartup } from './candidate-resume-startup'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'

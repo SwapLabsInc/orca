@@ -1,5 +1,5 @@
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
-import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
+import type { SleepingAgentSessionRecord } from '../../../shared/agent-session/lifecycle/agent-session-resume'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 
 /** Only the terminal maps the rule reads; a plain shape so the rule is testable without a store. */

@@ -7,7 +7,7 @@ import {
   isResumableTuiAgent,
   normalizeAgentProviderSession,
   type ResumableTuiAgent
-} from '../../../shared/agent-session-resume'
+} from '../../../shared/agent-session/lifecycle/agent-session-resume'
 import { normalizeRuntimePathForComparison } from '../../../shared/cross-platform-path'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 

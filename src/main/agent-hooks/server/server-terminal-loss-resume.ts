@@ -6,8 +6,10 @@ import {
 import type {
   EnrichedAgentHookEventPayload,
   IncomingAgentHookEvent,
+  NormalizedLocalHook,
   UserEndedAgentSession
 } from './server-types'
+import type { AgentHookSource } from '../../../shared/agent-hook-relay'
 import { launchTokenHash } from '../../../shared/agent-hook-spool'
 import { isSameAgentProcess } from '../../../shared/agent-process-presence'
 
@@ -62,6 +64,16 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     return envelope.reportsUserEndedSessions === true
       ? { ...event, reportsUserEndedSessions: true }
       : event
+  }
+
+  /** Normalizes a live (not replayed) hook, first retiring the session its user ended. */
+  protected normalizeLiveLocalHookPayload(
+    source: AgentHookSource,
+    body: unknown
+  ): NormalizedLocalHook {
+    const normalized = this.normalizeLocalHookPayload(source, body)
+    this.retireUserEndedSession(normalized.userEndedSession, false)
+    return normalized
   }
 
   /** The agent reported that the user ended its session: the pane keeps the identity for a manual

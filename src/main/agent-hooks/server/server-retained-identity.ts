@@ -4,7 +4,7 @@ import {
   normalizeAgentProviderSession,
   type AgentProviderSessionMetadata,
   type ResumableTuiAgent
-} from '../../../shared/agent-session-resume'
+} from '../../../shared/agent-session/lifecycle/agent-session-resume'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 import { isWslHookRelayConnectionId } from '../../../shared/wsl-hook-relay-contract'
 import type { HookListenerState } from '../../../shared/agent-hook-listener/listener-state'

@@ -8,11 +8,11 @@ import {
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
   extractAgentProviderSession,
-  getAgentResumeArgv,
   isResumableTuiAgent,
   type AgentProviderSessionMetadata,
   type ResumableTuiAgent
-} from '../../../shared/agent-session-resume'
+} from '../../../shared/agent-session/lifecycle/agent-session-resume'
+import { getAgentResumeArgv } from '../../../shared/agent-resume-argv'
 
 /** Epoch ms from the host's ISO stamps, preferring the session's own `updatedAt` over the
  *  file mtime. Returns null rather than a guess: the resolver treats a bad timestamp as
