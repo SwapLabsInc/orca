@@ -1,8 +1,11 @@
 // LOCAL: what a release tag's manifest proves about the build its feed advertises.
 
 import { getVersionReleaseSource, type ReleaseSource } from '../shared/release-sources'
-import { compareVersions, isValidVersion } from './updater-fallback'
-import { probeReleaseManifest, type ReleaseManifestProbe } from './updater-release-asset-readiness'
+import { compareVersions, isValidVersion } from './updater/releases/updater-fallback'
+import {
+  probeReleaseManifest,
+  type ReleaseManifestProbe
+} from './updater/releases/updater-release-readiness'
 import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
 
 export function isSourceVersion(version: string, source: ReleaseSource): boolean {

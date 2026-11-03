@@ -1,33 +1,46 @@
+import type { getReleaseDownloadUrl } from './updater/releases/updater-release-readiness'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
+import { loadUpdaterModule, warmUpdaterModule } from './updater/testing/updater-test-module-loader'
 import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
 } from '../shared/release-sources.fixture'
 import type { ReleaseBuild } from '../shared/release-channel'
-import type * as ReleaseBuildsModule from './updater-release-builds'
+import type * as ReleaseBuildsModule from './updater/releases/updater-release-builds'
 
 const { appMock, moduleFactories, resetUpdaterMocks } = await vi.hoisted(async () =>
-  (await import('./updater-test-harness')).createUpdaterMocks()
+  (await import('./updater/testing/updater-test-harness')).createUpdaterMocks()
 )
 const { listReleaseBuildsMock } = vi.hoisted(() => ({ listReleaseBuildsMock: vi.fn() }))
 
 vi.mock('electron', () => moduleFactories.electron())
 vi.mock('electron-updater', () => moduleFactories.electronUpdater())
-vi.mock('./electron-updater-loader', () => moduleFactories.electronUpdaterLoader())
+vi.mock('./updater/electron-updater-loader', () => moduleFactories.electronUpdaterLoader())
 vi.mock('./ipc/pty/kill-all', () => moduleFactories.ptyKillAll())
-vi.mock('./linux-update-package-type', () => moduleFactories.linuxUpdatePackageType())
-vi.mock('./updater-lifecycle-diagnostics', () => moduleFactories.updaterLifecycleDiagnostics())
-vi.mock('./updater-changelog', () => moduleFactories.updaterChangelog())
-vi.mock('./updater-nudge', () => moduleFactories.updaterNudge())
-vi.mock('./update-install-exit-watchdog', () => moduleFactories.updateInstallExitWatchdog())
-vi.mock('./updater-prerelease-feed', () => moduleFactories.updaterPrereleaseFeed())
+vi.mock('./updater/linux-package/linux-update-package-type', () =>
+  moduleFactories.linuxUpdatePackageType()
+)
+vi.mock('./updater/updater-lifecycle-diagnostics', () =>
+  moduleFactories.updaterLifecycleDiagnostics()
+)
+vi.mock('./updater/releases/updater-changelog', () => moduleFactories.updaterChangelog())
+vi.mock('./updater/nudges/nudge-campaign', () => moduleFactories.updaterNudge())
+vi.mock('./updater/update-install-exit-watchdog', () => moduleFactories.updateInstallExitWatchdog())
+vi.mock('./updater/releases/updater-prerelease-feed', () => moduleFactories.updaterPrereleaseFeed())
+vi.mock('./updater/releases/updater-release-readiness', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getReleaseDownloadUrl: (
+    await vi.importMock<{
+      getReleaseDownloadUrl: typeof getReleaseDownloadUrl
+    }>('./updater/releases/updater-prerelease-feed')
+  ).getReleaseDownloadUrl
+}))
 vi.mock('./local-builds/local-build-switch', () => moduleFactories.localBuildSwitch())
 vi.mock('./local-builds/local-build-feed-server', () => moduleFactories.localBuildFeedServer())
 // Why only the lister: the GitHub REST client has its own suite; this one is about what main
 // tells the Updates section per source.
-vi.mock('./updater-release-builds', async (importOriginal) => ({
+vi.mock('./updater/releases/updater-release-builds', async (importOriginal) => ({
   ...(await importOriginal<typeof ReleaseBuildsModule>()),
   listReleaseBuilds: (...args: unknown[]) => listReleaseBuildsMock(...args)
 }))

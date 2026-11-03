@@ -14,9 +14,9 @@ import type {
   ReleaseSourceInstallMode,
   ReleaseSourceStatus
 } from '../../shared/update-status-types'
-import { isExternallyManagedLinuxInstall } from '../linux-update-package-type'
-import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
-import type { UpdateCheckVariant } from './updater-types'
+import { isExternallyManagedLinuxInstall } from './linux-package/linux-update-package-type'
+import { recordUpdaterLifecycle } from './updater-lifecycle-diagnostics'
+import type { UpdateCheckVariant } from './lifecycle/updater-types'
 
 /**
  * Why main decides the install mode: it is the verdict `downloadUpdate` and the pinned check

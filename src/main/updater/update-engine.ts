@@ -4,7 +4,7 @@ import type {
   UpdateDownloadedEvent,
   UpdateInfo
 } from 'electron-updater'
-import type { ElectronAutoUpdater } from '../electron-updater-loader'
+import type { ElectronAutoUpdater } from './electron-updater-loader'
 
 /** The electron-updater events the state machine listens to, with electron-updater's own payloads. */
 export type UpdateEngineEvents = {

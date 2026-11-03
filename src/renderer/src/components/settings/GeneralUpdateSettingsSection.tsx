@@ -20,6 +20,8 @@ import {
   UpdateErrorHint
 } from './ReleaseSourceUpdateControls'
 import { useReleaseSourceStatuses } from './use-release-source-statuses'
+import { UpdateDelaySetting } from './UpdateDelaySetting'
+import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { getReleaseNotesUrlForVersion } from '../../../../shared/release-channel'
 import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
 import {
@@ -291,6 +293,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
           <ReleaseSourceListErrors sources={releaseSources.sources} error={releaseSources.error} />
         ) : null}
       </SearchableSetting>
+      <UpdateDelaySetting />
       {channelSwitcherRevealed ? <ReleaseChannelSection /> : null}
       <GeneralRemoteServerUpdates />
     </section>
@@ -347,10 +350,14 @@ function SingleSourceUpdateHint({
         </>
       )}
       {updateStatus.state === 'not-available' &&
-        translate(
-          'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
-          'You’re on the latest version.'
-        )}
+        (updateStatus.delayedUpdate ? (
+          <DelayedUpdateHint delayedUpdate={updateStatus.delayedUpdate} />
+        ) : (
+          translate(
+            'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
+            'You’re on the latest version.'
+          )
+        ))}
       {updateStatus.state === 'downloading' &&
         translate(
           'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',

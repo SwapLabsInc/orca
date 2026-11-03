@@ -1,4 +1,4 @@
-import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
+import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 import {
   MAC_SELF_UPDATE_HEALTH_TIMEOUT_SECONDS,

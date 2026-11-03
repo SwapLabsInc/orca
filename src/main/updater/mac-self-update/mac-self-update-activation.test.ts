@@ -55,10 +55,10 @@ vi.mock('electron', () => ({
 vi.mock('../../persistence/loading-store/user-data-path', () => ({
   getCanonicalUserDataPath: () => '/Users/me/Library/Orca'
 }))
-vi.mock('../../serve-update-handoff', () => ({
+vi.mock('../serve-update-handoff', () => ({
   hasServeUpdateSupervisor: () => supervised.serve
 }))
-vi.mock('../../updater-lifecycle-diagnostics', () => ({
+vi.mock('../updater-lifecycle-diagnostics', () => ({
   recordUpdaterLifecycle: recordUpdaterLifecycleMock
 }))
 vi.mock('@orca/process-host', () => ({ runProcess: vi.fn() }))

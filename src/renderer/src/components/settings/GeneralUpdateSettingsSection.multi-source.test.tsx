@@ -7,6 +7,7 @@ import { GeneralUpdateSettingsSection } from './GeneralUpdateSettingsSection'
 
 vi.mock('./GeneralRemoteServerUpdates', () => ({ GeneralRemoteServerUpdates: () => null }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
+vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
 
 // Why hoisted: the source registry reads the define once, when the component's imports load.
 const { sources } = await vi.hoisted(async () => {
@@ -330,4 +331,20 @@ it('keeps a local-build offer out of the source buttons', async () => {
   setStatus({ state: 'downloading', percent: 42, version: '0.9.0-local.1', source: 'local' })
   await waitFor(() => expect(screen.getByText('Downloading v0.9.0-local.1... 42%')).toBeTruthy())
   expect(upstreamButton().disabled).toBe(true)
+})
+
+it('names the release an update delay holds instead of calling the build the latest', async () => {
+  setStatus({
+    state: 'not-available',
+    delayedUpdate: {
+      version: FORK_VERSION,
+      releasedAt: '2026-11-01T00:00:00.000Z',
+      availableAt: '2099-01-01T00:00:00.000Z',
+      delayDays: 7
+    }
+  })
+  render(<GeneralUpdateSettingsSection />)
+
+  expect(await screen.findByText(/A newer release is on hold until/)).toBeTruthy()
+  expect(screen.queryByText(/You’re on the latest/)).toBeNull()
 })

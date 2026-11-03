@@ -14,7 +14,7 @@ import {
 } from './mac-self-update-helper'
 import { readMacSelfUpdateInstallState } from './mac-self-update-install-state'
 
-vi.mock('../../updater-lifecycle-diagnostics', () => ({ recordUpdaterLifecycle: vi.fn() }))
+vi.mock('../updater-lifecycle-diagnostics', () => ({ recordUpdaterLifecycle: vi.fn() }))
 
 // Why hoisted: the source registry reads its define once, when the first import loads it.
 vi.hoisted(async () => {

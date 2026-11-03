@@ -23,7 +23,7 @@ vi.mock('./mac-self-update-activation', () => ({
   }
 }))
 const recordUpdaterLifecycleMock = vi.hoisted(() => vi.fn())
-vi.mock('../../updater-lifecycle-diagnostics', () => ({
+vi.mock('../updater-lifecycle-diagnostics', () => ({
   recordUpdaterLifecycle: recordUpdaterLifecycleMock
 }))
 

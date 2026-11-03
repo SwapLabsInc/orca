@@ -14,12 +14,15 @@ import { createInstallPluginsHandler } from './wsl-install-plugins-handler'
 import { PreflightHandler } from './preflight-handler'
 import {
   AGENT_HOOK_INSTALL_PLUGINS_METHOD,
-  AGENT_HOOK_REQUEST_REPLAY_METHOD
+  AGENT_HOOK_REQUEST_REPLAY_METHOD,
+  AGENT_HOOK_PANE_ROOT_METHOD
 } from '../shared/agent-hook-relay'
 import {
   publishAgentHookEnvelope,
   publishAgentHookUserEndedSession
 } from './agent-hook-envelope-publication'
+import { createLocalHookRootEvidenceReader } from '../shared/hook-process-root-evidence-reader'
+import { createRelayPaneRootResolver } from './relay-pane-root'
 import {
   sanitizeWslHookInstanceKey,
   WSL_HOOK_RELAY_INSTANCE_ENV,
@@ -67,7 +70,13 @@ async function main(): Promise<void> {
       dispatcher.requestPrimary(CLAUDE_AGENT_VIEW_RELAY_METHOD, { body }, { timeoutMs: 1000 }),
     forward: (envelope) => publishAgentHookEnvelope(dispatcher, envelope),
     // Why: the host resumes a WSL pane after its terminal is lost, so it must learn which agents the user quit.
-    forwardUserEndedSession: (envelope) => publishAgentHookUserEndedSession(dispatcher, envelope)
+    forwardUserEndedSession: (envelope) => publishAgentHookUserEndedSession(dispatcher, envelope),
+    // The desktop names each pane's root from its PTY inventory; only this guest reads its processes.
+    readHookRootEvidence: createLocalHookRootEvidenceReader(
+      createRelayPaneRootResolver((paneKey) =>
+        dispatcher.requestPrimary(AGENT_HOOK_PANE_ROOT_METHOD, { paneKey }, { timeoutMs: 400 })
+      )
+    )
   })
   dispatcher.onRequest(AGENT_HOOK_INFER_INTERRUPT_METHOD, async (params) => ({
     applied: hookServer.inferInterrupt(params)

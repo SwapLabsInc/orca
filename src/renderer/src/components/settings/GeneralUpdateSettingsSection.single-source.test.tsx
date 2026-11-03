@@ -6,6 +6,7 @@ import { GeneralUpdateSettingsSection } from './GeneralUpdateSettingsSection'
 
 vi.mock('./GeneralRemoteServerUpdates', () => ({ GeneralRemoteServerUpdates: () => null }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
+vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
 
 const listSources = vi.fn()
 
@@ -60,4 +61,23 @@ it('links the refused build from an error that names a manual install page', () 
   expect(screen.getByRole('link', { name: 'Open download page' }).getAttribute('href')).toBe(
     'https://github.com/stablyai/orca/releases/tag/v1.4.200'
   )
+})
+
+it('says a release the update delay held is ready once its delay has passed', async () => {
+  useAppStore.setState({
+    updateStatus: {
+      state: 'not-available',
+      delayedUpdate: {
+        version: '1.4.200',
+        releasedAt: '2020-01-01T00:00:00.000Z',
+        availableAt: '2020-01-08T00:00:00.000Z',
+        delayDays: 7
+      }
+    }
+  })
+  render(<GeneralUpdateSettingsSection />)
+
+  expect(
+    await screen.findByText('A newer release is ready. Check for updates to get it.')
+  ).toBeTruthy()
 })

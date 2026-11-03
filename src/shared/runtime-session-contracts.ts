@@ -1,3 +1,4 @@
+import type { AgentSenderPublication, AgentSenderRevision } from './agent-sender-associations'
 import type { MobileProjectSectionCatalog } from './mobile-project-sections-contract'
 import type { AgentStatusOrchestrationContext } from './agent-status-types'
 import type { DelegatedWorktreeEdge } from './worktree/delegated-worktree-edge'
@@ -183,6 +184,8 @@ export type RuntimeSyncWindowGraph = {
   singleGroupWorkspaceGridSize?: { cols: number; rows: number }
   /** Merge changed workspace selections; absent leaves prior entries, null means none shown. Layout-owner builds only. */
   activeGroupByWorkspace?: Record<string, string | null>
+  /** The sender publication this window last applied; main answers "unchanged" while it holds. */
+  agentSenderBase?: AgentSenderRevision
   /** The sidebar's Project grouping inputs for paired phones; sent only when they changed. */
   projectSectionCatalog?: MobileProjectSectionCatalog
 }
@@ -198,6 +201,9 @@ export type RuntimeNativeChatLaunchDraftResolution = {
 }
 
 export type RuntimeSyncWindowGraphResult = RuntimeStatus & {
+  agentSenderAssociations?: AgentSenderPublication
+  /** Sent instead of the publication when the window's base is still current. */
+  agentSenderRevision?: AgentSenderRevision
   agentOrchestrationByPaneKey?: Record<string, AgentStatusOrchestrationContext>
   /** Cross-host worker placements this runtime coordinated; `[]` means none. */
   delegatedWorktreeEdges?: DelegatedWorktreeEdge[]
@@ -276,6 +282,7 @@ export type RuntimeMobileSessionRetiredTerminalSurface = {
 }
 
 export type RuntimeMobileSessionTabsResult = {
+  agentSenderAssociations?: AgentSenderPublication
   worktree: string
   /** Query-only truth about an executing launch that owns this workspace's first surface. */
   initialSurfaceLaunch?: { launchId: string; agent: TuiAgent }
