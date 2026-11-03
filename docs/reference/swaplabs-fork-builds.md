@@ -100,11 +100,11 @@ runtime, notarization and `forceCodeSigning` stay off (`ORCA_MAC_RELEASE` unset)
 emits three spellings of one identity; its unit test pins them against what
 `orca-fork-ops build-version` produces so the two cannot drift.
 
-| Form          | Example                                                    | Notes                                                                                                         |
-| ------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| App version   | `1.4.197-swaplabs.202609241530`                            | `<base>-swaplabs.<YYYYMMDDHHMM>[.<delta>]`; the base is the patch after upstream's newest release tag (below) |
-| Release tag   | `swaplabs-v1.4.197+202609241530`                           | orca-fork-ops form; the delta replaces the stamp when `ORCA_SWAPLABS_DELTA` names the build                   |
-| Release title | `1.4.197-swaplabs.202609241530 • Sep 24, 8:30AM • abc1234` | the updater resolves fork releases by the version in the title and manifest, never by the tag                 |
+| Form          | Example                                                    | Notes                                                                                                 |
+| ------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| App version   | `1.4.197-swaplabs.202609241530`                            | `<base>-swaplabs.<YYYYMMDDHHMM>[.<delta>]`; the base comes from upstream's newest release tag (below) |
+| Release tag   | `swaplabs-v1.4.197+202609241530`                           | orca-fork-ops form; the delta replaces the stamp when `ORCA_SWAPLABS_DELTA` names the build           |
+| Release title | `1.4.197-swaplabs.202609241530 • Sep 24, 8:30AM • abc1234` | the updater resolves fork releases by the version in the title and manifest, never by the tag         |
 
 The stamp precedes the delta so builds order by time. `ORCA_BUILD_IDENTITY` stays
 unset, so fork builds are silent in telemetry like the dev channels.
@@ -114,7 +114,8 @@ upstream on every sync, with `package.json` only as a floor: upstream bumps its
 version on each release's tag, so `package.json` on `main` falls behind what it
 shipped (1.4.214 while v1.4.247 was out). `resolveDevChannelBaseVersion`, which
 upstream's hourly and daily builds use for the same reason, returns the patch
-after the newest stable tag, without an `-rc.N` tail. A sync stopped for a
+after the newest tag once that version has shipped stable (the version itself
+while only its prereleases exist), without an `-rc.N` tail. A sync stopped for a
 decision has already copied the new tags, so a build in that window carries the
 next base without all of that release's code; the commit in the release body
 says what a build contains.
