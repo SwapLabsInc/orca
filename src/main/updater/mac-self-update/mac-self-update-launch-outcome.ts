@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
-import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
+import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import {
   getMacSelfUpdateSupport,
   resolveRunningMacSelfUpdatePaths

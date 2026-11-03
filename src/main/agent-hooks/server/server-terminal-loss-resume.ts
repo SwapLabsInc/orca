@@ -1,5 +1,7 @@
 import { AgentHookServerTabCleanup } from './server-tab-cleanup'
 import {
+  isResumableIdentityRow,
+  readStatusRowsForUpdate,
   selectTerminalLossAgentResume,
   type TerminalLossAgentResume
 } from './server-retained-identity'
@@ -86,7 +88,11 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
       return
     }
     const paneKey = this.resolvePaneKeyAlias(ended.paneKey)
-    const row = this.state.lastStatusByPaneKey.get(paneKey)
+    const { stored: row } = readStatusRowsForUpdate(this.state, paneKey)
+    // Why: a repeated hook finds the session already retired as ended, with nothing left to record.
+    if (row?.agentPresence?.ended && !isResumableIdentityRow(row)) {
+      return
+    }
     // Why: a nested CLI inherits the pane key, so only the session the row names may retire it,
     // only the route that produced the row may speak for it, and never another identified process.
     const owner = row?.agentPresence?.process

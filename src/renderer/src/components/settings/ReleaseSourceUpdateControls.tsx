@@ -11,6 +11,7 @@ import {
   compareReleaseVersions,
   getReleaseNotesUrlForVersion
 } from '../../../../shared/release-channel'
+import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { getReleaseSourceOrPrimary } from '../../../../shared/release-sources'
 import type { ReleaseSourceStatus, UpdateStatus } from '../../../../shared/update-status-types'
 
@@ -296,6 +297,9 @@ export function ReleaseSourceUpdateHint({
         </>
       )
     case 'not-available':
+      if (updateStatus.delayedUpdate) {
+        return <DelayedUpdateHint delayedUpdate={updateStatus.delayedUpdate} />
+      }
       return (
         <>
           {translate(

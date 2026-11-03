@@ -1,0 +1,118 @@
+import { app } from 'electron'
+import type { UpdateCheckOptions, UpdateStatus } from '../../../shared/update-status-types'
+import type {
+  RemoteServerUpdateInstallResult,
+  RemoteServerUpdaterSnapshot,
+  RemoteServerUpdateSupport
+} from '../../../shared/remote-server-update'
+import { isMultiSourceBuild } from '../../../shared/release-sources'
+import { hasServeUpdateSupervisor } from '../serve-update-handoff'
+import { getLinuxPackageType } from '../linux-package/linux-update-package-type'
+import { UpdaterNudge } from '../nudges/updater-nudge'
+import type { UpdateInstallMode } from './updater-state'
+import { readServerUpdateHelpUrlEnv } from '../server-update-help-url-env'
+
+export abstract class UpdaterRemoteStatus extends UpdaterNudge {
+  // Why a field: read once at startup, so a bad value warns once rather than on every status poll.
+  private readonly serverUpdateHelpUrl = readServerUpdateHelpUrlEnv()
+
+  protected getUpdateStatus(): UpdateStatus {
+    return this.currentStatus
+  }
+
+  protected getRemoteServerUpdateSupport(): RemoteServerUpdateSupport {
+    if (!app.isPackaged) {
+      return {
+        installMode: this.updateInstallMode,
+        automatic: false,
+        reason: 'unpackaged-build'
+      }
+    }
+    if (!this.autoUpdaterInitialized) {
+      return {
+        installMode: this.updateInstallMode,
+        automatic: false,
+        reason: 'updater-unavailable'
+      }
+    }
+    const linuxPackageType = getLinuxPackageType()
+    if (
+      this.updateInstallMode === 'unsupported-headless-serve' ||
+      linuxPackageType === 'deb' ||
+      linuxPackageType === 'rpm' ||
+      linuxPackageType === 'unusable'
+    ) {
+      return {
+        installMode: this.updateInstallMode,
+        automatic: false,
+        reason: 'manual-service-update-required',
+        // Why spread: an unset variable leaves the key off the wire, not present as undefined.
+        ...(this.serverUpdateHelpUrl ? { helpUrl: this.serverUpdateHelpUrl } : {})
+      }
+    }
+    return { installMode: this.updateInstallMode, automatic: true, reason: 'available' }
+  }
+
+  protected getRemoteServerUpdaterSnapshot(runtimeId: string): RemoteServerUpdaterSnapshot {
+    // Why only multi-source builds: a single-source host's wire stays byte-identical to today's.
+    // An unrecognised version stays absent too, so a client places it by its own rules.
+    const releaseSource = isMultiSourceBuild() ? this.getRunningReleaseSource() : null
+    return {
+      appVersion: app.getVersion(),
+      runtimeId,
+      support: this.getRemoteServerUpdateSupport(),
+      status: this.getUpdateStatus(),
+      ...(releaseSource ? { releaseSource } : {})
+    }
+  }
+
+  protected assertRemoteServerUpdateAvailable(): void {
+    if (!this.getRemoteServerUpdateSupport().automatic) {
+      throw new Error('remote_update_manual_required')
+    }
+  }
+
+  protected checkForRemoteServerUpdate(
+    runtimeId: string,
+    options?: UpdateCheckOptions
+  ): RemoteServerUpdaterSnapshot {
+    this.assertRemoteServerUpdateAvailable()
+    this.checkForUpdatesFromMenu(options)
+    return this.getRemoteServerUpdaterSnapshot(runtimeId)
+  }
+
+  protected downloadRemoteServerUpdate(runtimeId: string): RemoteServerUpdaterSnapshot {
+    this.assertRemoteServerUpdateAvailable()
+    if (this.currentStatus.state !== 'available') {
+      throw new Error('remote_update_not_available')
+    }
+    this.downloadUpdate()
+    return this.getRemoteServerUpdaterSnapshot(runtimeId)
+  }
+
+  protected installRemoteServerUpdate(runtimeId: string): RemoteServerUpdateInstallResult {
+    this.assertRemoteServerUpdateAvailable()
+    if (this.currentStatus.state !== 'downloaded') {
+      throw new Error('remote_update_not_downloaded')
+    }
+    const targetVersion = this.currentStatus.version
+    const result: RemoteServerUpdateInstallResult = {
+      accepted: true,
+      fromVersion: app.getVersion(),
+      targetVersion,
+      runtimeId
+    }
+    this.quitAndInstall()
+    return result
+  }
+
+  protected resolveUpdateInstallMode(isServeMode: boolean): UpdateInstallMode {
+    if (!isServeMode) {
+      return 'interactive'
+    }
+    return hasServeUpdateSupervisor() ? 'supervised-headless-serve' : 'unsupported-headless-serve'
+  }
+
+  protected abstract downloadUpdate(): void
+  protected abstract quitAndInstall(): void
+}

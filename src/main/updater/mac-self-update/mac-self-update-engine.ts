@@ -9,7 +9,7 @@ import {
   getMacSelfUpdateManifestName,
   getMacSelfUpdateSignatureName
 } from '../../../shared/mac-self-update-assets'
-import { recordUpdaterLifecycle } from '../../updater-lifecycle-diagnostics'
+import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import type { UpdateEngine, UpdateEngineFeed } from '../update-engine'
 import {
   extractBundleZip,

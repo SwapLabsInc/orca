@@ -42,6 +42,11 @@ More rules:
 - Only the row's own session, route and identified process may end it: a
   `SessionEnd` from another process in the pane (a nested CLI) is ignored, both
   by the local hook server and by the WSL relay before it sends a notice.
+- It does not wait for upstream's pane-root proof (#36825). A row with no
+  recorded process (a Claude in a tmux session the pane does not show, or one
+  whose root read is still pending) is retired at once, where upstream keeps
+  the row or owes the exit until the proof lands. Its ended presence then names
+  no process. Upstream's path still decides every other exit, such as `other`.
 - `/clear` needs nothing, because its `SessionStart` replaces the session.
 - A remnant's status fields are placeholders. The shared listener and the remote
   ingest normalize the next hook in the pane without any remnant

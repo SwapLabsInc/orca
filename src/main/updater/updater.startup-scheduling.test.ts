@@ -1,0 +1,343 @@
+import type { getReleaseDownloadUrl } from './releases/updater-release-readiness'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadUpdaterModule, warmUpdaterModule } from './testing/updater-test-module-loader'
+import { createUpdaterMainWindowFake } from '../updater-main-window.fixture'
+import {
+  FORK_RELEASE_SOURCES_LITERAL,
+  setReleaseSourcesLiteralForTest
+} from '../../shared/release-sources.fixture'
+import { updaterMainWindow } from './testing/updater-test-main-window'
+
+const {
+  appMock,
+  autoUpdaterMock,
+  powerMonitorOnMock,
+  fetchNewerReleaseTagsMock,
+  moduleFactories,
+  resetUpdaterMocks
+} = await vi.hoisted(async () =>
+  (await import('./testing/updater-test-harness')).createUpdaterMocks()
+)
+
+const FORK_VERSION = '1.4.197-swaplabs.202609241530'
+const FORK_TAG = 'swaplabs-v1.4.197+resume.2'
+const FORK_FEED_URL = `https://github.com/SwapLabsInc/orca/releases/download/${FORK_TAG}`
+
+/** Runs a test as a fork build: two configured sources and a source-stamped running version. */
+function asForkBuild(): void {
+  setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
+  appMock.getVersion.mockReturnValue(FORK_VERSION)
+}
+
+vi.mock('electron', () => moduleFactories.electron())
+vi.mock('electron-updater', () => moduleFactories.electronUpdater())
+vi.mock('./electron-updater-loader', () => moduleFactories.electronUpdaterLoader())
+vi.mock('../ipc/pty/kill-all', () => moduleFactories.ptyKillAll())
+vi.mock('./linux-package/linux-update-package-type', () => moduleFactories.linuxUpdatePackageType())
+vi.mock('./updater-lifecycle-diagnostics', () => moduleFactories.updaterLifecycleDiagnostics())
+vi.mock('./releases/updater-changelog', () => moduleFactories.updaterChangelog())
+vi.mock('./nudges/nudge-campaign', () => moduleFactories.updaterNudge())
+vi.mock('./update-install-exit-watchdog', () => moduleFactories.updateInstallExitWatchdog())
+vi.mock('./releases/updater-prerelease-feed', () => moduleFactories.updaterPrereleaseFeed())
+vi.mock('./releases/updater-release-readiness', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getReleaseDownloadUrl: (
+    await vi.importMock<{
+      getReleaseDownloadUrl: typeof getReleaseDownloadUrl
+    }>('./releases/updater-prerelease-feed')
+  ).getReleaseDownloadUrl
+}))
+vi.mock('../local-builds/local-build-switch', () => moduleFactories.localBuildSwitch())
+vi.mock('../local-builds/local-build-feed-server', () => moduleFactories.localBuildFeedServer())
+
+warmUpdaterModule()
+
+describe('updater', () => {
+  beforeEach(() => {
+    resetUpdaterMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    setReleaseSourcesLiteralForTest(null)
+  })
+
+  // Why: the routine check used to read upstream's feed for every build, and a fork
+  // version is semver-below upstream's next stable, so the next release replaced it.
+  it('pins the running source feed for a startup check on a source build', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([FORK_TAG])
+    const mainWindow = updaterMainWindow(vi.fn())
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000
+    })
+
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenNthCalledWith(1, {
+      provider: 'generic',
+      url: 'https://github.com/SwapLabsInc/orca/releases/latest/download'
+    })
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith(FORK_VERSION, 2, {
+      includePrerelease: true,
+      source: expect.objectContaining({ id: 'swaplabs', repo: 'SwapLabsInc/orca' })
+    })
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: FORK_FEED_URL
+    })
+  })
+
+  it('keeps a wake or focus re-check on the running source', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([FORK_TAG])
+    const mainWindow = updaterMainWindow(vi.fn())
+    let lastCheckAt = Date.now()
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => lastCheckAt
+    })
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+    lastCheckAt = Date.now() - 25 * 60 * 60 * 1000
+    appMock.emit('browser-window-focus')
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenLastCalledWith(
+      FORK_VERSION,
+      2,
+      expect.objectContaining({ source: expect.objectContaining({ id: 'swaplabs' }) })
+    )
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: FORK_FEED_URL
+    })
+  })
+
+  // Why: a source that only publishes prereleases has no /releases/latest to fall
+  // back to, so "nothing newer" is settled from the feed answer alone.
+  it('settles a source build with nothing newer as not-available without launching a check', async () => {
+    asForkBuild()
+    fetchNewerReleaseTagsMock.mockResolvedValue([])
+    const { mainWindow, send } = createUpdaterMainWindowFake()
+    const setLastUpdateCheckAt = vi.fn()
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000,
+      setLastUpdateCheckAt
+    })
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith('updater:status', { state: 'not-available' })
+    })
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    expect(setLastUpdateCheckAt).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a single-source build on the upstream feed with no source parameter', async () => {
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.0.52'])
+    const mainWindow = updaterMainWindow(vi.fn())
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000
+    })
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.0.51', 1, {
+      includePrerelease: false
+    })
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: 'https://github.com/stablyai/orca/releases/download/v1.0.52'
+    })
+  })
+
+  it('does not load or configure electron-updater during dev setup', async () => {
+    appMock.isPackaged = false
+    const mainWindow = updaterMainWindow(vi.fn())
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    setupAutoUpdater(mainWindow)
+
+    expect(autoUpdaterMock.updateConfigPath).toBeUndefined()
+    expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    expect(powerMonitorOnMock).not.toHaveBeenCalled()
+  })
+
+  it('waits until the remaining interval before the next background check', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-03T12:00:00Z'))
+
+    const mainWindow = updaterMainWindow(vi.fn())
+    const setLastUpdateCheckAt = vi.fn()
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 23 * 60 * 60 * 1000,
+      setLastUpdateCheckAt
+    })
+
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(59 * 60 * 1000)
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    expect(setLastUpdateCheckAt).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates rapid focus-triggered daily checks before checking status arrives', async () => {
+    let lastUpdateCheckAt = Date.now()
+    const mainWindow = updaterMainWindow(vi.fn())
+
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => new Promise(() => {}))
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => lastUpdateCheckAt
+    })
+
+    lastUpdateCheckAt = Date.now() - 25 * 60 * 60 * 1000
+    appMock.emit('browser-window-focus')
+    appMock.emit('browser-window-focus')
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('does not persist lastUpdateCheckAt when a focus-triggered check fails benignly', async () => {
+    let lastUpdateCheckAt = Date.now()
+    const setLastUpdateCheckAt = vi.fn()
+    const sendMock = vi.fn()
+    const mainWindow = updaterMainWindow(sendMock)
+
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+      autoUpdaterMock.emit('checking-for-update')
+      queueMicrotask(() => {
+        autoUpdaterMock.emit('error', new Error('net::ERR_FAILED'))
+      })
+      return Promise.reject(new Error('net::ERR_FAILED'))
+    })
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => lastUpdateCheckAt,
+      setLastUpdateCheckAt
+    })
+
+    lastUpdateCheckAt = Date.now() - 25 * 60 * 60 * 1000
+    appMock.emit('browser-window-focus')
+
+    await vi.waitFor(() => {
+      const statuses = sendMock.mock.calls
+        .filter(([channel]) => channel === 'updater:status')
+        .map(([, status]) => status)
+      expect(statuses).toContainEqual({ state: 'idle' })
+    })
+
+    expect(setLastUpdateCheckAt).not.toHaveBeenCalled()
+  })
+
+  it('retries background checks sooner after a failed automatic check', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-03T12:00:00Z'))
+
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+      autoUpdaterMock.emit('checking-for-update')
+      queueMicrotask(() => {
+        autoUpdaterMock.emit('error', new Error('boom'))
+      })
+      return Promise.reject(new Error('boom'))
+    })
+
+    const sendMock = vi.fn()
+    const mainWindow = updaterMainWindow(sendMock)
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => null,
+      setLastUpdateCheckAt: vi.fn()
+    })
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+
+    await vi.advanceTimersByTimeAsync(59 * 60 * 1000)
+    expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('reschedules the next automatic check 24 hours after finding an available update', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-03T12:00:00Z'))
+
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+      autoUpdaterMock.emit('checking-for-update')
+      queueMicrotask(() => {
+        autoUpdaterMock.emit('update-available', { version: '1.0.61' })
+      })
+      return Promise.resolve(undefined)
+    })
+
+    const sendMock = vi.fn()
+    const setLastUpdateCheckAt = vi.fn()
+    const mainWindow = updaterMainWindow(sendMock)
+
+    const { setupAutoUpdater } = await loadUpdaterModule()
+
+    // Start 23h in to distinguish the result handler's re-arm from the initial startup timer.
+    setupAutoUpdater(mainWindow, {
+      getLastUpdateCheckAt: () => Date.now() - 23 * 60 * 60 * 1000,
+      setLastUpdateCheckAt
+    })
+
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(setLastUpdateCheckAt).toHaveBeenCalledTimes(1)
+    expect(sendMock).toHaveBeenCalledWith('updater:status', {
+      state: 'available',
+      version: '1.0.61',
+      changelog: null
+    })
+
+    await vi.advanceTimersByTimeAsync(23 * 60 * 60 * 1000)
+    expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    // Other timers fire at this boundary too; assert the schedule rather than an exact global call count.
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.checkForUpdates.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+})
