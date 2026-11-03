@@ -114,8 +114,9 @@ upstream on every sync, with `package.json` only as a floor: upstream bumps its
 version on each release's tag, so `package.json` on `main` falls behind what it
 shipped (1.4.214 while v1.4.247 was out). `resolveDevChannelBaseVersion`, which
 upstream's hourly and daily builds use for the same reason, returns the patch
-after the newest tag once that version has shipped stable (the version itself
-while only its prereleases exist), without an `-rc.N` tail. A sync stopped for a
+after the highest tagged version once it has shipped stable (the version itself
+while only its prereleases exist), without an `-rc.N` tail; a lookup that fails
+or finds no release version fails the build. A sync stopped for a
 decision has already copied the new tags, so a build in that window carries the
 next base without all of that release's code; the commit in the release body
 says what a build contains.
