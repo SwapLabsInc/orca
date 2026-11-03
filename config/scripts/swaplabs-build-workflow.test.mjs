@@ -260,6 +260,42 @@ describe('swaplabs fork build publish policy', () => {
   })
 })
 
+// Runs the real step and script: the release tags must reach the base, and a lookup that fails or
+// finds nothing must stop the build rather than stamp the stale package.json version.
+describe('swaplabs fork build base version', () => {
+  const identity = stepNamed(jobs.preflight, 'Compute the fork build identity')
+  const mock = `gh() {
+    case "$*" in
+      "release list "*) printf '%s\\n' "$PREVIOUS_VERSION" ;;
+      "api repos/SwapLabsInc/orca/git/matching-refs/tags/v "*)
+        [ "$TAGS_FAIL" = 1 ] && return 1
+        printf '%s\\n' "$TAGS" ;;
+      *) return 1 ;;
+    esac
+  }`
+  const run = (env) =>
+    runWorkflowShell(identity.run, {
+      mock,
+      env: { PREVIOUS_VERSION: '', TAGS: '', TAGS_FAIL: '0', ...env }
+    })
+
+  it('takes the patch after the newest release tag', async () => {
+    const result = await run({ TAGS: 'v9.8.6\nv9.8.7' })
+    expect(result.exitCode, `${result.stdout} ${result.stderr}`).toBe(0)
+    expect(result.output).toMatch(/^version=9\.8\.8-swaplabs\.\d{12}$/m)
+    expect(result.output).toMatch(/^tag=swaplabs-v9\.8\.8\+\d{12}$/m)
+  })
+
+  it.each([
+    ['fails', { TAGS_FAIL: '1' }],
+    ['finds no tags', { TAGS: '' }]
+  ])('stops the build when the tag lookup %s', async (_name, env) => {
+    const result = await run(env)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.output).toBe('')
+  })
+})
+
 describe('swaplabs fork build preflight decision', () => {
   const head = 'abcdef0123'.repeat(4)
   const mirror = '0123456789'.repeat(4)

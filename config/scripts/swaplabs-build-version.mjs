@@ -2,6 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { formatReleaseTitleTimestamp } from './release-title-timestamp.mjs'
+import {
+  readPublishedVersionsFromEnv,
+  resolveDevChannelBaseVersion
+} from './dev-channel-base-version.mjs'
 
 // LOCAL: SwapLabs fork build identity. Emits the two forms of one identity that
 // `orca-fork-ops build-version` also produces — the app version the packaged app
@@ -55,9 +59,9 @@ export function requireSwaplabsDelta(delta) {
 }
 
 /**
- * The upstream base the build sits on, as `package.json` carries it. Any `-rc.N`
- * tail is kept (plan decision D2), so it has to satisfy the same identifier rules
- * as the delta appended after it.
+ * The upstream base the build sits on. `getSwaplabsBuildIdentity` resolves one
+ * without a prerelease tail; a base passed in with an `-rc.N` tail has to satisfy
+ * the same identifier rules as the delta appended after it.
  */
 export function parseSwaplabsBaseVersion(baseVersion) {
   const match = SEMVER.exec(String(baseVersion ?? ''))
@@ -210,13 +214,14 @@ export function assertSwaplabsVersionAdvances(next, previous) {
 
 export function getSwaplabsBuildIdentity(
   now = new Date(),
-  { delta = '', packageJsonPath = resolve('package.json') } = {}
+  { delta = '', packageJsonPath = resolve('package.json'), publishedVersions = [] } = {}
 ) {
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
   const commit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
     encoding: 'utf8'
   }).trim()
-  const base = packageJson.version
+  // Why the tags: upstream bumps the version on each release's tag, so main's package.json stays behind what it shipped.
+  const base = resolveDevChannelBaseVersion(packageJson.version, publishedVersions)
   const stamp = formatSwaplabsBuildStamp(now)
   const version = createSwaplabsBuildVersion(base, now, delta)
   return {
@@ -231,8 +236,16 @@ export function getSwaplabsBuildIdentity(
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+  const publishedVersions = readPublishedVersionsFromEnv()
+  // Why refuse: without the tags the base silently falls back to the stale package.json version.
+  if (publishedVersions.length === 0) {
+    throw new Error(
+      'ORCA_PUBLISHED_VERSIONS is empty; pass the release tags (v1.4.247 ...) the base is resolved from.'
+    )
+  }
   const identity = getSwaplabsBuildIdentity(new Date(), {
-    delta: (process.env.ORCA_SWAPLABS_DELTA ?? '').trim()
+    delta: (process.env.ORCA_SWAPLABS_DELTA ?? '').trim(),
+    publishedVersions
   })
   assertSwaplabsVersionAdvances(
     identity.version,

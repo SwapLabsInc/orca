@@ -26,8 +26,8 @@ describe('createSwaplabsBuildVersion', () => {
     )
   })
 
-  // Plan decision D2: the base keeps the upstream rc tail, so the fork identifiers
-  // continue the existing prerelease with a dot rather than opening a second one.
+  // A base with an rc tail continues that prerelease with a dot rather than
+  // opening a second one.
   it('keeps an rc tail and continues its prerelease', () => {
     expect(createSwaplabsBuildVersion('1.4.198-rc.1', at)).toBe(
       '1.4.198-rc.1.swaplabs.202609241530'
@@ -60,9 +60,8 @@ describe('createSwaplabsBuildVersion', () => {
     ).toBeLessThan(0)
   })
 
-  // Documented consequence of keeping the rc tail: a fork build of an RC ranks
-  // above that RC and below the stable, while a stable-based fork build ranks
-  // below its stable. Cross-source comparisons are never made by semver; this
+  // A fork build of an RC ranks above that RC and below the stable, while a
+  // stable-based fork build ranks below its stable. Cross-source comparisons are never made by semver; this
   // pins the ordering the updater's source registry is built to ignore.
   it('sits between its rc base and the stable, and below a stable base', () => {
     const rcBuild = createSwaplabsBuildVersion('1.4.198-rc.1', at)
@@ -167,13 +166,16 @@ describe('getSwaplabsBuildIdentity', () => {
 
   // The tag, version and title are three spellings of one identity; a workflow
   // that consumed them separately must never see them disagree.
-  it('emits one consistent identity from package.json and HEAD', () => {
-    withPackageVersion('1.4.198-rc.1', (packageJsonPath) => {
-      const identity = getSwaplabsBuildIdentity(at, { packageJsonPath })
-      expect(identity.base).toBe('1.4.198-rc.1')
+  it('emits one consistent identity from the release tags and HEAD', () => {
+    withPackageVersion('1.4.214', (packageJsonPath) => {
+      const identity = getSwaplabsBuildIdentity(at, {
+        packageJsonPath,
+        publishedVersions: ['v1.4.214', 'v1.4.247', 'v1.4.24-rc.0']
+      })
+      expect(identity.base).toBe('1.4.248')
       expect(identity.stamp).toBe('202609241530')
-      expect(identity.version).toBe('1.4.198-rc.1.swaplabs.202609241530')
-      expect(identity.tag).toBe('swaplabs-v1.4.198-rc.1+202609241530')
+      expect(identity.version).toBe('1.4.248-swaplabs.202609241530')
+      expect(identity.tag).toBe('swaplabs-v1.4.248+202609241530')
       expect(identity.commit).toMatch(/^[0-9a-f]{12}$/)
       expect(identity.name).toBe(
         `${identity.version} • Sep 24, 8:30AM • ${identity.commit.slice(0, 7)}`
