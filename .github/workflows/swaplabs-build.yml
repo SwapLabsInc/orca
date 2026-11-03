@@ -137,7 +137,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.freshness.outputs.head_sha }}
-          # The version script only reads package.json and HEAD.
+          # The version script only reads package.json and HEAD here; release tags come from the API.
           fetch-depth: 1
           persist-credentials: false
 
@@ -163,6 +163,10 @@ jobs:
           SWAPLABS_PREVIOUS_VERSION="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,isDraft,name \
             --jq "map(select((.isDraft | not) and (.tagName | startswith(\"$SWAPLABS_TAG_PREFIX\")))) | .[0].name // \"\" | split(\" \") | .[0] // \"\"")"
           export SWAPLABS_PREVIOUS_VERSION
+          # The base follows upstream's v* tags (synced here), not main's lagging package.json; a failed lookup fails.
+          ORCA_PUBLISHED_VERSIONS="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+            --jq '.[].ref | sub("^refs/tags/"; "")')"
+          export ORCA_PUBLISHED_VERSIONS
           node config/scripts/swaplabs-build-version.mjs >"$RUNNER_TEMP/swaplabs-identity.txt"
           for key in version tag commit name; do
             if ! grep -q "^$key=" "$RUNNER_TEMP/swaplabs-identity.txt"; then
