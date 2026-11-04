@@ -8,7 +8,7 @@
  *    idle sibling's transcript be resumed into a second pane.
  */
 import { describe, expect, it } from 'vitest'
-import type { AgentStatusEntry } from '../../../shared/agent-status-types'
+import type { AgentStatusEntry } from '../../../shared/agent-status/contracts/agent-status-types'
 import {
   agentResumeSessionsClaimedByOtherPanes,
   resolveAgentResumePaneLiveness,

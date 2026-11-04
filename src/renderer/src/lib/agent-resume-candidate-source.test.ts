@@ -3,8 +3,8 @@ import {
   AI_VAULT_SCAN_ISSUE_LIMIT,
   type AiVaultScanIssue,
   type AiVaultSession
-} from '../../../shared/ai-vault-types'
-import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault-session-depth'
+} from '../../../shared/ai-vault/contracts/ai-vault-types'
+import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../../shared/ai-vault/scanning/ai-vault-session-depth'
 
 /** A host that honoured the uncapped request: the ordinary healthy answer. */
 const UNCAPPED = { appliedSessionDepth: 'unlimited' } as const

@@ -8,12 +8,12 @@ import {
   AGENT_HOOK_NOTIFICATION_METHOD,
   AGENT_HOOK_USER_ENDED_SESSION_STATE,
   createShedSubagentsField
-} from '../shared/agent-hook-relay'
+} from '../shared/agent-hook-listener/transport/agent-hook-relay'
 import type {
   AgentHookRelayEnvelope,
   AgentHookRelayUserEndedSessionEnvelope
-} from '../shared/agent-hook-relay'
-import type { AgentSubagentSnapshot } from '../shared/agent-status-types'
+} from '../shared/agent-hook-listener/transport/agent-hook-relay'
+import type { AgentSubagentSnapshot } from '../shared/agent-status/contracts/agent-status-subagent-snapshot'
 
 type BoundedClient = {
   frames: Buffer[]

@@ -2,8 +2,11 @@ import {
   spawnCommitBindingOrigin,
   type PtySpawnCommitOrigin
 } from '../persistence/loading-store/pty-binding-span'
-import { isUntypedTerminalInput } from '../../shared/terminal-untyped-input'
-import { isDrivingInputKind, type TerminalInputKind } from '../../shared/terminal-input-kind'
+import { isUntypedTerminalInput } from '../../shared/terminal/input/terminal-untyped-input'
+import {
+  isDrivingInputKind,
+  type TerminalInputKind
+} from '../../shared/terminal/input/terminal-input-kind'
 import { typedPromptInputEffect } from './terminal-typed-prompt-input'
 
 export type TerminalRunFacts = {

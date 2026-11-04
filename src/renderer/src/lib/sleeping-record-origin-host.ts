@@ -3,7 +3,7 @@ import {
   toSshExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
-import { isWorkspaceSessionRecord } from '../../../shared/workspace-session-host-records'
+import { isWorkspaceSessionRecord } from '../../../shared/workspace-session/workspace-session-host-records'
 
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell
  *  which one a given value came out of instead of assuming.

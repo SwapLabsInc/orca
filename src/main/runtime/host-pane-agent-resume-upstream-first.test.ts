@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { SleepingAgentSessionRecord } from '../../shared/agent-session/lifecycle/agent-session-resume'
-import { makePaneKey } from '../../shared/stable-pane-id'
+import { makePaneKey } from '../../shared/workspace-layout/stable-pane-id'
 import { makeAgentStatusStoreWiring } from './agent-status-store-wiring.test-fixture'
 
 // Fragments stay side-effect ordered: mocks, then lifecycle, then fixtures.

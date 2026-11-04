@@ -14,11 +14,11 @@ import {
   agentProviderSessionsEqual,
   type SleepingAgentSessionRecord
 } from '../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { makePaneKey } from '../../../../shared/stable-pane-id'
+import { makePaneKey } from '../../../../shared/workspace-layout/stable-pane-id'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
-} from '../../../../shared/tui-agent-launch-defaults'
+} from '../../../../shared/agent-launch/choices/tui-agent-launch-defaults'
 import type { RuntimeMobileSessionCreateTerminalResult } from '../../../../shared/runtime-session-contracts'
 import type { RuntimeMobileSessionTerminalTab } from '../../../../shared/runtime-types'
 

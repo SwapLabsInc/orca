@@ -2,14 +2,17 @@
 // forwards it as its own notice for the host to read as the local listener reads the raw hook.
 import { parseHookEnvelope } from '../shared/agent-hook-listener/hook-envelope'
 import type { HookListenerState } from '../shared/agent-hook-listener/listener-state'
-import { isSameAgentProcess, readAgentProcessIdentity } from '../shared/agent-process-presence'
+import {
+  isSameAgentProcess,
+  readAgentProcessIdentity
+} from '../shared/agent-status/process/agent-process-presence'
 import { readClaudeUserEndedSessionId } from '../shared/agent-hook-listener/providers/claude-session-end'
 import {
   AGENT_HOOK_USER_ENDED_SESSION_STATE,
   type AgentHookRelayEnvelope,
   type AgentHookRelayUserEndedSessionEnvelope,
   type AgentHookSource
-} from '../shared/agent-hook-relay'
+} from '../shared/agent-hook-listener/transport/agent-hook-relay'
 import { hookBodyEnv, hookBodyVersion } from './agent-hook-envelope-build'
 
 export type RelayUserEndedSessionForward = (

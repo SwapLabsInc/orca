@@ -4,7 +4,7 @@ import type { ExecutionHostId } from '../../../../../../shared/execution-host'
 import { cloneDefaultWorkspaceStatuses } from '../../../../../../shared/workspace-statuses'
 import { planSidebarRows } from '../../../../../../shared/sidebar-list/sidebar-row-plan'
 import { createSidebarPRGroupReader } from './pr-group-key'
-import { repo, remoteRepo, worktree } from '../../worktree-list-groups-test-fixtures'
+import { repo, remoteRepo, worktree } from './worktree-list-groups-test-fixtures'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
 import type { Repo } from '../../../../../../shared/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
@@ -105,6 +105,7 @@ function rowsFor(
   const worktrees = [...(overrides.worktrees ?? [coordinator, remoteWorker])]
   return planSidebarRows({
     groupBy: overrides.groupBy ?? 'repo',
+    sortBy: 'smart',
     worktrees,
     repoMap,
     prGroupOf: createSidebarPRGroupReader(repoMap, null),

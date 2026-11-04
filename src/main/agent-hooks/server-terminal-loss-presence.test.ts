@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RelayAgentHookServer } from '../../wsl-guest/agent-hook-server'
-import type { AgentHookRelayUserEndedSessionEnvelope } from '../../shared/agent-hook-relay'
+import type { AgentHookRelayUserEndedSessionEnvelope } from '../../shared/agent-hook-listener/transport/agent-hook-relay'
 import { AgentHookServer, _internals } from './server'
 import { buildBody, PANE, postHookEvent } from './server.test-fixtures'
 
@@ -13,7 +13,9 @@ vi.mock('../telemetry/cohort-classifier', () => ({ getCohortAtEmit: vi.fn(() => 
 const probe = vi.hoisted(() =>
   vi.fn(async (): Promise<'live' | 'unverifiable' | 'exited'> => 'unverifiable')
 )
-vi.mock('../../shared/agent-process-presence-probe', () => ({ probeAgentProcessPresence: probe }))
+vi.mock('../../shared/agent-status/process/agent-process-presence-probe', () => ({
+  probeAgentProcessPresence: probe
+}))
 
 const SESSION = 'c0ffee00-0000-4000-8000-000000000001'
 const TRANSCRIPT = '/home/u/.claude/projects/p/c0ffee00.jsonl'

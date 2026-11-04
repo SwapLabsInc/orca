@@ -5,8 +5,8 @@ import {
   type AgentHookUnavailableEnvelope,
   type AgentHookRelayEnvelope,
   type AgentHookRelayUserEndedSessionEnvelope
-} from '../shared/agent-hook-relay'
-import { fitInteractivePrompt } from '../shared/agent-status-field-normalization'
+} from '../shared/agent-hook-listener/transport/agent-hook-relay'
+import { fitInteractivePrompt } from '../shared/agent-status/contracts/agent-status-field-normalization'
 import type { RelayDispatcher } from './dispatcher'
 
 // Shed reconstructible fields first; keep state/paneKey and preserve interactivePrompt longest so waiting panes remain answerable.

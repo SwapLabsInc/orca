@@ -3,7 +3,7 @@
  * whether the agent that pane last ran comes back, from its own agent-status store.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { makePaneKey } from '../../shared/stable-pane-id'
+import { makePaneKey } from '../../shared/workspace-layout/stable-pane-id'
 import { makeAgentStatusStoreWiring } from './agent-status-store-wiring.test-fixture'
 
 // Fragments stay side-effect ordered: mocks, then lifecycle, then fixtures.

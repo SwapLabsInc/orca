@@ -1,17 +1,15 @@
 import type { AppState } from '../../types'
-import {
-  mainAgentStatusEqual,
-  type AgentStatusEntry
-} from '../../../../../shared/agent-status-types'
-import { agentTurnEndedUncleanly } from '../../../../../shared/agent-main-agent-verdict'
+import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
+import { mainAgentStatusEqual } from '../../../../../shared/agent-status/lifecycle/main-agent-status'
+import { agentTurnEndedUncleanly } from '../../../../../shared/agent-status/lifecycle/agent-main-agent-verdict'
 import {
   agentProviderSessionsEqual,
   type AgentProviderSessionMetadata,
   type SleepingAgentLaunchConfig,
   type SleepingAgentSessionRecord
 } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { resumeRecordFromStatus } from '../../../../../shared/agent-resume-record-from-status'
-import type { TerminalTab } from '../../../../../shared/terminal-tab-types'
+import { resumeRecordFromStatus } from '../../../../../shared/agent-session/lifecycle/agent-resume-record-from-status'
+import type { TerminalTab } from '../../../../../shared/workspace-layout/terminal-tab-types'
 import { findTabForAgentEntry } from './agent-status-pane-key-tab-binding'
 
 /** Omission is not evidence. `interrupted` is refreshed from every payload, so a payload that says

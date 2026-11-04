@@ -1,6 +1,6 @@
 import { projectAgentPaneConversation } from '../agent-pane-conversation'
 import type { AppState } from '../../types'
-import type { AgentStatusEntry } from '../../../../../shared/agent-status-types'
+import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
 import {
   capLiveAgentStatusesInPlace,
   classifyPaneKeyLiveness,
@@ -14,7 +14,7 @@ import {
 } from './agent-status-sleeping-records'
 import type { AgentStatusLiveEntryBuild } from './agent-status-live-entry-builder'
 import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { liveResumeRecordChange } from '../../../../../shared/agent-resume-record-from-status'
+import { liveResumeRecordChange } from '../../../../../shared/agent-session/lifecycle/agent-resume-record-from-status'
 
 export type AgentStatusLiveUpdateReduction = {
   patch: Partial<AppState>

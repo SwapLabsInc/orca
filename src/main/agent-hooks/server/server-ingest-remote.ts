@@ -1,12 +1,12 @@
-import { normalizeHostTurnRevision } from '../../../shared/agent-hook-interrupt-reconciliation'
-import { readAgentProcessPresence } from '../../../shared/agent-process-presence'
-import { track } from '../../telemetry/client'
+import { normalizeHostTurnRevision } from '../../../shared/agent-hook-listener/transport/agent-hook-interrupt-reconciliation'
+import { readAgentProcessPresence } from '../../../shared/agent-status/process/agent-process-presence'
+import { trackEmptyPaneKeyHook } from './server-transport-rules'
 import {
   isTurnEndDisposition,
   normalizeAgentStatusPayload
-} from '../../../shared/agent-status-types'
-import { isTurnEndedAt } from '../../../shared/agent-hook-turn-end-timing'
-import { restoreShedStatusFields, statusRowToComplete } from '../../../shared/agent-hook-relay'
+} from '../../../shared/agent-status/contracts/agent-status-types'
+import { isTurnEndedAt } from '../../../shared/agent-hook-listener/state/agent-hook-turn-end-timing'
+import { restoreShedStatusFields } from '../../../shared/agent-hook-listener/transport/agent-hook-relay'
 import {
   MAX_PANE_KEY_LEN,
   warnOnHookEnvOrVersionMismatch
@@ -16,14 +16,14 @@ import {
   isClaudeCompactCompletionConsumed,
   markClaudeCompactCompletionConsumed,
   resolveLegacyCompactTrigger
-} from '../../../shared/claude-compact-completion'
-import { launchTokenHash } from '../../../shared/agent-hook-spool'
-import { parsePaneKey } from '../../../shared/stable-pane-id'
+} from '../../../shared/agent-hook-listener/providers/claude-compact-completion'
+import { launchTokenHash } from '../../../shared/agent-hook-listener/transport/agent-hook-spool'
+import { parsePaneKey } from '../../../shared/workspace-layout/stable-pane-id'
 import {
   AGENT_STATUS_LEGACY_UNADVERTISED_PEER_CAPABILITIES,
   canAdmitLegacyAgentStatus,
   olderPeerAgentStatusLegacyMode
-} from '../../../shared/agent-status-legacy-adapter'
+} from '../../../shared/agent-status/transport/agent-status-legacy-adapter'
 import { isValidPiProviderSessionOnly } from './server-status-identity'
 import {
   normalizeRemoteEnvelopeFields,
@@ -65,7 +65,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
     let paneKey = this.resolvePaneKeyAlias(physicalPaneKey)
     const parsedPaneKey = parsePaneKey(paneKey)
     if (paneKey.length === 0) {
-      track('agent_hook_unattributed', { reason: 'empty_pane_key' })
+      trackEmptyPaneKeyHook(envelope, this.attributionDiagnostics)
       return
     }
     if (paneKey.length > MAX_PANE_KEY_LEN || !parsedPaneKey) {
@@ -195,7 +195,7 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       // Rebind the resolved stable key so a new session cannot inherit retired observation order.
       this.observations.rebind(paneKey)
     }
-    const previousStatus = statusRowToComplete(this.state.lastStatusByPaneKey.get(paneKey))
+    const previousStatus = this.readStatusRowToComplete(paneKey)
     let acceptedCompactCompletion = false
     if (hookEventName === 'PreCompact' || hookEventName === 'PostCompact') {
       // PreCompact alone proves no completed compact, including on older peers.
