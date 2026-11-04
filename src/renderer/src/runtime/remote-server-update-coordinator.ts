@@ -5,18 +5,19 @@ import {
   isPrereleaseAppVersion,
   isValidAppVersion
 } from '../../../shared/app-version'
-import { REMOTE_SERVER_UPDATE_CAPABILITY } from '../../../shared/remote-server-update'
 import { readRemoteServerUpdateSupport } from '../../../shared/remote-server-update-help-url'
 import { getVersionReleaseSource } from '../../../shared/release-sources'
-import type {
-  RemoteServerUpdateInstallResult,
-  RemoteServerUpdaterSnapshot,
-  RemoteServerUpdateSupport
+import {
+  REMOTE_SERVER_UPDATE_CAPABILITY,
+  type RemoteServerUpdateInstallResult,
+  type RemoteServerUpdaterSnapshot,
+  type RemoteServerUpdateSupport
 } from '../../../shared/remote-server-update'
+
 import {
   getOrcadSshDeployment,
   type PublicKnownRuntimeEnvironment
-} from '../../../shared/runtime-environments'
+} from '../../../shared/remote-runtime/host-catalog/runtime-environments'
 import type { RuntimeStatus } from '../../../shared/runtime-types'
 import type { UpdateCheckOptions } from '../../../shared/update-status-types'
 import { waitForReplacementRuntime } from './remote-server-restart-wait'

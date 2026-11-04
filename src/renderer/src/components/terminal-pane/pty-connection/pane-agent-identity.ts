@@ -1,8 +1,8 @@
-import { agentTypeToIconAgent } from '@/lib/agent-status'
+import { agentTypeToIconAgent } from '../../../../../shared/agent-status/presentation/agent-type-icon-agent'
 import { dismissRetainedProgramResult } from '@/lib/program-status/result-retention'
 import { isRetainedProgramResult } from '@/lib/program-status/row'
 import { useAppStore } from '@/store'
-import { CONFIRMED_SHELL_MODE_RESET } from '../../../../../shared/terminal-mode-reset-profiles'
+import { CONFIRMED_SHELL_MODE_RESET } from '../../../../../shared/terminal/protocol/input-modes/terminal-mode-reset-profiles'
 import {
   isLocalNativeWindowsConpty,
   resolveWindowsShellOverride
@@ -12,9 +12,11 @@ import { createPaneForegroundAgentTracker } from '../pane-foreground-agent-track
 import { isRemoteExecutionHostPtyId } from '../../../../../shared/remote-execution-host-pty-id'
 import { inspectRuntimeTerminalProcess } from '@/runtime/runtime-terminal-inspection'
 import { dispatchTerminalCommandFinishedEvent } from '@/hooks/terminal-command-finished-event'
-import { resolvePaneScopedLaunchTuiAgent } from '@/lib/pane-agent-evidence'
-import type { TuiAgent } from '../../../../../shared/tui-agent'
-import { isTuiAgent, TUI_AGENT_CONFIG } from '../../../../../shared/tui-agent-config'
+import type { TuiAgent } from '../../../../../shared/agent-launch/catalog/tui-agent'
+import {
+  isTuiAgent,
+  TUI_AGENT_CONFIG
+} from '../../../../../shared/agent-launch/catalog/tui-agent-config'
 
 import {
   paneShouldAnswerOscColorQueries,
@@ -23,6 +25,7 @@ import {
 } from './pane-launch-agent-candidate'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { clearStaleAgentTabTitleOnConfirmedShell } from './confirmed-shell-agent-title'
+import { installPaneScopedTuiAgent } from './pane-scoped-tui-agent'
 
 export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
   // Share expected-agent derivation between 133;D confirmation and visible resampling so their identity guards cannot drift.
@@ -47,20 +50,7 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
     const candidate = resolveLaunchAgentCandidate(useAppStore.getState())
     return isTuiAgent(candidate) ? candidate : null
   }
-  /** The agent THIS PANE hosted, from pane-keyed evidence only. `resolveExpectedLaunchTuiAgent`
-   *  also accepts the tab's `launchAgent`, which names the tab's original pty and leaks onto a
-   *  plain-shell split; a destructive decision (replacing a live shell with a recovered
-   *  conversation) may not rest on it. Null means no evidence, never "an ordinary shell". */
-  session.resolvePaneScopedTuiAgent = (): TuiAgent | null => {
-    const state = useAppStore.getState()
-    return resolvePaneScopedLaunchTuiAgent({
-      paneStartupLaunchAgent: session.paneStartup?.launchAgent,
-      paneStartupStatusAgent: session.paneStartup?.initialAgentStatus?.agent,
-      registeredLaunchAgent: state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity.agentType,
-      statusEntryAgent: state.agentStatusByPaneKey[session.cacheKey]?.agentType,
-      foregroundAgent: state.paneForegroundAgentByPaneKey[session.cacheKey]?.agent
-    })
-  }
+  installPaneScopedTuiAgent(session)
   // jcode themes itself; early OSC color replies can appear as composer text, so both main and renderer skip them.
   session.shouldAnswerPaneOscColorQueries = (): boolean =>
     paneShouldAnswerOscColorQueries(useAppStore.getState(), panePane())

@@ -1,5 +1,5 @@
 import type { AgentResumeCandidate } from '../../../../shared/agent-resume-candidate'
-import { makePaneKey } from '../../../../shared/stable-pane-id'
+import { makePaneKey } from '../../../../shared/workspace-layout/stable-pane-id'
 import { getAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
 import { clearPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
 import { usePendingAgentResumeChoices } from '@/lib/use-pending-agent-resume-choices'

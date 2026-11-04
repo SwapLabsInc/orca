@@ -6,8 +6,8 @@ import { RelayAgentHookServer } from '../../wsl-guest/agent-hook-server'
 import type {
   AgentHookRelayEnvelope,
   AgentHookRelayUserEndedSessionEnvelope
-} from '../../shared/agent-hook-relay'
-import { normalizeAgentStatusPayload } from '../../shared/agent-status-types'
+} from '../../shared/agent-hook-listener/transport/agent-hook-relay'
+import { normalizeAgentStatusPayload } from '../../shared/agent-status/contracts/agent-status-types'
 import { AgentHookServer, _internals } from './server'
 import { PANE } from './server.test-fixtures'
 

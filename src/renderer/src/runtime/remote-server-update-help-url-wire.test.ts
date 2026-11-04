@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
+import type { PublicKnownRuntimeEnvironment } from '../../../shared/remote-runtime/host-catalog/runtime-environments'
 import type { RuntimeStatus } from '../../../shared/runtime-types'
 import {
   inspectRemoteServerUpdate,

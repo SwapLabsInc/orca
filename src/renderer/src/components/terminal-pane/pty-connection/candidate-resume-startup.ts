@@ -1,13 +1,13 @@
 import { createBrowserUuid } from '@/lib/browser-uuid'
-import { buildAgentResumeStartupPlan } from '@/lib/tui-agent-startup'
+import { buildAgentResumeStartupPlan } from '../../../../../shared/agent-launch/startup/tui-agent-resume-startup'
 import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv,
   type AgentLaunchProfileSettings
-} from '../../../../../shared/tui-agent-launch-defaults'
-import type { TuiAgent } from '../../../../../shared/tui-agent'
-import type { AgentStartupShell } from '../../../../../shared/tui-agent-startup-shell'
+} from '../../../../../shared/agent-launch/choices/tui-agent-launch-defaults'
+import type { TuiAgent } from '../../../../../shared/agent-launch/catalog/tui-agent'
+import type { AgentStartupShell } from '../../../../../shared/agent-launch/startup/tui-agent-startup-shell'
 
 import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
 

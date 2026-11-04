@@ -50,7 +50,7 @@ More rules:
 - `/clear` needs nothing, because its `SessionStart` replaces the session.
 - A remnant's status fields are placeholders. The shared listener and the remote
   ingest normalize the next hook in the pane without any remnant
-  (`statusRowToComplete`, `src/shared/agent-hook-relay.ts`).
+  (`statusRowToComplete`, `src/shared/agent-hook-listener/transport/agent-hook-relay.ts`).
   `applyNormalizedStatus` (`readStatusRowsForUpdate`) skips only a remnant that
   names no process, a lost terminal's, so the next event never inherits its
   agent type, permission hold, verdict, compact ownership or terminal.

@@ -11,9 +11,13 @@ import type {
   NormalizedLocalHook,
   UserEndedAgentSession
 } from './server-types'
-import type { AgentHookSource } from '../../../shared/agent-hook-relay'
-import { launchTokenHash } from '../../../shared/agent-hook-spool'
-import { isSameAgentProcess } from '../../../shared/agent-process-presence'
+import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
+import {
+  statusRowToComplete,
+  type AgentHookSource
+} from '../../../shared/agent-hook-listener/transport/agent-hook-relay'
+import { launchTokenHash } from '../../../shared/agent-hook-listener/transport/agent-hook-spool'
+import { isSameAgentProcess } from '../../../shared/agent-status/process/agent-process-presence'
 
 export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
   /** The agent session the execution host may resume when it re-creates `paneKey`'s terminal. */
@@ -28,6 +32,11 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
       this.resolvePaneKeyAlias(paneKey),
       isPaneTerminalLive
     )
+  }
+
+  /** The stored row a relay hook in `paneKey` completes; a retired pane's remnant counts as none. */
+  protected readStatusRowToComplete(paneKey: string): AgentHookEventPayload | undefined {
+    return statusRowToComplete(this.state.lastStatusByPaneKey.get(paneKey))
   }
 
   /** A relay's notice that the user ended its Claude session; the local server reads the raw hook. */

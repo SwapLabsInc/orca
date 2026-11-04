@@ -16,7 +16,7 @@ import {
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import type { SleepingAgentSessionRecord } from '../../../shared/agent-session/lifecycle/agent-session-resume'
-import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
+import type { WorkspaceSessionState } from '../../../shared/workspace-session/workspace-session-state-types'
 import type { SleepingRecordOriginHosts } from './sleeping-record-origin-host'
 import {
   buildHostSessionRouting,

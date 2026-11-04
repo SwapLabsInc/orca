@@ -1,4 +1,4 @@
-import { KITTY_UNMODIFIED_ENTER_INPUTS } from '../../shared/agent-question-answered-intent'
+import { KITTY_UNMODIFIED_ENTER_INPUTS } from '../../shared/agent-status/lifecycle/agent-question-answered-intent'
 
 // Why built from escaped strings: keep literal control bytes out of source.
 const MOUSE_REPORTS_ONLY_RE = new RegExp(
