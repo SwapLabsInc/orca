@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { formatReleaseTitleTimestamp } from './release-title-timestamp.mjs'
+import { formatReleaseTitleTimestamp } from './release/versioning/release-title-timestamp.mjs'
 import {
   readPublishedVersionsFromEnv,
   resolveDevChannelBaseVersion
-} from './dev-channel-base-version.mjs'
+} from './release/versioning/dev-channel-base-version.mjs'
 
 // LOCAL: SwapLabs fork build identity. Emits the two forms of one identity that
 // `orca-fork-ops build-version` also produces — the app version the packaged app

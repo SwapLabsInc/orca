@@ -15,8 +15,7 @@ import { AgentLaunchPaneNoticePortal } from './AgentLaunchPaneNotice'
 import { TerminalSessionStateSaveFailureDialog } from './TerminalSessionStateSaveFailureDialog'
 import { LinkActionPopover } from '@/components/link-actions/LinkActionPopover'
 import { TerminalAgentSessionForkDialog } from './TerminalAgentSessionForkDialog'
-import { SessionRestoredBannerPortals } from './SessionRestoredBannerPortals'
-import { AgentResumeChooserPortals } from './AgentResumeChooserPortals'
+import { TerminalPaneRestorePortals } from './TerminalPaneRestorePortals'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 import { TerminalQuickCommandEditorDialog } from './TerminalQuickCommandEditorDialog'
 import { TerminalPaneNativeChatPortal } from './TerminalPaneNativeChatPortal'
@@ -34,6 +33,7 @@ import { useAppStore } from '@/store'
 import { getKnownExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import { useWslHostStartCardReplacesPaneError } from './use-wsl-host-stopped-pane'
+import { terminalPaneMenuAddToChat } from './terminal-pane-menu-copy-actions'
 
 export function TerminalPaneSurface({
   controller
@@ -103,7 +103,6 @@ export function TerminalPaneSurface({
     searchOpen,
     searchStateRef,
     searchInputRef,
-    sessionRestoredBannerPaneIds,
     sessionStateSaveFailureMessage,
     setAgentSessionContinuation,
     setAgentSessionFork,
@@ -258,15 +257,7 @@ export function TerminalPaneSurface({
           />,
           activePane.container
         )}
-      <SessionRestoredBannerPortals
-        panes={managerRef.current?.getPanes() ?? []}
-        paneIds={sessionRestoredBannerPaneIds}
-      />
-      {/* Only the active tab: the chooser is an app-modal Dialog now, and an inactive tab's
-          pending choice would otherwise follow the user onto whatever tab they switched to. */}
-      {isActive && (
-        <AgentResumeChooserPortals tabId={tabId} panes={managerRef.current?.getPanes() ?? []} />
-      )}
+      <TerminalPaneRestorePortals controller={controller} />
       <TerminalPaneNativeChatPortal controller={controller} />
       <TerminalContextMenu
         open={contextMenu.open}
@@ -285,6 +276,11 @@ export function TerminalPaneSurface({
           contextMenu.menuPaneId !== null && contextMenu.menuPaneId === expandedPaneId
         }
         onCopy={() => void contextMenu.onCopy()}
+        addToChat={
+          contextMenu.open
+            ? terminalPaneMenuAddToChat(contextMenu.menuPane, tabId, worktreeId)
+            : null
+        }
         onSelectAll={contextMenu.onSelectAll}
         onPaste={() => void contextMenu.onPaste()}
         onSplitRight={contextMenu.onSplitRight}
