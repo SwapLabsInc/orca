@@ -359,7 +359,7 @@ jobs:
           # Why --publish never: the upload goes through `gh release upload` below,
           # into the orca-fork-ops tag the draft was created under. electron-builder
           # still writes the update manifest next to the artifacts.
-          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
+          command: node config/scripts/native-build/node-addons/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
 
       # Why: `gh release upload` refuses a missing release, but a clear sentence
       # beats its error. The draft is discarded by the cleanup job when another
@@ -602,7 +602,7 @@ jobs:
           timeout_minutes: 30
           max_attempts: 2
           retry_wait_seconds: 30
-          command: node config/scripts/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac dmg --${{ matrix.arch }} --publish never
+          command: node config/scripts/native-build/node-addons/ensure-native-runtime.mjs --runtime=electron && pnpm exec electron-builder --config config/electron-builder.config.cjs --mac dmg --${{ matrix.arch }} --publish never
 
       # This leg's slice: zip the signed bundle the DMG was built from, then write the
       # manifest (size, sha512, designated-requirement hash) and sign it. The

@@ -53,7 +53,8 @@ import type {
   SidebarPRGroupReader,
   WorktreeGroupBy
 } from './row-types'
-import { orderMainWorktreeFirst, getRenderedNaturalAnchorRepoIds } from './section-order'
+import { orderMainWorktreeFirst } from './section-order'
+import { appendImportedWorktreeLines } from './imported-worktree-lines'
 import { withRepoSectionDisplayLabels } from '../project-section-order'
 import { buildOrderedGroups } from './worktree-grouping'
 import type { WorkspaceSortBy } from '../workspace-view/workspace-row-sort'
@@ -213,28 +214,17 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
       projectIndex,
       hostLabelById
     )
-    const renderedNaturalAnchorRepoIds = getRenderedNaturalAnchorRepoIds({
-      groupBy,
-      worktrees: naturalWorktrees,
-      repoMap,
-      prGroupOf,
-      collapsedGroups,
-      workspaceStatuses,
-      projectGrouping
-    })
     emitPinnedGroup(
       pinnedSectionWorktrees,
       repoOf,
       defaultHostId,
       collapsedGroups,
-      renderedNaturalAnchorRepoIds,
-      importedWorktreesByRepo,
-      groupBy !== 'repo',
       result,
       occurrencePlan,
-      noticeHostContextLabelByRepoId,
       mixedWorktreeHostContextLabels
     )
+    const withImportedLines = (rows: Row[]): Row[] =>
+      appendImportedWorktreeLines(rows, { importedWorktreesByRepo, defaultHostId, hostLabelById })
     if (groupBy === 'none') {
       // Folder-only accounts must still render flat rows (#15362).
       if (naturalWorktrees.length > 0 || renderableFolderWorkspaces.length > 0) {
@@ -271,7 +261,7 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
           }
         }
       }
-      return result
+      return withImportedLines(result)
     }
 
     const sectionContext: SectionAppendContext = {
@@ -297,7 +287,7 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
         sectionContext,
         groupBy === 'repo' ? withRepoSectionDisplayLabels(orderedGroups) : orderedGroups
       )
-      return result
+      return groupBy === 'repo' ? result : withImportedLines(result)
     }
 
     appendProjectGroupSections(sectionContext, {
