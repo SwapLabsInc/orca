@@ -4,6 +4,7 @@ import { shallow } from 'zustand/shallow'
 import { persistedUIValuesEqual } from '../../../../../../shared/persisted-ui-equality'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store/index'
+import { selectSidebarLineageParentIdentities } from '@/store/cross-store-lineage-parents'
 import type { AppState } from '@/store/types'
 import type { Repo } from '../../../../../../shared/repo-types'
 import {
@@ -86,6 +87,7 @@ function createSidebarHostOptionsSelector() {
 export function useSidebarSectionRows(args: SectionRowsArgs) {
   const { repos, worktrees, repoMap, defaultHostId } = args
   const worktreesByRepo = useAppStore((s) => selectWorktreesByRepo(s))
+  const lineageParentIdentities = useAppStore(selectSidebarLineageParentIdentities)
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
   const delegatedWorktreeEdges = useAppStore((s) => s.delegatedWorktreeEdges)
@@ -154,6 +156,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         workspaceStatuses: args.workspaceStatuses,
         projectOrderBy: args.projectOrderBy,
         lineageById: args.worktreeLineageById,
+        lineageParentIdentities,
         worktreeMap: args.worktreeMap,
         nestLineage: true,
         projectGroups: args.visibleProjectGroupsForRows,
@@ -181,6 +184,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.workspaceStatuses,
       args.projectOrderBy,
       args.worktreeLineageById,
+      lineageParentIdentities,
       delegatedWorktreeEdges,
       args.worktreeMap,
       args.projectGrouping,

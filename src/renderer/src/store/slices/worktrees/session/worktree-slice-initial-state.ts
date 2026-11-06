@@ -7,6 +7,8 @@ export const worktreeSliceInitialState: Pick<
   | 'worktreeCatalogVersionByRepoHost'
   | 'worktreeLineageById'
   | 'workspaceLineageByChildKey'
+  | 'crossStoreLineageByStoreKey'
+  | 'ownLineageInstallationId'
   | 'delegatedWorktreeEdges'
   | 'activeWorktreeId'
   | 'activeWorkspaceKey'
@@ -30,6 +32,8 @@ export const worktreeSliceInitialState: Pick<
   worktreeCatalogVersionByRepoHost: {},
   worktreeLineageById: {},
   workspaceLineageByChildKey: {},
+  crossStoreLineageByStoreKey: {},
+  ownLineageInstallationId: undefined,
   delegatedWorktreeEdges: [],
   activeWorktreeId: null,
   activeWorkspaceKey: null,

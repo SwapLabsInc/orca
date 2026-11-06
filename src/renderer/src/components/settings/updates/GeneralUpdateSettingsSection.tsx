@@ -22,6 +22,7 @@ import {
 import { useReleaseSourceStatuses } from './use-release-source-statuses'
 import { UpdateDelaySetting } from './UpdateDelaySetting'
 import { DelayedUpdateHint } from './DelayedUpdateHint'
+import { UnsupportedSystemUpdateHint } from './UnsupportedSystemUpdateHint'
 import { getReleaseNotesUrlForVersion } from '../../../../../shared/release-channel'
 import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
 import {
@@ -350,7 +351,9 @@ function SingleSourceUpdateHint({
         </>
       )}
       {updateStatus.state === 'not-available' &&
-        (updateStatus.delayedUpdate ? (
+        (updateStatus.unsupportedSystemUpdate ? (
+          <UnsupportedSystemUpdateHint update={updateStatus.unsupportedSystemUpdate} />
+        ) : updateStatus.delayedUpdate ? (
           <DelayedUpdateHint delayedUpdate={updateStatus.delayedUpdate} />
         ) : (
           translate(

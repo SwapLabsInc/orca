@@ -4,7 +4,7 @@
 
 import { OrcaRuntimeWithDelegatedWorktreeEdgeSync } from './delegated-worktree-edge-graph-sync'
 import { findPaneSleepingRecord } from './pane-sleeping-record'
-import { isWorktreeTerminalsSleepingError } from '../../worktree-terminals-sleeping-error'
+import { isWorktreeTerminalsSleepingError } from '../../../../shared/workspace-sleep'
 import type { RestoredPaneTrigger } from '../../terminal/recovery/restored-pane-start'
 import type {
   MobileTerminalCommand,

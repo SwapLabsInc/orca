@@ -26,6 +26,8 @@ import {
 } from '../opencode-session-registry'
 import { claudeRowHasUnlistedLiveWork } from '../providers/claude-pane-hold-evidence'
 import { readString } from '../tool-input-preview'
+import { readClaudeBatchSettledRequests } from '../claude-settled-permission-requests'
+import { withClaudeToolRequestId } from '../claude-tool-request-identity'
 import { hasSeparateHookSessionAdmission, readPaneSessionContext } from '../pane-provider-session'
 /** Canonical transport-agnostic normalization entry shared by main and relay listeners. */
 
@@ -219,13 +221,18 @@ export function normalizeHookPayload(
   }
 
   const promptText = extractedPrompt.text
+  // Name a Claude PermissionRequest's request once, so the listener and every receiver settle the same one.
+  const providerHookPayload =
+    source === 'claude'
+      ? withClaudeToolRequestId(state, paneKey, eventName, hookPayloadRecord)
+      : hookPayloadRecord
   const dispatched = normalizeProviderEvent({
     state,
     source,
     eventName,
     promptText,
     paneKey,
-    hookPayload: hookPayloadRecord,
+    hookPayload: providerHookPayload,
     envelope: record,
     extractedPrompt,
     previousOpenCodeMainAgent: options.previousOpenCodeMainAgent
@@ -246,6 +253,10 @@ export function normalizeHookPayload(
     return null
   }
   const grokActiveTurn = source === 'grok' ? state.grokActiveTurnByPaneKey.get(paneKey) : undefined
+  const claudeBatchSettledRequests =
+    source === 'claude' && eventName === 'PostToolBatch'
+      ? readClaudeBatchSettledRequests(hookPayloadRecord)
+      : undefined
 
   return {
     paneKey,
@@ -275,7 +286,7 @@ export function normalizeHookPayload(
       source === 'grok' ? (grokActiveTurn?.promptId ?? providerPromptId) : providerPromptId,
     grokPromptBoundary: grokActiveTurn ? true : undefined,
     compactTrigger,
-    toolUseId: readFirstString(hookPayloadRecord, ['tool_use_id', 'toolUseId']),
+    toolUseId: readFirstString(providerHookPayload, ['tool_use_id', 'toolUseId']),
     toolAgentId: readFirstString(hookPayloadRecord, ['agent_id', 'agentId']),
     teammateName:
       source === 'claude' && eventName === 'TeammateIdle'
@@ -287,6 +298,7 @@ export function normalizeHookPayload(
           claudeRunningNonAgentTask: claudeRowHasUnlistedLiveWork(state, paneKey)
         }
       : {}),
+    ...(claudeBatchSettledRequests ? { claudeSettledRequests: claudeBatchSettledRequests } : {}),
     ...(providerSession ? { providerSession } : {}),
     ...(statusAdmissionSession ? { statusAdmissionSession } : {}),
     ...(providerSessionOnly ? { providerSessionOnly: true } : {}),

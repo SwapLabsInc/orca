@@ -7,8 +7,9 @@ import { makePaneKey } from '../../shared/workspace-layout/stable-pane-id'
 import { makeAgentStatusStoreWiring } from './agent-status-store-wiring.test-fixture'
 
 // Fragments stay side-effect ordered: mocks, then lifecycle, then fixtures.
-const { OrcaRuntimeService } = await import('./orca-runtime-test-mocks.spec')
-await import('./orca-runtime-test-lifecycle.spec')
+await import('./orca-runtime-tests/runtime-test-module-registration.spec')
+const { OrcaRuntimeService } = await import('./orca-runtime')
+await import('./orca-runtime-tests/orca-runtime-test-lifecycle.spec')
 const {
   HEADLESS_LEAF_ID,
   HEADLESS_SECOND_LEAF_ID,
@@ -17,7 +18,7 @@ const {
   makeRuntimeStoreWithWorkspaceSession,
   makeWorkspaceSessionWithHeadlessTerminal,
   store
-} = await import('./orca-runtime-test-fixtures.spec')
+} = await import('./orca-runtime-tests/orca-runtime-test-fixtures.spec')
 
 const PANE_KEY = makePaneKey('host-tab', HEADLESS_LEAF_ID)
 const SESSION = 'c0ffee00-0000-4000-8000-00000000000a'

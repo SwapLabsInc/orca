@@ -7,7 +7,10 @@ import {
 import type { WorktreeLineage } from '../worktree/lineage-types'
 import type { Worktree } from '../worktree/types'
 import { getSidebarLineageRowsByIdentity } from './pinned-section-worktrees'
-import { getSidebarLineageParentsByIdentity } from './worktree-lineage-projection'
+import {
+  getSidebarLineageParentsByIdentity,
+  type SidebarLineageParentIdentities
+} from './worktree-lineage-projection'
 
 /**
  * Which delegated edges the sidebar may actually draw: child identity → parent
@@ -99,6 +102,8 @@ export function withDelegatedWorktreeChildren(
     /** The visible rows: an edge whose coordinator or worker is filtered out is not drawn. */
     worktrees: readonly Worktree[]
     lineageById: Readonly<Record<string, WorktreeLineage>>
+    /** Cross-machine parents count as lineage too, so a worker they already nest is not nested twice. */
+    lineageParentIdentities?: SidebarLineageParentIdentities
     worktreeMap: ReadonlyMap<string, Worktree>
     delegatedWorktreeEdges?: readonly DelegatedWorktreeEdge[]
   }
@@ -110,7 +115,8 @@ export function withDelegatedWorktreeChildren(
   // Unfiltered: a lineage parent hidden by the repo filter still outranks a delegated edge.
   const lineageParentByIdentity = getSidebarLineageParentsByIdentity(
     inputs.lineageById,
-    getSidebarLineageRowsByIdentity(inputs.worktrees, inputs.worktreeMap)
+    getSidebarLineageRowsByIdentity(inputs.worktrees, inputs.worktreeMap),
+    inputs.lineageParentIdentities
   )
   const nesting = resolveDelegatedWorktreeNesting({
     worktrees: inputs.worktrees,
