@@ -8,6 +8,7 @@ import { createFetchDetectedWorktrees } from './worktrees/listing/fetch-detected
 import { createFetchWorktrees } from './worktrees/listing/fetch-worktrees'
 import { createFetchAllWorktrees } from './worktrees/listing/fetch-all-worktrees'
 import {
+  createAssignCrossStoreWorktreeParent,
   createAssignWorktreeParent,
   createFetchWorktreeLineage,
   createUpdateWorktreeLineage
@@ -106,6 +107,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     ),
   updateWorktreeLineage: createUpdateWorktreeLineage(set, get),
   assignWorktreeParent: createAssignWorktreeParent(set, get),
+  assignCrossStoreWorktreeParent: createAssignCrossStoreWorktreeParent(set, get),
   updateWorktreeGitIdentity: createUpdateWorktreeGitIdentity(set, get),
   updateWorktreeBaseStatus: createUpdateWorktreeBaseStatus(set, get),
   updateWorktreeRemoteBranchConflict: createUpdateWorktreeRemoteBranchConflict(set, get),

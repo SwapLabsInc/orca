@@ -108,6 +108,10 @@ export type WorktreeSlice = {
   worktreeCatalogVersionByRepoHost: Record<string, WorktreeCatalogVersion>
   worktreeLineageById: Readonly<Record<string, WorktreeLineage>>
   workspaceLineageByChildKey: Readonly<Record<WorkspaceKey, WorkspaceLineage>>
+  /** Each store's saved cross-store parents as it keeps them, by lineage store key (OWN_LINEAGE_STORE_KEY or a paired environment id). */
+  crossStoreLineageByStoreKey: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+  /** This desktop store's installationId; undefined until its lineage list answers. */
+  ownLineageInstallationId: string | undefined
   /** Cross-host worker placements published by this runtime's own graph sync. */
   delegatedWorktreeEdges: readonly DelegatedWorktreeEdge[]
   setDelegatedWorktreeEdges: (edges: readonly DelegatedWorktreeEdge[]) => void
@@ -151,12 +155,19 @@ export type WorktreeSlice = {
   fetchWorktreeLineage: (options?: {
     forceLocalOwner?: boolean
     executionHostId?: ExecutionHostId
+    /** Hosts whose other stores also load their cross-machine links. */
+    crossStoreHostIds?: Iterable<ExecutionHostId>
   }) => Promise<void>
+  /** `executionHostId` names the clicked row's host, so a same-id twin elsewhere is never the target. */
   updateWorktreeLineage: (
     worktreeId: string,
-    args: { parentWorktreeId?: string; noParent?: boolean }
+    args: { parentWorktreeId?: string; noParent?: boolean; executionHostId?: ExecutionHostId }
   ) => Promise<void>
-  assignWorktreeParent: (worktreeId: string, args: { parentWorktreeId: string }) => Promise<void>
+  assignWorktreeParent: (
+    worktreeId: string,
+    args: { parentWorktreeId: string; executionHostId?: ExecutionHostId }
+  ) => Promise<void>
+  assignCrossStoreWorktreeParent: (children: readonly Worktree[], parent: Worktree) => Promise<void>
   createWorktree: (
     repoId: string,
     name: string,

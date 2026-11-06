@@ -172,4 +172,18 @@ describe('withDelegatedWorktreeChildren', () => {
     })
     expect(merged).toBe(lineageChildren)
   })
+
+  it('lets a cross-machine parent outrank the edge, so the worker is not nested twice', () => {
+    const coordinatorIdentity = getWorktreeHostIdentity(coordinator)
+    const merged = withDelegatedWorktreeChildren(new Map([[coordinatorIdentity, [remoteWorker]]]), {
+      worktrees: [coordinator, remoteWorker],
+      lineageById: {},
+      lineageParentIdentities: new Map([
+        [`${REMOTE_HOST}|${remoteWorker.id}`, `local|${coordinator.id}`]
+      ]),
+      worktreeMap: new Map(),
+      delegatedWorktreeEdges: [edge]
+    })
+    expect(merged.get(coordinatorIdentity)).toEqual([remoteWorker])
+  })
 })
