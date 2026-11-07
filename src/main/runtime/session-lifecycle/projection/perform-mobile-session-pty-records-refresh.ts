@@ -23,6 +23,7 @@ import { isAutomaticTabActivation } from '../../../../shared/tab-activation-inte
 import { isWorktreeTerminalsSleepingError } from '../../../../shared/workspace-sleep'
 
 import { paneHoldsSession } from '../../terminal/surface/main-terminal-surfaces'
+import { recordShownTerminalUserOpen } from '../../run-terminal-client-use'
 import { resolveChatTabActivation } from '../../agent-session/agent-session-tab-identity'
 export abstract class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRuntimeWithRestoredPaneStart {
   protected abstract toMobileSessionTabsResult(
@@ -213,18 +214,11 @@ export abstract class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh exten
             startupCwdFallback = started.startupCwdFallback
           } else {
             // SwapLabs: concurrent activations share one re-creation of the pane, so it resumes once.
-            const inFlight = this.hostPaneRecreationInFlight(worktreeId, tab)
-            if (inFlight) {
-              await inFlight
+            const created = await this.materializeHostPaneOnce(worktreeId, tab, trigger)
+            if (created === null) {
               return this.activateMobileSessionTab(worktreeSelector, tabId, leafId, opts)
             }
-            const materializing = this.materializePendingMobileSessionTerminal(worktreeId, tab, {
-              ...trigger,
-              sessionId: tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
-            })
-            await this.trackHostPaneRecreation(worktreeId, tab, materializing).then(
-              (created) => (startupCwdFallback = created.startupCwdFallback)
-            )
+            startupCwdFallback = created.startupCwdFallback
           }
         } catch (err) {
           if (automatic && isWorktreeTerminalsSleepingError(err)) {
@@ -239,6 +233,9 @@ export abstract class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh exten
             )
           }
           throw err
+        }
+        if (!automatic) {
+          recordShownTerminalUserOpen(this, worktreeId, tab.id)
         }
         const activated = this.applyMobileSessionTabNavigation(
           this.getMobileSessionTabsForWorktree(worktreeId, undefined, {
@@ -270,6 +267,9 @@ export abstract class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh exten
                 candidate.isActive
             )
       const targetTab = activeSibling ?? tab
+      if (!automatic) {
+        recordShownTerminalUserOpen(this, worktreeId, targetTab.id)
+      }
       if (targetsHost && !this.notifier?.focusTerminal) {
         if (
           !targetTab.isActive &&

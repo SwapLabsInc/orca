@@ -36,6 +36,7 @@ import {
 } from '../workspaces/removal/worktree-trash'
 import { loadWorktreeRemovalRecordsForStore } from './worktree-removal-records-load'
 import { runAfterFirstWindowShown, runOnlyAfterFirstWindowShown } from './first-window-deferral'
+import { startSpeechModelWarmup } from '../speech/speech-model-warmup'
 import { logStartupMilestone } from './startup-diagnostics'
 import { refreshInstalledOpenCodeStatusPlugins } from '../opencode/opencode-status-plugin-startup-refresh'
 import { pruneDesktopOrcadArtifactCache } from '../orcad/orcad-artifact-cache-retention'
@@ -119,6 +120,10 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
   // The startup pass ran before browser sessions and any window existed, so `browser-cookies` paused.
   runAfterFirstWindowShown(() => {
     void runGatedWslMoveDesktopRewritePass({ userDataPath: app.getPath('userData') })
+  }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
+  // Load the dictation model after first paint; coming back to Orca re-warms one the idle timer unloaded.
+  runAfterFirstWindowShown(() => {
+    app.on('browser-window-focus', startSpeechModelWarmup(store))
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
   // LOCAL: a window that can paint is the health signal the self-update helper waits for (a
   // fallback timer would certify a renderer that hung before it); the report also says how the

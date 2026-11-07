@@ -24,7 +24,7 @@ import { UpdateDelaySetting } from './UpdateDelaySetting'
 import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { UnsupportedSystemUpdateHint } from './UnsupportedSystemUpdateHint'
 import { getReleaseNotesUrlForVersion } from '../../../../../shared/release-channel'
-import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
+import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
 import {
   RELEASE_SOURCES,
   getReleaseSource,

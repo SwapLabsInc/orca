@@ -303,6 +303,7 @@ export function normalizeHookPayload(
     ...(statusAdmissionSession ? { statusAdmissionSession } : {}),
     ...(providerSessionOnly ? { providerSessionOnly: true } : {}),
     ...dispatched.hostTurnSignals,
+    ...(dispatched.replyCandidate ? { replyCandidate: dispatched.replyCandidate } : {}),
     payload: transportPayload
   }
 }

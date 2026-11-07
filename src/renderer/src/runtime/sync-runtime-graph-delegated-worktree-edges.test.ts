@@ -3,10 +3,13 @@ import type { DelegatedWorktreeEdge } from '../../../shared/worktree/delegated-w
 import type { RuntimeSyncWindowGraphResult } from '../../../shared/runtime-session-contracts'
 import type { AppState } from '../store/types'
 
-vi.mock('@/components/terminal-pane/pty-dispatcher', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>()
-  return { ...actual, getEagerPtyBufferHandle: vi.fn(() => undefined) }
-})
+vi.mock(
+  '@/components/terminal-pane/pty-transport/delivery/pty-dispatcher',
+  async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>()
+    return { ...actual, getEagerPtyBufferHandle: vi.fn(() => undefined) }
+  }
+)
 
 import {
   scheduleRuntimeGraphSync,

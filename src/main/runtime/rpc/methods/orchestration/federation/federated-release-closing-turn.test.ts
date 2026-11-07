@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ORCHESTRATION_CONTRACT_VERSION } from '../../../../../../shared/protocol-version'
 import { OrcaRuntimeService } from '../../../../orca-runtime'
-import { OrchestrationDb } from '../../../../orchestration/db'
-import { ORCHESTRATION_METHODS } from '../../orchestration'
+import { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
+import { ORCHESTRATION_METHODS } from '../orchestration'
 import { eraseRpcMethods, isStreamingMethod } from '../../../core'
 import {
   WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING,

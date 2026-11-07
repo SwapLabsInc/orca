@@ -128,6 +128,9 @@ export async function handleRelayHookRequest(
     if (!event || event.agentPresence?.ended) {
       options.userEndedSessions?.report(options, source, hookBody)
     }
+    if (source === 'muse' && !event) {
+      options.retryScheduler.rearmIgnoredMuseHook(hookBody)
+    }
     if (event) {
       // TODO: once normalizeHookPayload returns validated env/version, drop bodyEnv/bodyVersion and source them from the listener result.
       const env = hookBodyEnv(hookBody)

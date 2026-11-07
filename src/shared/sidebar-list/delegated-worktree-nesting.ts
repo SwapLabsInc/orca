@@ -6,7 +6,10 @@ import {
 } from '../worktree/host-qualified-identity'
 import type { WorktreeLineage } from '../worktree/lineage-types'
 import type { Worktree } from '../worktree/types'
-import { getSidebarLineageRowsByIdentity } from './pinned-section-worktrees'
+import {
+  getSidebarLineageChildren,
+  getSidebarLineageRowsByIdentity
+} from './pinned-section-worktrees'
 import {
   getSidebarLineageParentsByIdentity,
   type SidebarLineageParentIdentities
@@ -91,6 +94,33 @@ function reachesDescendant(args: {
   return false
 }
 
+type DelegatedNestingInputs = {
+  /** The visible rows: an edge whose coordinator or worker is filtered out is not drawn. */
+  worktrees: readonly Worktree[]
+  lineageById: Readonly<Record<string, WorktreeLineage>>
+  /** Cross-machine parents count as lineage too, so a worker they already nest is not nested twice. */
+  lineageParentIdentities?: SidebarLineageParentIdentities
+  worktreeMap: ReadonlyMap<string, Worktree>
+  delegatedWorktreeEdges?: readonly DelegatedWorktreeEdge[]
+}
+
+/** The sidebar plan's nesting input: lineage children, folder parents included, plus delegated workers. */
+export function getSidebarLineageChildrenWithDelegated(
+  inputs: DelegatedNestingInputs & { filterRepoIds: readonly string[] },
+  folderRows: readonly Worktree[]
+): Map<string, Worktree[]> {
+  const { worktrees, lineageById, worktreeMap, filterRepoIds, lineageParentIdentities } = inputs
+  const lineageChildren = getSidebarLineageChildren(
+    worktrees,
+    lineageById,
+    worktreeMap,
+    filterRepoIds,
+    lineageParentIdentities,
+    folderRows
+  )
+  return withDelegatedWorktreeChildren(lineageChildren, inputs, folderRows)
+}
+
 /**
  * Lineage children plus each delegated worker under its coordinator. Joining the occurrence
  * plan's one nesting input places, pins, reveals and folds the worker like a lineage child;
@@ -98,24 +128,22 @@ function reachesDescendant(args: {
  */
 export function withDelegatedWorktreeChildren(
   lineageChildren: Map<string, Worktree[]>,
-  inputs: {
-    /** The visible rows: an edge whose coordinator or worker is filtered out is not drawn. */
-    worktrees: readonly Worktree[]
-    lineageById: Readonly<Record<string, WorktreeLineage>>
-    /** Cross-machine parents count as lineage too, so a worker they already nest is not nested twice. */
-    lineageParentIdentities?: SidebarLineageParentIdentities
-    worktreeMap: ReadonlyMap<string, Worktree>
-    delegatedWorktreeEdges?: readonly DelegatedWorktreeEdge[]
-  }
+  inputs: DelegatedNestingInputs,
+  folderRows: readonly Worktree[] = []
 ): Map<string, Worktree[]> {
   const edges = inputs.delegatedWorktreeEdges ?? []
   if (edges.length === 0) {
     return lineageChildren
   }
-  // Unfiltered: a lineage parent hidden by the repo filter still outranks a delegated edge.
+  // Unfiltered: a lineage parent hidden by the repo filter still outranks a delegated edge, and a
+  // folder parents only through resolved identities, as in getSidebarLineageChildren.
   const lineageParentByIdentity = getSidebarLineageParentsByIdentity(
     inputs.lineageById,
-    getSidebarLineageRowsByIdentity(inputs.worktrees, inputs.worktreeMap),
+    getSidebarLineageRowsByIdentity(
+      inputs.worktrees,
+      inputs.worktreeMap,
+      inputs.lineageParentIdentities ? folderRows : []
+    ),
     inputs.lineageParentIdentities
   )
   const nesting = resolveDelegatedWorktreeNesting({

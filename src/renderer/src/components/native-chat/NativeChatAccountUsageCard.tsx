@@ -1,4 +1,4 @@
-import { createBrowserUuid } from '@/lib/browser-uuid'
+import { createNonSecureContextUuid as createBrowserUuid } from '../../../../shared/non-secure-context-uuid'
 import { useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -186,9 +186,11 @@ function ChatUsageReset({
     if (busy || !result.reset) {
       return
     }
-    attempt.current ??= {
-      idempotencyKey: createBrowserUuid(),
-      expectedScope: result.reset.expectedScope
+    if (attempt.current == null) {
+      attempt.current = {
+        idempotencyKey: createBrowserUuid(),
+        expectedScope: result.reset.expectedScope
+      }
     }
     setBusy(true)
     setFailed(false)

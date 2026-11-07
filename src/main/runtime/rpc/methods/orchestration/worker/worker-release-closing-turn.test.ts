@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
-import { OrchestrationDb } from '../../../../orchestration/db'
+import { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
 import { createOrchestrationWorkerReleaseHarness } from './worker-release.test-support'
 import {
   awaitReleaseClosingTurn,

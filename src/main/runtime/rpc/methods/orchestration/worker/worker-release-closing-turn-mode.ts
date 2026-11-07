@@ -1,4 +1,4 @@
-import type { OrchestrationDb } from '../../../../orchestration/db'
+import type { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
 import { awaitReleaseClosingTurn, type WorkerClosingTurn } from './worker-release-closing-turn'
 
 type ClosingTurnRuntime = Parameters<typeof awaitReleaseClosingTurn>[0]['runtime']
