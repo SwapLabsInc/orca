@@ -1,7 +1,7 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
-import type { OrchestrationDb } from '../../../../orchestration/db'
-import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/types'
-import type { WorkerOutputArchiveCapture } from '../../../../orchestration/worker-output-archive'
+import type { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
+import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/db/orchestration-records'
+import type { WorkerOutputArchiveCapture } from '../../../../orchestration/workers/archives/worker-output-archive'
 import { isStructuredWorkerHandle } from '../../../../../../shared/structured-worker-handle'
 
 /** Fits the 30 s a coordinator gives a federated release (and the CLI's 60 s) beside capture and stop. */

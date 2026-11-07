@@ -56,6 +56,32 @@ export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntim
     return recreation
   }
 
+  protected abstract materializePendingMobileSessionTerminal(
+    worktreeId: string,
+    tab: RuntimeMobileSessionTerminalTab,
+    trigger: RestoredPaneTrigger & { sessionId?: string }
+  ): Promise<RuntimeMobileSessionCreateTerminalResult>
+
+  /** Re-creates a host pane once across concurrent activations. A joiner waits for that one and
+   *  gets null, so it re-runs its activation against the re-created pane. */
+  protected async materializeHostPaneOnce(
+    worktreeId: string,
+    tab: RuntimeMobileSessionTerminalTab,
+    trigger: RestoredPaneTrigger
+  ): Promise<RuntimeMobileSessionCreateTerminalResult | null> {
+    const inFlight = this.hostPaneRecreationInFlight(worktreeId, tab)
+    if (inFlight) {
+      await inFlight
+      return null
+    }
+    const sessionId = tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
+    return this.trackHostPaneRecreation(
+      worktreeId,
+      tab,
+      this.materializePendingMobileSessionTerminal(worktreeId, tab, { ...trigger, sessionId })
+    )
+  }
+
   /**
    * The hook-row record a re-created pane may resume, relaunched with the host's settings-default
    * flags; null when the host store keeps that session for a manual resume only, such as one the

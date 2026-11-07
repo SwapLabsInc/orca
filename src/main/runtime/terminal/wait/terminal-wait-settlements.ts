@@ -17,8 +17,8 @@ import {
   type TerminalCursorContext
 } from '../../../../shared/terminal/input/terminal-composer-draft'
 import { openCodeComposerHoldsDraft } from '../../../../shared/terminal/input/opencode-composer'
-import { isMailboxTerminalTakingInput } from '../../orchestration/mailbox-owner'
-import { isUserTypingToPointerTarget } from '../../orchestration/mailbox-pointer-typing-hold'
+import { isMailboxTerminalTakingInput } from '../../orchestration/mailbox/routing/mailbox-owner'
+import { isUserTypingToPointerTarget } from '../../orchestration/mailbox/terminal-pointer/mailbox-pointer-typing-hold'
 
 import type { OrcaRuntimeWithResolveWaiter } from '../../orca-runtime-resolve-waiter'
 

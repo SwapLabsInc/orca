@@ -5,11 +5,11 @@ import {
 import { WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS } from '../worker/worker-release-closing-turn'
 import type { RuntimeStatus } from '../../../../../../shared/runtime-types'
 import { z } from 'zod'
-import { getOrchestrationPeerCapabilityCache } from '../../../../orchestration/orchestration-peer-capability-cache'
+import { getOrchestrationPeerCapabilityCache } from '../../../../orchestration/federation/orchestration-peer-capability-cache'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
-import type { OrchestrationDb } from '../../../../orchestration/db'
-import type { FederatedDispatchRow } from '../../../../orchestration/types'
-import type { WorkerTerminalReleaseRuntime } from '../../../../orchestration/worker-terminal-release-runtime'
+import type { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
+import type { FederatedDispatchRow } from '../../../../orchestration/db/orchestration-records'
+import type { WorkerTerminalReleaseRuntime } from '../../../../orchestration/terminal-authority/release/worker-terminal-release-runtime'
 import {
   releaseUnknownRecovery,
   type WorkerReleaseReceipt

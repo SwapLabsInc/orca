@@ -14,8 +14,8 @@ import {
 import {
   POINTER_TYPING_QUIET_MS,
   POINTER_UNSUBMITTED_DRAFT_HOLD_MS
-} from './orchestration/mailbox-pointer-typing-hold'
-import type { MessageType } from './orchestration/types'
+} from './orchestration/mailbox/terminal-pointer/mailbox-pointer-typing-hold'
+import type { MessageType } from './orchestration/db/orchestration-records'
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => tmpdir()), isPackaged: false },

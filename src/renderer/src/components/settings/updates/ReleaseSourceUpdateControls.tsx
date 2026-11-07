@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { Badge } from '../../ui/badge'
 import { Button } from '../../ui/button'
 import { translate } from '@/i18n/i18n'
-import { openAppHttpLinkFromAnchor } from '@/lib/app-http-link-open'
+import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
 import { updaterMessageText } from '@/lib/updater-message-copy'
 import {
