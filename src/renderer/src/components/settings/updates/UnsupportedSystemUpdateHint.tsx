@@ -1,5 +1,5 @@
 import type React from 'react'
-import { translate } from '@/i18n/i18n'
+import { useTranslate } from '@/i18n/use-translate'
 import type { UnsupportedSystemUpdate } from '../../../../../shared/update-status-types'
 
 /** LOCAL: upstream's copy for a release this Mac's macOS cannot run, shared by both hint layouts. */
@@ -8,9 +8,10 @@ export function UnsupportedSystemUpdateHint({
 }: {
   update: UnsupportedSystemUpdate
 }): React.JSX.Element {
+  const t = useTranslate()
   return (
     <>
-      {translate(
+      {t(
         'macosUpdateRequirement.settingsStatus',
         'Orca {{version}} requires macOS {{macos}} or later. This is the latest version for this Mac.',
         { version: update.version, macos: update.minimumMacosVersion }

@@ -2,8 +2,8 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { selectAcpHostAccountHome } from '../acp/acp-launch-command'
-import type { AcpHostBackendSettings } from '../acp/acp-launch-specs'
+import { selectAcpHostAccountHome } from '../acp/launch/acp-launch-command'
+import type { AcpHostBackendSettings } from '../acp/launch/acp-launch-contract'
 import { ANTIGRAVITY_LAUNCH_SPEC } from './antigravity-acp-launch-spec'
 
 // agy's own sign-in, read from the host's keyring or token file.
@@ -41,15 +41,22 @@ const SIGNED_IN_LIST = { result: { sessions: [] } }
 // What `agy acp` 1.5.3 answers session requests with when its silent sign-in fails.
 const SIGNED_OUT_LIST = { error: { code: -32000, message: 'Authentication required' } }
 
-/** A PATH folder whose `agy acp` answers initialize with `result` and session/list with `list`. */
-async function fakeAgy(result: unknown, list: unknown = SIGNED_IN_LIST): Promise<string> {
+/** A PATH folder whose `agy acp` answers initialize with `result`, session/list with `list`. */
+async function fakeAgy(
+  result: unknown,
+  list: unknown = SIGNED_IN_LIST,
+  flags = ['--dangerously-skip-permissions']
+): Promise<string> {
   const folder = await mkdtemp(join(tmpdir(), 'orca-agy-host-test-'))
   folders.push(folder)
   const agy = join(folder, 'agy')
   await writeFile(
     agy,
     `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(join(folder, 'launches'))}, 'x')
 if (process.argv[2] !== 'acp') process.exit(2)
+// agy rejects flags it does not define.
+if (process.argv.slice(3).some((flag) => !${JSON.stringify(flags)}.includes(flag))) process.exit(2)
 const result = ${JSON.stringify(result)}
 const list = ${JSON.stringify(list)}
 require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
@@ -72,10 +79,10 @@ it.skipIf(process.platform === 'win32')(
     // An empty home, so agy's settings there select no API-key provider.
     const home = await mkdtemp(join(tmpdir(), 'orca-agy-home-test-'))
     folders.push(home)
-    const select = async (result: unknown, list?: unknown) =>
+    const select = async (result: unknown, list?: unknown, flags?: string[]) =>
       selectAcpHostAccountHome(
         ANTIGRAVITY_LAUNCH_SPEC,
-        { PATH: await fakeAgy(result, list), HOME: home },
+        { PATH: await fakeAgy(result, list, flags), HOME: home },
         stateDirectory,
         {}
       )
@@ -90,6 +97,8 @@ it.skipIf(process.platform === 'win32')(
     await expect(select(older)).resolves.toBeNull()
     const managed = { ...HOST_INITIALIZE, agentInfo: { name: 'antigravity-acp', version: '1.5.2' } }
     await expect(select(managed)).resolves.toBeNull()
+    // Full access chats launch with the flag, so a build without it keeps chats on Orca's runtime.
+    await expect(select(HOST_INITIALIZE, SIGNED_IN_LIST, [])).resolves.toBeNull()
     await expect(
       selectAcpHostAccountHome(
         ANTIGRAVITY_LAUNCH_SPEC,
@@ -109,7 +118,7 @@ it.skipIf(process.platform === 'win32')(
     const managedAcp = join(stateDirectory, 'antigravity-chat', 'antigravity-acp')
     await mkdir(managedAcp, { recursive: true })
     await expect(select(HOST_INITIALIZE)).resolves.not.toBeNull()
-    await writeFile(join(managedAcp, 'antigravity-oauth-token'), '{}')
+    await writeFile(join(managedAcp, 'acp_token.json'), '{}')
     await expect(select(HOST_INITIALIZE)).resolves.toBeNull()
   }
 )

@@ -1,5 +1,5 @@
 import React from 'react'
-import { useActiveAccountOwner } from '@/runtime/use-worktree-runtime-target'
+import { useActiveAccountOwner } from '@/runtime/provider-accounts/ownership/use-active-account-owner'
 import type { RuntimeClientTarget } from '../../../../../shared/runtime-client-target'
 import { TeamClaudeLeaderboardPanel } from './TeamClaudeLeaderboardPanel'
 import { useTeamClaudeLeaderboard } from './use-teamclaude-leaderboard'

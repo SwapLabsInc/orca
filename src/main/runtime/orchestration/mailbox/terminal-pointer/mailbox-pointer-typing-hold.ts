@@ -1,4 +1,4 @@
-import type { TerminalTypedInput } from '../../../terminal-run-facts'
+import type { TerminalTypedInput } from '../../../terminal/lifecycle/terminal-run-facts'
 
 /** Keys this recent mean the user is typing to the agent now. */
 export const POINTER_TYPING_QUIET_MS = 4_000

@@ -6,12 +6,12 @@ import { toast } from 'sonner'
 import { useAppStore } from '../../../store/index'
 import { Button } from '../../ui/button'
 import { SearchableSetting } from '../section-layout/SearchableSetting'
-import { SettingsSubsectionHeader } from '../form-controls/SettingsFormControls'
-import { translate } from '@/i18n/i18n'
+import { SettingsGroup } from '../section-layout/SettingsGroup'
+import { useTranslate } from '@/i18n/use-translate'
 import { updaterMessageText } from '@/lib/updater-message-copy'
 import { getUpdateCheckClickOptions, getUpdateCheckHint } from '@/lib/update-check-click-options'
 import { readIpcErrorDetail } from '@/lib/ipc-error'
-import { GeneralRemoteServerUpdates } from '../runtime-environments/updates/GeneralRemoteServerUpdates'
+import { GeneralRemoteServerUpdates } from './GeneralRemoteServerUpdates'
 import { ReleaseChannelSection } from './ReleaseChannelSection'
 import {
   ReleaseSourceDownloadButtons,
@@ -43,6 +43,7 @@ function CheckForUpdatesButton({
   /** Multi-source rows: a staged cross-source build must be restarted into, not checked past. */
   holdWhileStaged?: boolean
 }): React.JSX.Element {
+  const t = useTranslate()
   const staged = holdWhileStaged && updateStatus.state === 'downloaded'
   return (
     <Button
@@ -52,7 +53,7 @@ function CheckForUpdatesButton({
       onClick={onCheck}
       title={
         staged
-          ? translate(
+          ? t(
               'auto.components.settings.GeneralUpdateSettingsSection.stagedHold',
               'Restart to install the downloaded update first.'
             )
@@ -65,15 +66,13 @@ function CheckForUpdatesButton({
       ) : (
         <RefreshCw className="size-3.5" />
       )}
-      {translate(
-        'auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5',
-        'Check for Updates'
-      )}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5', 'Check for Updates')}
     </Button>
   )
 }
 
 function DownloadUpdateButton({ version }: { version: string }): React.JSX.Element {
+  const t = useTranslate()
   return (
     <Button
       variant="default"
@@ -81,7 +80,7 @@ function DownloadUpdateButton({ version }: { version: string }): React.JSX.Eleme
       onClick={() => {
         void window.api.updater.download().catch((error) => {
           toast.error(
-            translate(
+            t(
               'auto.components.settings.GeneralUpdateSettingsSection.02dc082e70',
               'Could not start the update download.'
             ),
@@ -91,10 +90,7 @@ function DownloadUpdateButton({ version }: { version: string }): React.JSX.Eleme
       }}
     >
       <Download className="size-3.5" />
-      {translate(
-        'auto.components.settings.GeneralUpdateSettingsSection.42717918f4',
-        'Download Update ('
-      )}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.42717918f4', 'Download Update (')}
       {version})
     </Button>
   )
@@ -109,28 +105,28 @@ function RestartToUpdateButton({
   installing?: boolean
   onRestart: () => void
 }): React.JSX.Element {
+  const t = useTranslate()
   return (
     <Button variant="default" size="sm" onClick={onRestart} disabled={installing}>
       <Download className="size-3.5" />
-      {translate(
-        'auto.components.settings.GeneralUpdateSettingsSection.f44299636f',
-        'Restart to Update ('
-      )}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.f44299636f', 'Restart to Update (')}
       {version})
     </Button>
   )
 }
 
 function RetryInstallButton({ onRetry }: { onRetry: () => void }): React.JSX.Element {
+  const t = useTranslate()
   return (
     <Button variant="default" size="sm" onClick={onRetry}>
       <RefreshCw className="size-3.5" />
-      {translate('auto.components.UpdateCard.2c2d3e03ca', 'Try Again')}
+      {t('auto.components.UpdateCard.2c2d3e03ca', 'Try Again')}
     </Button>
   )
 }
 
 export function GeneralUpdateSettingsSection(): React.JSX.Element {
+  const t = useTranslate()
   const updateStatus = useAppStore((s) => s.updateStatus)
   // Older hosts omit error versions; retain the target for accurate failure copy.
   const updateVersionRef = useRef<string | null>(null)
@@ -186,46 +182,39 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   }
 
   return (
-    <section key="updates" className="space-y-4">
-      <div
-        onClick={(event) => {
-          if (event.altKey) {
-            setChannelSwitcherRevealed((revealed) => !revealed)
-          }
-        }}
-      >
-        <SettingsSubsectionHeader
-          title={translate(
-            'auto.components.settings.GeneralUpdateSettingsSection.f2b1ccc12a',
-            'Updates'
-          )}
-          description={
-            runningSource
-              ? translate(
-                  'auto.components.settings.GeneralUpdateSettingsSection.currentVersionWithSource',
-                  'Current version: {{value0}} · {{value1}}',
-                  { value0: appVersion ?? '...', value1: runningSource.label }
-                )
-              : translate(
-                  'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
-                  'Current version: {{value0}}',
-                  { value0: appVersion ?? '...' }
-                )
-          }
-        />
-      </div>
-
+    <SettingsGroup
+      key="updates"
+      title={t('auto.components.settings.GeneralUpdateSettingsSection.f2b1ccc12a', 'Updates')}
+      onHeaderClick={(event) => {
+        if (event.altKey) {
+          setChannelSwitcherRevealed((revealed) => !revealed)
+        }
+      }}
+      description={
+        runningSource
+          ? t(
+              'auto.components.settings.GeneralUpdateSettingsSection.currentVersionWithSource',
+              'Current version: {{value0}} · {{value1}}',
+              { value0: appVersion ?? '...', value1: runningSource.label }
+            )
+          : t(
+              'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
+              'Current version: {{value0}}',
+              { value0: appVersion ?? '...' }
+            )
+      }
+    >
       <SearchableSetting
-        title={translate(
+        title={t(
           'auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5',
           'Check for Updates'
         )}
-        description={translate(
+        description={t(
           'auto.components.settings.GeneralUpdateSettingsSection.ceb579abaf',
           'Check for app updates and install a newer Orca version.'
         )}
         keywords={['update', 'version', 'release notes', 'download']}
-        className="space-y-3"
+        className="space-y-3 py-3"
       >
         {multiSource ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -276,7 +265,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
 
         <p className="text-xs text-muted-foreground">
           {updateStatus.state === 'error' && updateStatus.installBlock ? (
-            getUpdateInstallBlockGuidance(updateStatus.installBlock).explainer
+            getUpdateInstallBlockGuidance(updateStatus.installBlock, t).explainer
           ) : multiSource && !localBuildOffered ? (
             <ReleaseSourceUpdateHint
               runningSourceId={runningSource?.id ?? null}
@@ -297,7 +286,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
       <UpdateDelaySetting />
       {channelSwitcherRevealed ? <ReleaseChannelSection /> : null}
       <GeneralRemoteServerUpdates />
-    </section>
+    </SettingsGroup>
   )
 }
 
@@ -309,28 +298,29 @@ function SingleSourceUpdateHint({
   updateStatus: UpdateStatus
   checkFailed: boolean
 }): React.JSX.Element {
+  const t = useTranslate()
   return (
     <>
       {updateStatus.state === 'idle' &&
-        translate(
+        t(
           'auto.components.settings.GeneralUpdateSettingsSection.d69a09b672',
           'Updates are checked automatically on launch.'
         )}
       {updateStatus.state === 'checking' &&
-        translate(
+        t(
           'auto.components.settings.GeneralUpdateSettingsSection.31fd7150cf',
           'Checking for updates...'
         )}
       {updateStatus.state === 'available' && (
         <>
-          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
+          {t('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
           {updateStatus.version}{' '}
           {updateStatus.externallyManaged
-            ? translate(
+            ? t(
                 'auto.components.settings.GeneralUpdateSettingsSection.e3b9d21c07',
                 'is available. Update Orca through your system package manager — Orca cannot install this release itself.'
               )
-            : translate(
+            : t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8311da27ba',
                 'is available. Click "Download Update" to download it.'
               )}{' '}
@@ -342,7 +332,7 @@ function SingleSourceUpdateHint({
               rel="noopener noreferrer"
               className="underline hover:text-foreground"
             >
-              {translate(
+              {t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
                 'Release notes'
               )}
@@ -356,22 +346,22 @@ function SingleSourceUpdateHint({
         ) : updateStatus.delayedUpdate ? (
           <DelayedUpdateHint delayedUpdate={updateStatus.delayedUpdate} />
         ) : (
-          translate(
+          t(
             'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
             'You’re on the latest version.'
           )
         ))}
       {updateStatus.state === 'downloading' &&
-        translate(
+        t(
           'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',
           'Downloading v{{value0}}... {{value1}}%',
           { value0: updateStatus.version, value1: updateStatus.percent }
         )}
       {updateStatus.state === 'downloaded' && (
         <>
-          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
+          {t('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
           {updateStatus.version}{' '}
-          {translate(
+          {t(
             'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
             'is ready to install.'
           )}{' '}
@@ -383,7 +373,7 @@ function SingleSourceUpdateHint({
               rel="noopener noreferrer"
               className="underline hover:text-foreground"
             >
-              {translate(
+              {t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
                 'Release notes'
               )}

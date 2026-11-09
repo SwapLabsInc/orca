@@ -8,7 +8,7 @@ import {
   agentResumeSessionsReservedElsewhere,
   reserveAgentResumeSession
 } from '@/lib/agent-resume-session-reservations'
-import { resolveAgentResumeLaunchTarget } from '@/lib/agent-resume-launch-target'
+import { resolveAgentResumeLaunchTarget } from '@/lib/agent-session/resume/agent-resume-launch-target'
 import { paneAgentResumeScopePath } from '@/lib/agent-resume-workspace-scope'
 import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
 import { isResumableTuiAgent } from '../../../../../../shared/agent-session/lifecycle/agent-session-resume'

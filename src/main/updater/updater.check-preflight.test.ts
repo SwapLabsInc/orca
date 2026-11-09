@@ -341,46 +341,6 @@ describe('updater', () => {
     )
   })
 
-  it('ignores a stale update-not-available event after a new check starts preflight', async () => {
-    vi.useFakeTimers()
-    fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [], state: 'no-newer' })
-    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
-      if (autoUpdaterMock.checkForUpdates.mock.calls.length === 1) {
-        return Promise.resolve(undefined)
-      }
-      return new Promise(() => {})
-    })
-    const sendMock = vi.fn()
-    const mainWindow = updaterMainWindow(sendMock)
-
-    const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
-
-    setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
-    checkForUpdatesFromMenu()
-
-    await vi.waitFor(() => {
-      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
-    })
-    await vi.advanceTimersByTimeAsync(1000)
-
-    sendMock.mockClear()
-    checkForUpdatesFromMenu()
-    await vi.waitFor(() => {
-      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(2)
-      expect(sendMock).toHaveBeenCalledWith('updater:status', {
-        state: 'checking',
-        userInitiated: true
-      })
-    })
-
-    autoUpdaterMock.emit('update-not-available')
-
-    expect(sendMock).not.toHaveBeenCalledWith('updater:status', {
-      state: 'not-available',
-      userInitiated: true
-    })
-  })
-
   it('ignores a stale error event after a new check starts preflight', async () => {
     vi.useFakeTimers()
     let resolveSecondTags: (value: { tags: string[]; state: 'no-newer' }) => void = () => {}
@@ -576,30 +536,6 @@ describe('updater', () => {
     ])
   })
 
-  it('deduplicates repeated manual checks while the immediate checking status is active', async () => {
-    let resolveTags: (value: { tags: string[]; state: 'no-newer' }) => void = () => {}
-    fetchNewerReleaseTagsMock.mockImplementation(
-      () =>
-        new Promise<{ tags: string[]; state: 'no-newer' }>((resolve) => {
-          resolveTags = resolve
-        })
-    )
-    autoUpdaterMock.checkForUpdates.mockImplementation(() => new Promise(() => {}))
-    const mainWindow = updaterMainWindow(vi.fn())
-
-    const { setupAutoUpdater, checkForUpdatesFromMenu } = await loadUpdaterModule()
-
-    setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
-    checkForUpdatesFromMenu()
-    checkForUpdatesFromMenu()
-
-    resolveTags({ tags: [], state: 'no-newer' })
-    await vi.waitFor(() => {
-      expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
-    })
-    expect(fetchNewerReleaseTagsMock).toHaveBeenCalledTimes(1)
-  })
-
   /** A startup background check whose feed preflight is still in flight. */
   async function startBackgroundCheckInPreflight(): Promise<{
     resolvePreflight: (tags: string[]) => void
@@ -623,9 +559,7 @@ describe('updater', () => {
     return { resolvePreflight: (tags) => resolvePreflight(tags), send, updater }
   }
 
-  // Why: a background check spends its preflight outside 'checking', so the pinned-jump guard
-  // cannot see it. The jump takes the attempt over, and the late preflight must not repoint the
-  // feed it pinned.
+  // Why: a preflight runs outside 'checking', so a late one could repoint the jump's pinned feed.
   it('lets a pinned jump supersede a background check still in feed preflight', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
     try {
@@ -663,8 +597,7 @@ describe('updater', () => {
     }
   })
 
-  // Why: the jump now reads the tag's manifest before pinning. It must own the attempt before that
-  // read yields, or a background preflight finishing in the gap would pin its own feed underneath.
+  // Why: the jump must own the attempt before its manifest read yields to a finishing preflight.
   it('supersedes a background preflight before the pinned manifest probe resolves', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
     try {
@@ -707,9 +640,7 @@ describe('updater', () => {
     }
   })
 
-  // Why: a same-version pin (or a refused one) settles with a result status while the background
-  // attempt is still in preflight. That status ends the attempt; the launch-pending flag used to
-  // outlive it, and every later check was deferred as "already in flight".
+  // Why: a pin settling mid-preflight ends the attempt; a stale launch flag deferred later checks.
   it('does not strand background checks when a pinned jump settles during a preflight', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
     try {

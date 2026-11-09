@@ -1,7 +1,7 @@
 import { OrchestrationMailboxPointerDelivery } from './mailbox-pointer-delivery'
 import type { PointerDeliveryDependencies } from './mailbox-pointer-delivery-contract'
 import type { OrchestrationMessageWaiter } from './mailbox-pointer-eligibility'
-import type { TerminalRunFactsRegister } from '../../../terminal-run-facts'
+import type { TerminalRunFactsRegister } from '../../../terminal/lifecycle/terminal-run-facts'
 
 /** SwapLabs fork (#69): the PTY lane's pointer delivery, reading the keys clients typed into it. */
 export function typingAwarePointerDelivery<TWaiter extends OrchestrationMessageWaiter>(

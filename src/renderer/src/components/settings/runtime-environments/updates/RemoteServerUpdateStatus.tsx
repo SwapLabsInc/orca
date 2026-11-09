@@ -3,47 +3,42 @@ import { AlertCircle, CheckCircle2, Download, Loader2, ServerOff, Wrench } from 
 import type {
   RemoteServerUpdateEntry,
   RemoteServerUpdatePhase
-} from '@/runtime/remote-server-update-coordinator'
+} from '@/runtime/hosts/updates/remote-server-update-coordinator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
+import { useTranslate, type Translate } from '@/i18n/use-translate'
 
-export function getRemoteServerUpdatePhaseLabel(phase: RemoteServerUpdatePhase): string {
+export function getRemoteServerUpdatePhaseLabel(
+  phase: RemoteServerUpdatePhase,
+  t: Translate = translate
+): string {
   switch (phase) {
     case 'checking':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.checking', 'Checking…')
+      return t('auto.components.settings.RemoteServerUpdateStatus.checking', 'Checking…')
     case 'available':
-      return translate(
-        'auto.components.settings.RemoteServerUpdateStatus.available',
-        'Update available'
-      )
+      return t('auto.components.settings.RemoteServerUpdateStatus.available', 'Update available')
     case 'current':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.current', 'Up to date')
+      return t('auto.components.settings.RemoteServerUpdateStatus.current', 'Up to date')
     case 'manual':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.manual', 'Manual update')
+      return t('auto.components.settings.RemoteServerUpdateStatus.manual', 'Manual update')
     case 'offline':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.offline', 'Offline')
+      return t('auto.components.settings.RemoteServerUpdateStatus.offline', 'Offline')
     case 'queued':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.queued', 'Queued')
+      return t('auto.components.settings.RemoteServerUpdateStatus.queued', 'Queued')
     case 'checking-update':
-      return translate(
+      return t(
         'auto.components.settings.RemoteServerUpdateStatus.checkingUpdate',
         'Checking update…'
       )
     case 'downloading':
-      return translate(
-        'auto.components.settings.RemoteServerUpdateStatus.downloading',
-        'Downloading…'
-      )
+      return t('auto.components.settings.RemoteServerUpdateStatus.downloading', 'Downloading…')
     case 'restarting':
-      return translate(
-        'auto.components.settings.RemoteServerUpdateStatus.restarting',
-        'Restarting…'
-      )
+      return t('auto.components.settings.RemoteServerUpdateStatus.restarting', 'Restarting…')
     case 'updated':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.updated', 'Updated')
+      return t('auto.components.settings.RemoteServerUpdateStatus.updated', 'Updated')
     case 'failed':
-      return translate('auto.components.settings.RemoteServerUpdateStatus.failed', 'Update failed')
+      return t('auto.components.settings.RemoteServerUpdateStatus.failed', 'Update failed')
   }
 }
 
@@ -77,6 +72,7 @@ export function RemoteServerUpdateStatus({
   entry: RemoteServerUpdateEntry
   compact?: boolean
 }): React.JSX.Element {
+  const t = useTranslate()
   const progress =
     entry.phase === 'downloading' && entry.progress !== null
       ? ` ${Math.round(entry.progress)}%`
@@ -87,7 +83,7 @@ export function RemoteServerUpdateStatus({
       className={compact ? 'px-1.5 text-[11px]' : undefined}
     >
       {phaseIcon(entry.phase)}
-      {getRemoteServerUpdatePhaseLabel(entry.phase)}
+      {getRemoteServerUpdatePhaseLabel(entry.phase, t)}
       {progress}
     </Badge>
   )
@@ -100,32 +96,35 @@ function getRemoteServerManualUpdateHelpUrl(entry: RemoteServerUpdateEntry): str
   return entry.support.helpUrl ?? null
 }
 
-export function getRemoteServerManualUpdateHelp(entry: RemoteServerUpdateEntry): string {
+export function getRemoteServerManualUpdateHelp(
+  entry: RemoteServerUpdateEntry,
+  t: Translate = translate
+): string {
   if (getRemoteServerManualUpdateHelpUrl(entry)) {
-    return translate(
+    return t(
       'auto.components.settings.RemoteServerUpdateStatus.managedByDeploymentHelp',
       'Updates for this server are managed by its deployment.'
     )
   }
   if (entry.managedOverSsh) {
-    return translate(
+    return t(
       'auto.components.settings.RemoteServerUpdateStatus.managedOverSshHelp',
       'This desktop updates this server over SSH. Use Update on its row in Remote Orca Servers.'
     )
   }
   if (entry.support?.reason === 'manual-service-update-required') {
-    return translate(
+    return t(
       'auto.components.settings.RemoteServerUpdateStatus.serviceManagerHelp',
       'Update Orca on the server host — through its system package manager if it was installed from a .deb or .rpm, otherwise through the service manager that starts it.'
     )
   }
   if (entry.support?.reason === 'unpackaged-build') {
-    return translate(
+    return t(
       'auto.components.settings.RemoteServerUpdateStatus.unpackedHelp',
       'Development builds must be updated from their source checkout.'
     )
   }
-  return translate(
+  return t(
     'auto.components.settings.RemoteServerUpdateStatus.legacyHelp',
     'Remote updates are unavailable for this server. Update Orca on the server host.'
   )
@@ -137,6 +136,7 @@ export function RemoteServerManualUpdateHelpLink({
 }: {
   entry: RemoteServerUpdateEntry
 }): React.JSX.Element | null {
+  const t = useTranslate()
   const helpUrl = getRemoteServerManualUpdateHelpUrl(entry)
   if (!helpUrl) {
     return null
@@ -151,10 +151,7 @@ export function RemoteServerManualUpdateHelpLink({
         className="h-auto align-baseline"
         onClick={() => void window.api.shell.openUrl(helpUrl)}
       >
-        {translate(
-          'auto.components.settings.RemoteServerUpdateStatus.howToUpdate',
-          'How to update'
-        )}
+        {t('auto.components.settings.RemoteServerUpdateStatus.howToUpdate', 'How to update')}
       </Button>
     </>
   )

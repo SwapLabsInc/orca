@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SleepingAgentSessionRecord } from '../../shared/agent-session/lifecycle/agent-session-resume'
 import { makePaneKey } from '../../shared/workspace-layout/stable-pane-id'
-import { makeAgentStatusStoreWiring } from './agent-status-store-wiring.test-fixture'
+import { makeAgentStatusStoreWiring } from './terminal/identity/agent-status-store-wiring.test-fixture'
 
 // Fragments stay side-effect ordered: mocks, then lifecycle, then fixtures.
 await import('./orca-runtime-tests/runtime-test-module-registration.spec')

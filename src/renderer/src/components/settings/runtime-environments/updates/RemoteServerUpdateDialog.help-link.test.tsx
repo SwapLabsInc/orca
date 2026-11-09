@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RemoteServerUpdateEntry } from '@/runtime/remote-server-update-coordinator'
+import type { RemoteServerUpdateEntry } from '@/runtime/hosts/updates/remote-server-update-coordinator'
 import { RemoteServerUpdateDialog } from './RemoteServerUpdateDialog'
 
 const currentEntry: RemoteServerUpdateEntry = {

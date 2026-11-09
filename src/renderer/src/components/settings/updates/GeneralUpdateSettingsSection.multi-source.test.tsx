@@ -5,7 +5,7 @@ import type { ReleaseSourceStatus, UpdateStatus } from '../../../../../shared/up
 import { useAppStore } from '../../../store'
 import { GeneralUpdateSettingsSection } from './GeneralUpdateSettingsSection'
 
-vi.mock('../runtime-environments/updates/GeneralRemoteServerUpdates', () => ({
+vi.mock('./GeneralRemoteServerUpdates', () => ({
   GeneralRemoteServerUpdates: () => null
 }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
