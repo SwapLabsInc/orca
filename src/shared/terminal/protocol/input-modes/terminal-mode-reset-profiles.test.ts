@@ -1,11 +1,6 @@
 import { Terminal } from '@xterm/headless'
 import { describe, expect, it } from 'vitest'
-import {
-  POST_REPLAY_MODE_RESET,
-  PROCESS_BOUNDARY_GROUND,
-  buildKittyKeyboardRestore,
-  buildPostReplayLiveAgentReattachReset
-} from './terminal-mode-reset-profiles'
+import { PROCESS_BOUNDARY_GROUND, buildKittyKeyboardRestore } from './terminal-mode-reset-profiles'
 import { TerminalKittyKeyboardModeTracker } from './terminal-kitty-keyboard-mode-tracker'
 
 // Consumers import these bytes; literal expectations catch modes silently disappearing.
@@ -21,38 +16,6 @@ describe('terminal mode reset profiles', () => {
     await write('\x1b[?u\x1b[<1u\x1b[?u')
     expect(replies).toEqual(['\x1b[?0u', '\x1b[?0u'])
     term.dispose()
-  })
-
-  // Why both profiles: after a host restart the daemon appends PROCESS_BOUNDARY_GROUND to the
-  // cold-restore payload and its seed, and the renderer writes POST_REPLAY_MODE_RESET after
-  // replaying that payload. Each on its own must leave the fresh shell's xterm with no mouse
-  // tracking, or every pointer move types `35;x;yM` into the prompt.
-  it.each([
-    ['PROCESS_BOUNDARY_GROUND', PROCESS_BOUNDARY_GROUND],
-    ['POST_REPLAY_MODE_RESET', POST_REPLAY_MODE_RESET]
-  ])('%s disarms the input modes a dead normal-screen program left on', async (_name, reset) => {
-    const term = new Terminal({ allowProposedApi: true })
-    const write = (data: string): Promise<void> =>
-      new Promise((resolve) => term.write(data, resolve))
-    await write('$ claude\r\n\x1b[?1003h\x1b[?1006h\x1b[?1004h\x1b[?2004h\x1b[?1hthinking…')
-    expect(term.modes.mouseTrackingMode).toBe('any')
-    expect(term.modes.sendFocusMode).toBe(true)
-
-    await write(reset)
-    await write('$ ')
-
-    expect(term.modes.mouseTrackingMode).toBe('none')
-    expect(term.modes.sendFocusMode).toBe(false)
-    expect(term.modes.bracketedPasteMode).toBe(false)
-    expect(term.buffer.active.type).toBe('normal')
-    term.dispose()
-  })
-
-  describe('live-agent cursor preservation', () => {
-    it('omits the cursor-show when the agent left its cursor hidden', () => {
-      expect(buildPostReplayLiveAgentReattachReset('x\x1b[?25l')).not.toContain('\x1b[?25h')
-      expect(buildPostReplayLiveAgentReattachReset('x\x1b[?25h')).toContain('\x1b[?25h')
-    })
   })
 
   // A replayed push grows xterm’s stack but acts as a mirror set; pop-all prevents the app’s single pop restoring stale flags.

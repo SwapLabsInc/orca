@@ -1,4 +1,4 @@
-import { resolvePaneScopedLaunchTuiAgent } from '@/lib/pane-agent-evidence'
+import { resolvePaneScopedLaunchTuiAgent } from '@/lib/agent-status/evidence/pane-agent-evidence'
 import { useAppStore } from '@/store'
 import type { TuiAgent } from '../../../../../../shared/agent-launch/catalog/tui-agent'
 import type { ConnectPanePtySession } from '../connect-pane-pty-session'

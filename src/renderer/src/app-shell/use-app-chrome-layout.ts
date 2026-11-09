@@ -8,7 +8,7 @@ import { selectWorktreeCreationSurfaceShown } from '@/lib/workspace/creation/wor
 import { useAppStore } from '../store'
 import { measureTitlebarLeftMinWidth } from './titlebar-left-min-width'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
-import { selectActiveTerminalChromeState } from '../store/active-terminal-chrome-selector'
+import { selectActiveTerminalChromeState } from './active-terminal-chrome-selector'
 import {
   hasRequestedBackgroundTerminalWorktreeMount,
   subscribeBackgroundTerminalWorktreeMountRequests

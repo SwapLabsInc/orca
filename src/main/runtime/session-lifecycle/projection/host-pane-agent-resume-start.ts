@@ -20,7 +20,8 @@ import {
   resolveTuiAgentLaunchEnv
 } from '../../../../shared/agent-launch/choices/tui-agent-launch-defaults'
 import type { RuntimeMobileSessionCreateTerminalResult } from '../../../../shared/runtime-session-contracts'
-import type { RuntimeMobileSessionTerminalTab } from '../../../../shared/runtime-types'
+import type { RuntimeMobileSessionTerminalTab } from '../../../../shared/runtime-mobile-session-tab-contracts'
+import type { RuntimeConstructionBindings } from '../../construction/runtime-construction-dependencies'
 
 function hostPaneId(worktreeId: string, tab: RuntimeMobileSessionTerminalTab): string {
   return `${worktreeId}\0${tab.parentTabId}\0${tab.leafId}`
@@ -28,6 +29,14 @@ function hostPaneId(worktreeId: string, tab: RuntimeMobileSessionTerminalTab): s
 
 export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntimeWithDelegatedWorktreeEdgeSync {
   private readonly hostPaneRecreations = new Map<string, Promise<unknown>>()
+  protected readonly selectTerminalLossAgentResumeFn:
+    | RuntimeConstructionBindings['selectTerminalLossAgentResume']
+    | null
+
+  constructor(...args: ConstructorParameters<typeof OrcaRuntimeWithDelegatedWorktreeEdgeSync>) {
+    super(...args)
+    this.selectTerminalLossAgentResumeFn = args[2]?.selectTerminalLossAgentResume ?? null
+  }
 
   /** Settles with another activation's re-creation of the pane; undefined when none runs. */
   protected hostPaneRecreationInFlight(

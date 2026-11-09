@@ -40,11 +40,13 @@ vi.mock('@/store', () => ({
     }
   }
 }))
-vi.mock('@/runtime/sync-runtime-graph', () => ({ scheduleRuntimeGraphSync: vi.fn() }))
+vi.mock('@/runtime/sync-runtime-graph/graph-sync-scheduler', () => ({
+  scheduleRuntimeGraphSync: vi.fn()
+}))
 vi.mock('@/lib/agent-session/accounts/codex/codex-stale-pane-sweep', () => ({
   notifyCodexPaneBoundForStaleSweep: vi.fn()
 }))
-vi.mock('@/lib/agent-resume-launch-target', () => ({
+vi.mock('@/lib/agent-session/resume/agent-resume-launch-target', () => ({
   resolveAgentResumeLaunchTarget: () => ({ platform: 'linux' })
 }))
 vi.mock('./candidate-resume-startup', () => ({

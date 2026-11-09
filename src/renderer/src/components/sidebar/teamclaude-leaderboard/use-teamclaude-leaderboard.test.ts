@@ -5,13 +5,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RuntimeClientTarget } from '../../../../../shared/runtime-client-target'
 import type { TeamClaudeLeaderboardSnapshot } from '../../../../../shared/teamclaude-leaderboard-types'
-import { getTeamClaudeLeaderboard } from '@/runtime/runtime-teamclaude-leaderboard-client'
+import { getTeamClaudeLeaderboard } from '@/runtime/teamclaude-leaderboard/runtime-teamclaude-leaderboard-client'
 import {
   useTeamClaudeLeaderboard,
   type TeamClaudeLeaderboardView
 } from './use-teamclaude-leaderboard'
 
-vi.mock('@/runtime/runtime-teamclaude-leaderboard-client', () => ({
+vi.mock('@/runtime/teamclaude-leaderboard/runtime-teamclaude-leaderboard-client', () => ({
   getTeamClaudeLeaderboard: vi.fn()
 }))
 

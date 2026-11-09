@@ -1,13 +1,15 @@
 // The execution host's own `agy acp`: preferred for new chats when it answers as a compatible server.
 
 import { existsSync } from 'node:fs'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { InitializeResponse } from '../acp/generated/acp-protocol.generated'
+import { AcpConnectionClosedError } from '../acp/transport/acp-errors'
 import {
   isLegacyAgentSessionAccountHome,
   type AgentSessionAccountHome
 } from '../../shared/agent-session/lifecycle/agent-session-account-home'
+import { ANTIGRAVITY_ACP_HOME } from '../../shared/antigravity-session-origin'
 import { compareAppVersions, isValidAppVersion } from '../../shared/app-version'
 import { initializeAntigravityAcp } from './antigravity-acp-runtime-probe'
 import {
@@ -20,6 +22,8 @@ import { hasAntigravityMacOSCredential } from './native-macos-credentials'
 export const ANTIGRAVITY_HOST_ACP_MINIMUM_VERSION = '1.5.2'
 /** agy keeps its sign-in and conversations here and ignores GEMINI_HOME, so this only pins the chat. */
 const AGY_HOME_FOLDER = '.gemini'
+/** Approves tools, not plans; the check launches with it, so a build without it stays managed. */
+export const AGY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions'
 const PROBE_TIMEOUT_MS = 5_000
 const RECHECK_MS = 5 * 60_000
 
@@ -76,14 +80,16 @@ export async function antigravityHostAcpReady(
   if (cached?.identity === identity && (cached.retryAt === undefined || now() < cached.retryAt)) {
     return cached.answer
   }
+  let answered = false
   const check: HostCheck = {
     identity,
     retryAt: now() + RECHECK_MS,
     answer: initializeAntigravityAcp(
-      () => ({ command, args: ['acp'], env, envToDelete }),
+      () => ({ command, args: ['acp', AGY_SKIP_PERMISSIONS_FLAG], env, envToDelete }),
       PROBE_TIMEOUT_MS,
       undefined,
       async (connection, initialized, folder) => {
+        answered = true
         if (!isCompatibleAntigravityHostAcp(initialized)) {
           throw new IncompatibleHostAcp()
         }
@@ -95,7 +101,11 @@ export async function antigravityHostAcpReady(
     ).then(
       () => true,
       (error: unknown) => {
-        if (error instanceof IncompatibleHostAcp) {
+        // An exit before initialize answers is a binary rejecting the launch flag, not a lapse.
+        if (
+          error instanceof IncompatibleHostAcp ||
+          (!answered && error instanceof AcpConnectionClosedError)
+        ) {
           check.retryAt = undefined
         }
         return false
@@ -126,20 +136,10 @@ export async function agyUsesApiKey(homePath: string): Promise<boolean> {
   }
 }
 
-/** Whether Orca's own Chat sign-in has left credentials in its managed home or a folder inside it. */
+/** Whether Orca's own Chat holds the managed server's personal sign-in token. */
 export async function hasManagedAntigravityChatSignIn(managedHome: string): Promise<boolean> {
-  const entries = await readdir(managedHome, { withFileTypes: true }).catch(() => [])
-  const folders = [
-    managedHome,
-    ...entries.filter((entry) => entry.isDirectory()).map((entry) => join(managedHome, entry.name))
-  ]
-  for (const folder of folders) {
-    const names = await readdir(folder).catch(() => [])
-    if (names.some((name) => name.endsWith('oauth-token'))) {
-      return true
-    }
-  }
-  return false
+  const token = join(managedHome, ANTIGRAVITY_ACP_HOME, 'acp_token.json')
+  return (await stat(token).catch(() => null)) !== null
 }
 
 /** Whether agy itself is signed in on this host; an unreadable store counts as signed out. */

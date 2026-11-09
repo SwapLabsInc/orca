@@ -17,6 +17,7 @@ import {
 import { isCodexPaneStale } from './codex-pane-stale'
 import { installTerminalSelectionFitGuard } from '../../viewport/terminal-selection-fit-guard'
 import type { ConnectPanePtySession } from '../connect-pane-pty-session'
+import { recordAdmittedTerminalUserInput } from '@/lib/telemetry'
 
 export function installPtyInputForward(session: ConnectPanePtySession): void {
   session.forwardPtyInput = (data: string, wasUserInput = false): void => {
@@ -98,6 +99,9 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
         .sendInputAccepted(data, inputKind)
         .then((accepted): boolean | Promise<boolean> | null => {
           if (accepted) {
+            if (wasUserInput) {
+              recordAdmittedTerminalUserInput()
+            }
             // Why: rejected writes use transport recovery and must not arm a parser probe.
             session.markAcceptedTerminalInputSent()
             session.observeAcceptedShellCommandInput(data)
@@ -124,6 +128,9 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     if (intent) {
       session.claimViewportForUserActivity(data)
       if (session.transport.sendInput(data, inputKind)) {
+        if (wasUserInput) {
+          recordAdmittedTerminalUserInput()
+        }
         session.markAcceptedTerminalInputSent()
         session.observeAcceptedShellCommandInput(data)
         session.observeAcceptedTerminalInput(data, intent)
@@ -135,6 +142,9 @@ export function installPtyInputForward(session: ConnectPanePtySession): void {
     }
     session.claimViewportForUserActivity(data)
     if (session.transport.sendInput(data, inputKind)) {
+      if (wasUserInput) {
+        recordAdmittedTerminalUserInput()
+      }
       session.markAcceptedTerminalInputSent()
       session.observeAcceptedShellCommandInput(data)
       session.observeAcceptedTerminalInput(data)

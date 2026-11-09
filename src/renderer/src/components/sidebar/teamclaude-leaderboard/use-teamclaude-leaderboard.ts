@@ -3,8 +3,8 @@ import { installWindowVisibilityTimeoutPoller } from '@/lib/window-visibility-ti
 import {
   runtimeTargetEnvironmentId,
   runtimeTargetForOwnerEnvironment
-} from '@/runtime/runtime-client-target'
-import { getTeamClaudeLeaderboard } from '@/runtime/runtime-teamclaude-leaderboard-client'
+} from '@/runtime/rpc/targets/runtime-client-target'
+import { getTeamClaudeLeaderboard } from '@/runtime/teamclaude-leaderboard/runtime-teamclaude-leaderboard-client'
 import type { RuntimeClientTarget } from '../../../../../shared/runtime-client-target'
 import {
   TEAMCLAUDE_LEADERBOARD_REFRESH_MS,

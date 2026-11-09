@@ -1,3 +1,4 @@
+// @orca-isolated-worker: the release-source registry reads its define once, at first import.
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setReleaseSourcesLiteralForTest } from '../../../shared/release-sources.fixture'

@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useNow } from '@/hooks/use-now'
-import { translate } from '@/i18n/i18n'
+import { useIntlLocale, useTranslate } from '@/i18n/use-translate'
 import { isDelayedUpdatePending } from '../../../../../shared/update-delay'
 import type { DelayedUpdate } from '../../../../../shared/update-status-types'
 import { formatUpdateDelayDate } from './update-delay-copy'
@@ -11,16 +11,18 @@ export function DelayedUpdateHint({
 }: {
   delayedUpdate: DelayedUpdate
 }): React.JSX.Element {
+  const t = useTranslate()
+  const intlLocale = useIntlLocale()
   const now = useNow(60_000, true)
   return (
     <>
       {isDelayedUpdatePending(delayedUpdate, now)
-        ? translate(
+        ? t(
             'settings.updateDelay.upToDateWithHeld',
             'You’re up to date. A newer release is on hold until {{date}}.',
-            { date: formatUpdateDelayDate(Date.parse(delayedUpdate.availableAt)) }
+            { date: formatUpdateDelayDate(Date.parse(delayedUpdate.availableAt), intlLocale) }
           )
-        : translate(
+        : t(
             'settings.updateDelay.heldReleaseReady',
             'A newer release is ready. Check for updates to get it.'
           )}

@@ -36,7 +36,7 @@ import type { SleepingRecordOriginHosts } from './sleeping-record-origin-host'
 import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
-} from '../../workspace-runtime-host-ownership'
+} from '../ownership/workspace-runtime-host-ownership'
 import {
   buildWorktreeIdByTabId,
   extendWorktreeIdByTabId,

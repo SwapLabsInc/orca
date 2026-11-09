@@ -17,6 +17,10 @@ export type DaemonPtyAdapterOptions = {
   wslBridgeBootIdentity?: WslBridgeBootIdentity
   /** A daemon drained for a newer bundle (daemon-drain.ts): it only keeps the sessions it has. */
   draining?: boolean
+  /** Test seam; delays before each reconnect attempt to a dead daemon that cannot respawn. */
+  preservedEndpointLossProbeDelaysMs?: readonly number[]
+  /** Test seam; whether a preserved daemon's process is proven gone, given its last pid. */
+  preservedDaemonExited?: (pid: number | undefined) => boolean
 }
 
 export type DaemonRespawnReason =

@@ -1,3 +1,4 @@
+// @orca-isolated-worker: the release-source registry reads its define once, at first import.
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'

@@ -15,6 +15,7 @@ import { releaseRendererPtyVisibilityClaim } from '../pty-transport/delivery/pty
 import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime/remote-runtime-pty-id'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { noteArmsHibernatedPaneWake } from './lifecycle/hibernated-pane-wake'
+import { syncRemoteOutputCadence } from './output/remote-output-cadence'
 
 export type PanePtyBinding = IDisposable & {
   getOwnerContext: () => ReturnType<typeof resolveTerminalPaneOwnerContext>
@@ -25,6 +26,8 @@ export type PanePtyBinding = IDisposable & {
   wakeHibernatedAgentIfArmed: (claimedProviderSessions?: Set<string>) => string | null
   /** Focus changes resample active-leaf identity because a live agent with stale shell state may emit no correcting command boundary. */
   sampleForegroundAgentOnFocus: () => void
+  /** Pane focus or tab activity changed; remote panes retune the host's output cadence. */
+  syncOutputCadence: () => void
   /** Reconfirm after direct shortcut input, which bypasses PTY onData. */
   requestWindowsShiftEnterReconfirmation: () => void
   /** Refresh interactive redraw scheduling after captured shortcut input. */
@@ -155,6 +158,9 @@ export function createPanePtyBinding(session: ConnectPanePtySession): PanePtyBin
     sampleForegroundAgentOnFocus() {
       session.requestKnownWindowsShiftEnterReconfirmation()
       session.sampleVisiblePaneForegroundAgent()
+    },
+    syncOutputCadence() {
+      syncRemoteOutputCadence(session)
     },
     requestWindowsShiftEnterReconfirmation() {
       if (session.shiftEnterReconfirmTimer !== null) {

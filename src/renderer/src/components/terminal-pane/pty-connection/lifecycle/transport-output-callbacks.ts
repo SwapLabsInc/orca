@@ -5,7 +5,7 @@ import {
 import type { ColdRestoreAgentResumeStartup } from '../startup/fresh-spawn-types'
 import type { TerminalAttachmentLaunchResult } from '../../../../../../shared/terminal/pty/lifecycle/terminal-attachment-launch-result'
 import { isPaneOwnerRefusal } from '../host-ownership/pane-owner-recovery'
-import type { SpawnDeferralReason } from '../../../../../../shared/host-spawn-admission'
+import type { SpawnDeferralReason } from '../../../../../../shared/terminal/pty/admission/spawn-admission-contract'
 import { POST_REPLAY_MODE_RESET } from '../../../../../../shared/terminal/protocol/input-modes/terminal-mode-reset-profiles'
 import { createTerminalStartupTiming } from '../../diagnostics/startup/terminal-startup-timing'
 import type {
