@@ -66,7 +66,7 @@ function CheckForUpdatesButton({
       ) : (
         <RefreshCw className="size-3.5" />
       )}
-      {t('auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5', 'Check for Updates')}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.6d27bd46e3', 'Check for updates')}
     </Button>
   )
 }
@@ -90,7 +90,7 @@ function DownloadUpdateButton({ version }: { version: string }): React.JSX.Eleme
       }}
     >
       <Download className="size-3.5" />
-      {t('auto.components.settings.GeneralUpdateSettingsSection.42717918f4', 'Download Update (')}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.857ca887da', 'Download update (')}
       {version})
     </Button>
   )
@@ -109,7 +109,7 @@ function RestartToUpdateButton({
   return (
     <Button variant="default" size="sm" onClick={onRestart} disabled={installing}>
       <Download className="size-3.5" />
-      {t('auto.components.settings.GeneralUpdateSettingsSection.f44299636f', 'Restart to Update (')}
+      {t('auto.components.settings.GeneralUpdateSettingsSection.c0a8f827c7', 'Restart to update (')}
       {version})
     </Button>
   )
@@ -120,12 +120,14 @@ function RetryInstallButton({ onRetry }: { onRetry: () => void }): React.JSX.Ele
   return (
     <Button variant="default" size="sm" onClick={onRetry}>
       <RefreshCw className="size-3.5" />
-      {t('auto.components.UpdateCard.2c2d3e03ca', 'Try Again')}
+      {t('auto.components.UpdateCard.b3b02a9d84', 'Try again')}
     </Button>
   )
 }
 
-export function GeneralUpdateSettingsSection(): React.JSX.Element {
+export function GeneralUpdateSettingsSection({
+  children
+}: { children?: React.ReactNode } = {}): React.JSX.Element {
   const t = useTranslate()
   const updateStatus = useAppStore((s) => s.updateStatus)
   // Older hosts omit error versions; retain the target for accurate failure copy.
@@ -184,84 +186,84 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   return (
     <SettingsGroup
       key="updates"
-      title={t('auto.components.settings.GeneralUpdateSettingsSection.f2b1ccc12a', 'Updates')}
+      title={t('settings.general.about.title', 'About')}
       onHeaderClick={(event) => {
         if (event.altKey) {
           setChannelSwitcherRevealed((revealed) => !revealed)
         }
       }}
-      description={
-        runningSource
-          ? t(
-              'auto.components.settings.GeneralUpdateSettingsSection.currentVersionWithSource',
-              'Current version: {{value0}} · {{value1}}',
-              { value0: appVersion ?? '...', value1: runningSource.label }
-            )
-          : t(
-              'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
-              'Current version: {{value0}}',
-              { value0: appVersion ?? '...' }
-            )
-      }
     >
       <SearchableSetting
         title={t(
-          'auto.components.settings.GeneralUpdateSettingsSection.e1a647adc5',
-          'Check for Updates'
+          'auto.components.settings.GeneralUpdateSettingsSection.6d27bd46e3',
+          'Check for updates'
         )}
         description={t(
           'auto.components.settings.GeneralUpdateSettingsSection.ceb579abaf',
           'Check for app updates and install a newer Orca version.'
         )}
-        keywords={['update', 'version', 'release notes', 'download']}
+        keywords={['about', 'update', 'version', 'release notes', 'download']}
         className="space-y-3 py-3"
       >
-        {multiSource ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <CheckForUpdatesButton
-              updateStatus={updateStatus}
-              onCheck={handleCheck}
-              holdWhileStaged
-            />
-            {updateStatus.state === 'downloaded' ? (
-              <RestartToUpdateButton
-                version={updateStatus.version}
-                installing={updateStatus.installing}
-                onRestart={handleRestartToUpdate}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm">
+            {runningSource
+              ? t(
+                  'auto.components.settings.GeneralUpdateSettingsSection.currentVersionWithSource',
+                  'Current version: {{value0}} · {{value1}}',
+                  { value0: appVersion ?? '...', value1: runningSource.label }
+                )
+              : t('settings.general.about.version', 'Orca {{version}}', {
+                  version: appVersion ?? '…'
+                })}
+          </span>
+          {multiSource ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <CheckForUpdatesButton
+                updateStatus={updateStatus}
+                onCheck={handleCheck}
+                holdWhileStaged
               />
-            ) : installRetryOffered ? (
-              <RetryInstallButton onRetry={handleRestartToUpdate} />
-            ) : localBuildOffered && updateStatus.state === 'available' ? (
-              // Why: a local build (Option-click on macOS) is no source's release, so it keeps
-              // the generic action instead of wearing a source button's label.
-              <DownloadUpdateButton version={updateStatus.version} />
-            ) : null}
-            <ReleaseSourceDownloadButtons
-              sources={releaseSources.sources}
-              loading={releaseSources.loading}
-              placeholders={RELEASE_SOURCES}
-              runningSourceId={runningSource?.id ?? null}
-              updateStatus={updateStatus}
-              appVersion={appVersion}
-            />
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
+              {updateStatus.state === 'downloaded' ? (
+                <RestartToUpdateButton
+                  version={updateStatus.version}
+                  installing={updateStatus.installing}
+                  onRestart={handleRestartToUpdate}
+                />
+              ) : installRetryOffered ? (
+                <RetryInstallButton onRetry={handleRestartToUpdate} />
+              ) : localBuildOffered && updateStatus.state === 'available' ? (
+                // Why: a local build (Option-click on macOS) is no source's release, so it keeps
+                // the generic action instead of wearing a source button's label.
+                <DownloadUpdateButton version={updateStatus.version} />
+              ) : null}
+              <ReleaseSourceDownloadButtons
+                sources={releaseSources.sources}
+                loading={releaseSources.loading}
+                placeholders={RELEASE_SOURCES}
+                runningSourceId={runningSource?.id ?? null}
+                updateStatus={updateStatus}
+                appVersion={appVersion}
+              />
+            </div>
+          ) : (
+            <>
+              <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
 
-            {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
-              <DownloadUpdateButton version={updateStatus.version} />
-            ) : installRetryOffered ? (
-              <RetryInstallButton onRetry={handleRestartToUpdate} />
-            ) : updateStatus.state === 'downloaded' ? (
-              <RestartToUpdateButton
-                version={updateStatus.version}
-                installing={updateStatus.installing}
-                onRestart={handleRestartToUpdate}
-              />
-            ) : null}
-          </div>
-        )}
+              {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
+                <DownloadUpdateButton version={updateStatus.version} />
+              ) : installRetryOffered ? (
+                <RetryInstallButton onRetry={handleRestartToUpdate} />
+              ) : updateStatus.state === 'downloaded' ? (
+                <RestartToUpdateButton
+                  version={updateStatus.version}
+                  installing={updateStatus.installing}
+                  onRestart={handleRestartToUpdate}
+                />
+              ) : null}
+            </>
+          )}
+        </div>
 
         <p className="text-xs text-muted-foreground">
           {updateStatus.state === 'error' && updateStatus.installBlock ? (
@@ -286,6 +288,7 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
       <UpdateDelaySetting />
       {channelSwitcherRevealed ? <ReleaseChannelSection /> : null}
       <GeneralRemoteServerUpdates />
+      {children}
     </SettingsGroup>
   )
 }

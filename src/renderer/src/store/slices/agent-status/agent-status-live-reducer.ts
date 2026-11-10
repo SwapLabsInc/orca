@@ -1,3 +1,4 @@
+import { replaceRecordEntries } from '@/store/keyed-record-transitions'
 import { projectAgentPaneConversation } from './agent-pane-conversation'
 import type { AppState } from '../../types'
 import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
@@ -15,6 +16,7 @@ import {
 import type { AgentStatusLiveEntryBuild } from './agent-status-live-entry-builder'
 import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { liveResumeRecordChange } from '../../../../../shared/agent-session/lifecycle/agent-resume-record-from-status'
+import { retiresLaunch } from './agent-status-launch-config'
 
 export type AgentStatusLiveUpdateReduction = {
   patch: Partial<AppState>
@@ -74,11 +76,13 @@ export function reduceAgentStatusLiveUpdate(
       [paneKey]: { ...registryEntry, identity: { ...registryEntry.identity, providerSession } }
     }
   }
-  // Launch tokens authorize only the session they started; a retained resume handle keeps its
-  // token, or it wakes with default flags.
+  const launchRetired = retiresLaunch(state.agentStatusByPaneKey[paneKey], entry)
+  // A completed turn or changed provider id consumes the launch token unless a retained resume
+  // handle needs it to wake with its flags; the owner retiring the launch always consumes it.
   if (
-    (providerSessionChanged || (entry.state === 'done' && entry.sessionBoundary !== true)) &&
-    !retainsSleepingRecord &&
+    (launchRetired ||
+      ((providerSessionChanged || (entry.state === 'done' && entry.sessionBoundary !== true)) &&
+        !retainsSleepingRecord)) &&
     paneKey in state.agentLaunchConfigByPaneKey
   ) {
     nextLaunchConfigs = { ...state.agentLaunchConfigByPaneKey }
@@ -87,18 +91,20 @@ export function reduceAgentStatusLiveUpdate(
   const recordChange = liveResumeRecordChange(existingSleepingRecord, liveRecoveryRecord)
   // 'clear' only means this status built no record; without positive evidence the handle stays.
   if (recordChange === 'clear' && retainsSleepingRecord) {
-    const refreshed = refreshRetainedSleepingRecord(existingSleepingRecord, entry)
+    const refreshed = refreshRetainedSleepingRecord(existingSleepingRecord, entry, launchRetired)
     if (refreshed !== existingSleepingRecord) {
-      nextSleepingAgentSessions = { ...state.sleepingAgentSessionsByPaneKey, [paneKey]: refreshed }
+      nextSleepingAgentSessions = replaceRecordEntries(state.sleepingAgentSessionsByPaneKey, [
+        [paneKey, refreshed]
+      ])
     }
   } else if (recordChange === 'clear') {
-    nextSleepingAgentSessions = { ...state.sleepingAgentSessionsByPaneKey }
-    delete nextSleepingAgentSessions[paneKey]
+    nextSleepingAgentSessions = replaceRecordEntries<
+      AppState['sleepingAgentSessionsByPaneKey'][string]
+    >(state.sleepingAgentSessionsByPaneKey, [[paneKey, null]])
   } else if (recordChange) {
-    nextSleepingAgentSessions = {
-      ...state.sleepingAgentSessionsByPaneKey,
-      [paneKey]: recordChange.set
-    }
+    nextSleepingAgentSessions = replaceRecordEntries(state.sleepingAgentSessionsByPaneKey, [
+      [paneKey, recordChange.set]
+    ])
   }
   const previousLive = state.agentStatusByPaneKey
   const nextLive = { ...previousLive, [paneKey]: entry }

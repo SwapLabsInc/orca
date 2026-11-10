@@ -110,6 +110,53 @@ describe('sleeping record retirement on live status updates', () => {
     })
   })
 
+  // A retained handle must not replay a launch its owner retired (a hand-typed agent in the pane).
+  it('ends the launch note of a retained record when the owner retires the launch', () => {
+    const store = createTestStore()
+    seedTab(store)
+    const launchConfig = { agentArgs: '--dangerously-skip-permissions', agentEnv: {} }
+    seedStore(store, {
+      sleepingAgentSessionsByPaneKey: {
+        'tab-1:leaf-1': {
+          paneKey: 'tab-1:leaf-1',
+          tabId: 'tab-1',
+          worktreeId: 'wt-1',
+          agent: 'claude',
+          providerSession: { key: 'session_id', id: 'claude-session-1' },
+          prompt: 'ship the fix',
+          state: 'working',
+          capturedAt: 10,
+          updatedAt: 10,
+          origin: 'live',
+          launchConfig
+        }
+      },
+      agentLaunchConfigByPaneKey: {
+        'tab-1:leaf-1': {
+          launchConfig,
+          registeredAt: 10,
+          identity: { agentType: 'claude', tabId: 'tab-1', leafId: 'leaf-1' }
+        }
+      }
+    })
+
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'working', prompt: 'ship the fix', agentType: 'claude' },
+        'Claude',
+        { updatedAt: 200, stateStartedAt: 200 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { launchConfig: null }
+      )
+
+    const record = store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']
+    expect(record?.providerSession).toEqual({ key: 'session_id', id: 'claude-session-1' })
+    expect(record).not.toHaveProperty('launchConfig')
+    expect(store.getState().agentLaunchConfigByPaneKey).not.toHaveProperty('tab-1:leaf-1')
+  })
+
   it('retires the record when the host states the pane is not resumable', () => {
     const store = createTestStore()
     seedTab(store)

@@ -1,3 +1,5 @@
+import { replaceRecordEntries } from '@/store/keyed-record-transitions'
+import { sleepingAgentRecordIndex } from '../../terminals/sleeping-agent-record-index'
 import type { AppState } from '../../types'
 import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
 import { mainAgentStatusEqual } from '../../../../../shared/agent-status/lifecycle/main-agent-status'
@@ -82,7 +84,9 @@ export function shouldRetireSleepingRecord(args: {
 /** Keeps the resume identity; refreshes the volatile fields readers show as live pane state. */
 export function refreshRetainedSleepingRecord(
   record: SleepingAgentSessionRecord,
-  entry: AgentStatusEntry
+  entry: AgentStatusEntry,
+  /** The owner retired the launch: its note ends with it, the resume identity stays. */
+  launchRetired = false
 ): SleepingAgentSessionRecord {
   // Why: a finished pane's handle carries resume identity, not the completed turn's text.
   const prompt = entry.state === 'done' ? '' : entry.prompt
@@ -99,7 +103,8 @@ export function refreshRetainedSleepingRecord(
     record.terminalTitle === terminalTitle &&
     record.lastAssistantMessage === lastAssistantMessage &&
     (record.interrupted === true) === interrupted &&
-    mainAgentStatusEqual(record.mainAgent, entry.mainAgent)
+    mainAgentStatusEqual(record.mainAgent, entry.mainAgent) &&
+    !(launchRetired && record.launchConfig)
   ) {
     return record
   }
@@ -123,6 +128,9 @@ export function refreshRetainedSleepingRecord(
     next.interrupted = true
   } else {
     delete next.interrupted
+  }
+  if (launchRetired) {
+    delete next.launchConfig
   }
   // Both verdict forms move together (`agentVerdictFields`): a stale `mainAgent` outranks the flag.
   if (entry.mainAgent) {
@@ -184,9 +192,8 @@ export function removeSleepingRecordsReplacedByManualWorktreeSleep(
   replacements?: Readonly<Record<string, SleepingAgentSessionRecord>>
 ): { records: Record<string, SleepingAgentSessionRecord>; changed: boolean } {
   const allowedPaneKeys = paneKeys ? new Set(paneKeys) : null
-  let next = records
-  let changed = false
-  for (const [paneKey, record] of Object.entries(records)) {
+  const deletions: [string, null][] = []
+  for (const [paneKey, record] of sleepingAgentRecordIndex.entries(records, worktreeId)) {
     if (record.worktreeId !== worktreeId || (allowedPaneKeys && !allowedPaneKeys.has(paneKey))) {
       continue
     }
@@ -194,11 +201,13 @@ export function removeSleepingRecordsReplacedByManualWorktreeSleep(
     if (!replacements?.[paneKey] && isDurableSleepingCapture(record)) {
       continue
     }
-    if (next === records) {
-      next = { ...records }
-    }
-    delete next[paneKey]
-    changed = true
+    deletions.push([paneKey, null])
   }
-  return { records: next, changed }
+  return {
+    records:
+      deletions.length > 0
+        ? replaceRecordEntries<SleepingAgentSessionRecord>(records, deletions)
+        : records,
+    changed: deletions.length > 0
+  }
 }

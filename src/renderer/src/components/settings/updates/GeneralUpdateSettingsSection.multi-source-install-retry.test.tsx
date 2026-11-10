@@ -61,7 +61,7 @@ it('retries a blocked staged install from the multi-source row', () => {
 
   expect(screen.getByText(/Stop the server from the terminal/)).toBeTruthy()
   expect(screen.queryByText(/Raw process listing/)).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Try Again' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(quitAndInstall).toHaveBeenCalledOnce()
 })
 
@@ -71,6 +71,6 @@ it('disables the multi-source restart button during preparation', () => {
   })
   render(<GeneralUpdateSettingsSection />)
 
-  const button = screen.getByRole('button', { name: `Restart to Update (${STAGED_VERSION})` })
+  const button = screen.getByRole('button', { name: `Restart to update (${STAGED_VERSION})` })
   expect(button.hasAttribute('disabled')).toBe(true)
 })

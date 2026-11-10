@@ -41,7 +41,7 @@ afterEach(() => {
 it('renders only the single-source row for a single-source build', async () => {
   render(<GeneralUpdateSettingsSection />)
 
-  expect(await screen.findByText('Current version: 1.4.199')).toBeTruthy()
+  expect(await screen.findByText('Orca 1.4.199')).toBeTruthy()
   expect(screen.getAllByRole('button')).toHaveLength(2)
   expect(screen.queryByText('Current source')).toBeNull()
   expect(screen.queryByRole('button', { name: /\(Orca upstream\)/ })).toBeNull()
