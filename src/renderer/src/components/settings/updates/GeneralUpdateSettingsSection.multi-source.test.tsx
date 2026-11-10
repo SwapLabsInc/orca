@@ -109,13 +109,13 @@ const upstreamButton = (): HTMLButtonElement =>
 const forkButton = (name = `Download ${FORK_VERSION} (SwapLabs)`): HTMLButtonElement =>
   screen.getByRole<HTMLButtonElement>('button', { name })
 const checkButton = (): HTMLButtonElement =>
-  screen.getByRole<HTMLButtonElement>('button', { name: 'Check for Updates' })
+  screen.getByRole<HTMLButtonElement>('button', { name: 'Check for updates' })
 
 it('renders one button per configured source with the running source marked', async () => {
   render(<GeneralUpdateSettingsSection />)
 
   await waitFor(() => expect(upstreamButton()).toBeTruthy())
-  expect(screen.getByRole('button', { name: 'Check for Updates' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Check for updates' })).toBeTruthy()
   expect(upstreamButton().disabled).toBe(false)
   // The running build is the newest SwapLabs build, so its own button has nothing to offer.
   expect(forkButton().disabled).toBe(true)
@@ -205,7 +205,7 @@ it('disables every source button while checking and downloading', async () => {
 
   setStatus({ state: 'downloaded', version: '1.4.198', releaseSource: 'upstream' })
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Restart to Update (1.4.198)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Restart to update (1.4.198)' })).toBeTruthy()
   )
   expect(screen.getByText(/1\.4\.198 \(Orca upstream\) is ready to install\./)).toBeTruthy()
   expect(upstreamButton().disabled).toBe(true)
@@ -320,7 +320,7 @@ it('keeps a local-build offer out of the source buttons', async () => {
 
   setStatus({ state: 'available', version: '0.9.0-local.1', changelog: null, source: 'local' })
   const button = await screen.findByRole<HTMLButtonElement>('button', {
-    name: 'Download Update (0.9.0-local.1)'
+    name: 'Download update (0.9.0-local.1)'
   })
   expect(screen.queryByRole('button', { name: /0\.9\.0-local\.1 \(SwapLabs\)/ })).toBeNull()
   expect(forkButton().disabled).toBe(true)

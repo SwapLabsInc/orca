@@ -1,7 +1,7 @@
 import { toRuntimeExecutionHostId } from '../../shared/execution-host'
 import type { DelegatedWorktreeEdge } from '../../shared/worktree/delegated-worktree-edge'
 import type { RuntimeSyncWindowGraphResult } from '../../shared/runtime-session-contracts'
-import type { DelegatedWorktreePlacementRow } from './orchestration/db/federation/federated-dispatch-store'
+import type { DelegatedWorktreePlacementRow } from './orchestration/db/delegated-worktree-placement-row'
 
 /** Enough for any realistic sidebar; the renderer drops edges whose rows it cannot see anyway. */
 const MAX_DELEGATED_EDGES = 500

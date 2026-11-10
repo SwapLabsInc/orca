@@ -13,7 +13,9 @@ const { platformRef, sources } = await vi.hoisted(async () => {
   return { platformRef, sources }
 })
 
-vi.mock('@/lib/shortcut-platform', () => ({ getShortcutPlatform: () => platformRef.current }))
+vi.mock('@/lib/keyboard/shortcut-platform', () => ({
+  getShortcutPlatform: () => platformRef.current
+}))
 
 const FORK_VERSION = '1.4.197-swaplabs.202609241530'
 const upstreamBuild = {

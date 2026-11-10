@@ -1,10 +1,10 @@
 import { selectWslHostsServing } from '../../use-wsl-hosts-enabled'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { shallow } from 'zustand/shallow'
 import { persistedUIValuesEqual } from '../../../../../../shared/persisted-ui-equality'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store/index'
-import { selectSidebarLineageParentIdentities } from '@/store/slices/worktrees/metadata/cross-store-lineage-parents'
+import { useSidebarLineageNestingInputs } from './use-sidebar-lineage-nesting-inputs'
 import type { AppState } from '@/store/types'
 import type { Repo } from '../../../../../../shared/repo-types'
 import {
@@ -19,6 +19,10 @@ import { useEffectiveCollapsedGroups } from './use-collapsed-groups'
 import type { Row } from '../../../../../../shared/sidebar-list/row-types'
 import type { SectionRowsArgs } from './sidebar-list-model'
 import { getLogicalRepoOrderRankById } from '../../../../../../shared/project-section-order'
+import {
+  readHiddenVmCheckouts,
+  subscribeHiddenVmCheckouts
+} from '@/runtime/ephemeral-vm/vm-create-hidden-checkouts'
 import { getEmptyProjectPlaceholderRepoIds } from '../../../../../../shared/sidebar-list/empty-project-placeholder-repos'
 import {
   deferHostSectionCollapse,
@@ -90,10 +94,9 @@ function createSidebarHostOptionsSelector() {
 export function useSidebarSectionRows(args: SectionRowsArgs) {
   const { repos, worktrees, repoMap, defaultHostId } = args
   const worktreesByRepo = useAppStore((s) => selectWorktreesByRepo(s))
-  const lineageParentIdentities = useAppStore(selectSidebarLineageParentIdentities)
+  const lineageNestingInputs = useSidebarLineageNestingInputs()
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
-  const delegatedWorktreeEdges = useAppStore((s) => s.delegatedWorktreeEdges)
 
   // Why: manual header order is bound to state.repos; Recent/Smart derive order from the sorted worktree stream.
   const repoOrder = useMemo(
@@ -101,6 +104,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
     [repos]
   )
   const allRepoIds = useMemo(() => repos.map((r) => r.id), [repos])
+  const hiddenVmCheckouts = useSyncExternalStore(subscribeHiddenVmCheckouts, readHiddenVmCheckouts)
   const placeholderRepoIds = useMemo(
     () =>
       getEmptyProjectPlaceholderRepoIds({
@@ -108,9 +112,17 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         repos: args.visibleReposForRows,
         worktreesByRepo,
         visibleWorktrees: worktrees,
-        filterRepoIds: args.filterRepoIds
+        filterRepoIds: args.filterRepoIds,
+        pendingVmRepoIds: hiddenVmCheckouts.repoIds
       }),
-    [args.filterRepoIds, args.groupBy, args.visibleReposForRows, worktrees, worktreesByRepo]
+    [
+      args.filterRepoIds,
+      args.groupBy,
+      args.visibleReposForRows,
+      worktrees,
+      worktreesByRepo,
+      hiddenVmCheckouts
+    ]
   )
 
   // Why: subscribe on a flat key array (useShallow) so progress ticks don't rebuild the whole row model.
@@ -159,7 +171,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         workspaceStatuses: args.workspaceStatuses,
         projectOrderBy: args.projectOrderBy,
         lineageById: args.worktreeLineageById,
-        lineageParentIdentities,
+        ...lineageNestingInputs,
         worktreeMap: args.worktreeMap,
         nestLineage: true,
         projectGroups: args.visibleProjectGroupsForRows,
@@ -172,8 +184,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         hostLabelById,
         defaultHostId,
         pinnedDisplayPolicy: args.pinnedDisplayPolicy,
-        filterRepoIds: args.filterRepoIds,
-        delegatedWorktreeEdges
+        filterRepoIds: args.filterRepoIds
       }),
     [
       args.groupBy,
@@ -187,8 +198,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.workspaceStatuses,
       args.projectOrderBy,
       args.worktreeLineageById,
-      lineageParentIdentities,
-      delegatedWorktreeEdges,
+      lineageNestingInputs,
       args.worktreeMap,
       args.projectGrouping,
       args.visibleProjectGroupsForRows,
