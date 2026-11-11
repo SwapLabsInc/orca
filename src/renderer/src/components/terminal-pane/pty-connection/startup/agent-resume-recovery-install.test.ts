@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
-import { getAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
-import { getPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
-import { resetAgentResumeSessionReservations } from '@/lib/agent-resume-session-reservations'
-import type { AgentResumeCandidateScan } from '@/lib/agent-resume-candidate-source'
+import { getAgentResumePaneHandler } from '@/lib/agent-session/resume/agent-resume-pane-handlers'
+import { getPendingAgentResumeChoices } from '@/lib/agent-session/resume/pending-agent-resume-choices'
+import { resetAgentResumeSessionReservations } from '@/lib/agent-session/resume/agent-resume-session-reservations'
+import type { AgentResumeCandidateScan } from '@/lib/agent-session/resume/agent-resume-candidate-source'
 import { installAgentResumeRecovery } from './agent-resume-recovery-install'
 import { installActivePanePtyBinding } from '../lifecycle/active-pane-pty-binding'
 import type { ConnectPanePtySession } from '../connect-pane-pty-session'
@@ -54,7 +54,7 @@ vi.mock('./candidate-resume-startup', () => ({
 }))
 
 const fetchCandidates = vi.fn<() => Promise<AgentResumeCandidateScan>>()
-vi.mock('@/lib/agent-resume-candidate-source', () => ({
+vi.mock('@/lib/agent-session/resume/agent-resume-candidate-source', () => ({
   fetchAgentResumeCandidates: () => fetchCandidates()
 }))
 

@@ -114,7 +114,8 @@ describe('agent resume pane handler ownership, through the real connect sequence
     // Why the dynamic import: `vi.resetModules()` gives each test a fresh registry instance, and a
     // file-level import would read the previous one — the handler under test would never appear.
     const { connectPanePty } = await import('../connect-pane-pty')
-    const { getAgentResumePaneHandler } = await import('@/lib/agent-resume-pane-handlers')
+    const { getAgentResumePaneHandler } =
+      await import('@/lib/agent-session/resume/agent-resume-pane-handlers')
     const transport = createMockTransport()
     transportFactoryQueue.push(transport)
     const deps = connectWithFixtures(connectPanePty)
@@ -129,7 +130,8 @@ describe('agent resume pane handler ownership, through the real connect sequence
 
   it('leaves no handler registered under an absent owner', async () => {
     const { connectPanePty } = await import('../connect-pane-pty')
-    const { getAgentResumePaneHandler } = await import('@/lib/agent-resume-pane-handlers')
+    const { getAgentResumePaneHandler } =
+      await import('@/lib/agent-session/resume/agent-resume-pane-handlers')
     transportFactoryQueue.push(createMockTransport())
     const deps = connectWithFixtures(connectPanePty)
     await flushAsyncTicks()

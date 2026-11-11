@@ -1,4 +1,4 @@
-import { releaseAgentResumeSessionsForPane } from '@/lib/agent-resume-session-reservations'
+import { releaseAgentResumeSessionsForPane } from '@/lib/agent-session/resume/agent-resume-session-reservations'
 import type { ConnectPanePtySession } from '../connect-pane-pty-session'
 
 /**

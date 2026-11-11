@@ -5,8 +5,8 @@ import { Badge } from '../../ui/badge'
 import { Button } from '../../ui/button'
 import { translate } from '@/i18n/i18n'
 import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
-import { readIpcErrorDetail } from '@/lib/ipc-error'
-import { updaterMessageText } from '@/lib/updater-message-copy'
+import { readIpcErrorDetail } from '@/runtime/errors/ipc-error'
+import { updaterMessageText } from '@/app-shell/updates/updater-message-copy'
 import {
   compareReleaseVersions,
   getReleaseNotesUrlForVersion
