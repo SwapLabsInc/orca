@@ -10,7 +10,7 @@ import {
   type MockTransport
 } from '../test-fixtures/pty-connection-test-pane-fixtures'
 import { buildPaneConnectionDeps } from '../test-fixtures/pty-connection-test-deps'
-import type * as AgentResumeSessionReservations from '@/lib/agent-resume-session-reservations'
+import type * as AgentResumeSessionReservations from '@/lib/agent-session/resume/agent-resume-session-reservations'
 import { createInitialStoreState } from '../test-fixtures/pty-connection-test-store-fixtures'
 import type { StoreState } from '../test-fixtures/pty-connection-test-store-state'
 import {
@@ -111,7 +111,7 @@ describe('agent resume reservations across a pane binding replacement', () => {
     return {
       deps,
       dispose: () => binding.dispose(),
-      reservations: await import('@/lib/agent-resume-session-reservations')
+      reservations: await import('@/lib/agent-session/resume/agent-resume-session-reservations')
     }
   }
 

@@ -8,9 +8,12 @@ import { Button } from '../../ui/button'
 import { SearchableSetting } from '../section-layout/SearchableSetting'
 import { SettingsGroup } from '../section-layout/SettingsGroup'
 import { useTranslate } from '@/i18n/use-translate'
-import { updaterMessageText } from '@/lib/updater-message-copy'
-import { getUpdateCheckClickOptions, getUpdateCheckHint } from '@/lib/update-check-click-options'
-import { readIpcErrorDetail } from '@/lib/ipc-error'
+import { updaterMessageText } from '@/app-shell/updates/updater-message-copy'
+import {
+  getUpdateCheckClickOptions,
+  getUpdateCheckHint
+} from '@/app-shell/updates/update-check-click-options'
+import { readIpcErrorDetail } from '@/runtime/errors/ipc-error'
 import { GeneralRemoteServerUpdates } from './GeneralRemoteServerUpdates'
 import { ReleaseChannelSection } from './ReleaseChannelSection'
 import {

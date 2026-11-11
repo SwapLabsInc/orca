@@ -2,7 +2,7 @@ import { ChevronUp, CloudOff } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { formatUsageTokens } from '@/components/stats/usage-overview-model'
 import { translate } from '@/i18n/i18n'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { TeamClaudeLeaderboardBoard } from './TeamClaudeLeaderboardBoard'
 import {
   TeamClaudeLeaderboardRankChangeBadge,

@@ -3,7 +3,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { useNow } from '@/hooks/use-now'
 import { translate } from '@/i18n/i18n'
 import { formatUiRelativeTime } from '@/i18n/relative-time-format'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { formatUsageTokens } from '@/components/stats/usage-overview-model'
 import type { TeamClaudeLeaderboardEntry } from '../../../../../shared/teamclaude-leaderboard-types'
 import { TeamClaudeLeaderboardRankCell } from './TeamClaudeLeaderboardMedal'

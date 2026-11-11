@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { readIpcErrorDetail } from '@/lib/ipc-error'
+import { readIpcErrorDetail } from '@/runtime/errors/ipc-error'
 import type { ReleaseSourceStatus } from '../../../../../shared/update-status-types'
 
 export type ReleaseSourceStatusesState = {

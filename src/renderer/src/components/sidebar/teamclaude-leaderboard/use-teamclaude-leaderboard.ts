@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { installWindowVisibilityTimeoutPoller } from '@/lib/window-visibility-timeout-poller'
+import { installWindowVisibilityTimeoutPoller } from '@/lib/window-activity/window-visibility-timeout-poller'
 import {
   runtimeTargetEnvironmentId,
   runtimeTargetForOwnerEnvironment

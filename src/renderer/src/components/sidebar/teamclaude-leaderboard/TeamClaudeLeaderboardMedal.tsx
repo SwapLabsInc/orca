@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Trophy } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import {
   getTeamClaudeLeaderboardMedal,
   type TeamClaudeLeaderboardMedal,

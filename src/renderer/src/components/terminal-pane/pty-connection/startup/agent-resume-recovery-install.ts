@@ -1,15 +1,15 @@
 import { useAppStore } from '@/store'
-import { fetchAgentResumeCandidates } from '@/lib/agent-resume-candidate-source'
-import { recoverAgentSessionForPane } from '@/lib/agent-resume-recovery'
-import { agentResumeSessionsClaimedByOtherPanes } from '@/lib/agent-resume-session-claims'
-import { registerAgentResumePaneHandler } from '@/lib/agent-resume-pane-handlers'
-import { setPendingAgentResumeChoices } from '@/lib/pending-agent-resume-choices'
+import { fetchAgentResumeCandidates } from '@/lib/agent-session/resume/agent-resume-candidate-source'
+import { recoverAgentSessionForPane } from '@/lib/agent-session/resume/agent-resume-recovery'
+import { agentResumeSessionsClaimedByOtherPanes } from '@/lib/agent-session/resume/agent-resume-session-claims'
+import { registerAgentResumePaneHandler } from '@/lib/agent-session/resume/agent-resume-pane-handlers'
+import { setPendingAgentResumeChoices } from '@/lib/agent-session/resume/pending-agent-resume-choices'
 import {
   agentResumeSessionsReservedElsewhere,
   reserveAgentResumeSession
-} from '@/lib/agent-resume-session-reservations'
+} from '@/lib/agent-session/resume/agent-resume-session-reservations'
 import { resolveAgentResumeLaunchTarget } from '@/lib/agent-session/resume/agent-resume-launch-target'
-import { paneAgentResumeScopePath } from '@/lib/agent-resume-workspace-scope'
+import { paneAgentResumeScopePath } from '@/lib/agent-session/resume/agent-resume-workspace-scope'
 import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
 import { isResumableTuiAgent } from '../../../../../../shared/agent-session/lifecycle/agent-session-resume'
 
