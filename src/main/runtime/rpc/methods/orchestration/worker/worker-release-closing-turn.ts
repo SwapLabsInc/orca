@@ -1,6 +1,7 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db/orchestration-db'
 import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/db/orchestration-records'
+import type { WorkerTerminalArchiveRow } from '../../../../orchestration/terminal-authority/release/worker-terminal-ownership'
 import type { WorkerOutputArchiveCapture } from '../../../../orchestration/workers/archives/worker-output-archive'
 import { isStructuredWorkerHandle } from '../../../../../../shared/orchestration/workers/structured-worker-handle'
 
@@ -82,26 +83,41 @@ function hasStoredArchive(db: OrchestrationDb, dispatchId: string): boolean {
   }
 }
 
+/** A fork field on upstream's reference row; a reader that does not know it ignores it. */
+type CutOffOutputReference = WorkerOutputArchiveCapture['content'] & { closingTurnCutOff: true }
+
 export function noteClosingTurnInArchive(
   capture: WorkerOutputArchiveCapture,
   closingTurn: WorkerClosingTurn
 ): WorkerOutputArchiveCapture {
-  if (closingTurn !== 'cut_off') {
+  // Only a transcript is read after release; a chat worker is never waited on.
+  if (closingTurn !== 'cut_off' || capture.kind !== 'transcript_pin') {
     return capture
   }
-  const warning = WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING
-  switch (capture.kind) {
-    case 'transcript_pin':
-      return {
-        ...capture,
-        content: { ...capture.content, warnings: [...capture.content.warnings, warning] }
-      }
-    case 'terminal_tail':
-      return {
-        ...capture,
-        content: { ...capture.content, warnings: [...capture.content.warnings, warning] }
-      }
-    case 'structured_journal':
-      return capture
+  const content: CutOffOutputReference = { ...capture.content, closingTurnCutOff: true }
+  return { ...capture, content }
+}
+
+/** A released worker's output, warning when its release cut the closing turn off. */
+export function withClosingTurnWarning<T extends { warnings: string[] }>(
+  archive: Pick<WorkerTerminalArchiveRow, 'content'>,
+  output: T
+): T {
+  return releaseCutOffClosingTurn(archive.content)
+    ? { ...output, warnings: [...output.warnings, WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING] }
+    : output
+}
+
+function releaseCutOffClosingTurn(content: string): boolean {
+  try {
+    const reference: unknown = JSON.parse(content)
+    return (
+      typeof reference === 'object' &&
+      reference !== null &&
+      'closingTurnCutOff' in reference &&
+      reference.closingTurnCutOff === true
+    )
+  } catch {
+    return false
   }
 }

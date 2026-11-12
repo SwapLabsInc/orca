@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ORCHESTRATION_CONTRACT_VERSION } from '../../../../../../shared/orchestration/orchestration-runtime-capabilities'
 import { OrcaRuntimeService } from '../../../../orca-runtime'
@@ -15,21 +18,30 @@ const PROCESS_INCARNATION = 'runtime:pty:7'
 const TERMINAL_HANDLE = 'term_remote'
 const DISPATCH_ID = 'ctx_remote'
 
-type WaitResult = Awaited<ReturnType<OrcaRuntimeService['waitForTerminal']>>
+// Resolve only the exact file, so the receipt never reads this machine's agent homes.
+vi.mock('../../../../../native-chat/session-file-resolver', () => ({
+  resolveSessionFilePath: async (
+    _agent: string,
+    _sessionId: string,
+    options: { transcriptPath?: string }
+  ) => options.transcriptPath ?? null
+}))
 
-function readWarnings(value: unknown): unknown[] | null {
-  return typeof value === 'object' && value !== null && 'warnings' in value
-    ? Array.isArray(value.warnings)
-      ? value.warnings
-      : null
-    : null
-}
+type WaitResult = Awaited<ReturnType<OrcaRuntimeService['waitForTerminal']>>
 
 describe('federated worker release waits for the closing turn', () => {
   let db: OrchestrationDb
   let runtime: OrcaRuntimeService
+  let directory: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'orca-federated-closing-turn-'))
+    const transcriptPath = join(directory, 'rollout-worker.jsonl')
+    const message = { id: 'm1', type: 'agent_message', message: 'closing summary' }
+    await writeFile(
+      transcriptPath,
+      `${JSON.stringify({ timestamp: '2026-11-12T12:00:00.000Z', type: 'event_msg', payload: message })}\n`
+    )
     db = new OrchestrationDb(':memory:')
     runtime = new OrcaRuntimeService()
     runtime.setOrchestrationDb(db)
@@ -55,13 +67,13 @@ describe('federated worker release waits for the closing turn', () => {
       status: 'live',
       ptyIds: [TERMINAL_HANDLE]
     })
-    vi.spyOn(runtime, 'getExactWorkerProviderSession').mockReturnValue(null)
-    vi.spyOn(runtime, 'readTerminal').mockResolvedValue({
-      handle: TERMINAL_HANDLE,
-      status: 'running',
-      tail: ['closing summary'],
-      truncated: false,
-      nextCursor: '1'
+    // The receipt's output is read from the worker's transcript, so the worker needs one.
+    vi.spyOn(runtime, 'getExactWorkerProviderSession').mockReturnValue({
+      paneKey: PANE_KEY,
+      processIncarnation: PROCESS_INCARNATION,
+      agent: 'codex',
+      providerSession: { key: 'session_id', id: 'session-1', transcriptPath },
+      observedAt: 1
     })
     vi.spyOn(runtime, 'isTerminalRunningAgent').mockResolvedValue(true)
     vi.spyOn(runtime, 'closeTerminal').mockResolvedValue({
@@ -72,12 +84,13 @@ describe('federated worker release waits for the closing turn', () => {
     createSettledAttachment()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     db.close()
     vi.restoreAllMocks()
+    await rm(directory, { recursive: true, force: true })
   })
 
-  it('captures and closes on the execution host only after the turn ends', async () => {
+  it('closes on the execution host only after the turn ends', async () => {
     let endTurn!: (result: WaitResult) => void
     vi.spyOn(runtime, 'waitForTerminal').mockReturnValue(
       new Promise<WaitResult>((resolve) => {
@@ -92,7 +105,6 @@ describe('federated worker release waits for the closing turn', () => {
         timeoutMs: WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS
       })
     )
-    expect(runtime.readTerminal).not.toHaveBeenCalled()
     expect(runtime.closeTerminal).not.toHaveBeenCalled()
 
     endTurn({
@@ -107,17 +119,13 @@ describe('federated worker release waits for the closing turn', () => {
     expect(runtime.closeTerminal).toHaveBeenCalledTimes(1)
   })
 
-  it('still releases at the bound and records the cut-off turn in the archive', async () => {
+  it('still releases at the bound, and its output says the closing turn was cut off', async () => {
     vi.spyOn(runtime, 'waitForTerminal').mockRejectedValue(new Error('timeout'))
 
     await expect(call('orchestration.federationRelease')).resolves.toMatchObject({
-      state: 'released'
+      state: 'released',
+      output: { warnings: [WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING] }
     })
-
-    const archive = db.getWorkerTerminalArchive(DISPATCH_ID)
-    expect(archive ? readWarnings(JSON.parse(archive.content)) : null).toContain(
-      WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING
-    )
     expect(runtime.closeTerminal).toHaveBeenCalledTimes(1)
   })
 
