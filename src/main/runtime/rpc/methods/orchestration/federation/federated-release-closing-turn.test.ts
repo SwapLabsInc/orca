@@ -10,7 +10,7 @@ import { eraseRpcMethods, isStreamingMethod } from '../../../core'
 import {
   WORKER_RELEASE_CLOSING_TURN_CUT_OFF_WARNING,
   WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS
-} from '../worker/worker-release-closing-turn'
+} from '../worker/release/worker-release-closing-turn'
 
 const HOME_FINGERPRINT = 'home-peer'
 const PANE_KEY = 'tab_remote:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'

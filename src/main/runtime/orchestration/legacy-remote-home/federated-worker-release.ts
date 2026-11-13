@@ -2,7 +2,7 @@ import {
   ORCHESTRATION_FEDERATION_RELEASE_ARCHIVE_RUNTIME_CAPABILITY,
   ORCHESTRATION_WORKER_AUTO_RELEASE_RUNTIME_CAPABILITY
 } from '../../../../shared/orchestration/orchestration-runtime-capabilities'
-import { WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS } from '../../rpc/methods/orchestration/worker/worker-release-closing-turn'
+import { WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS } from '../../rpc/methods/orchestration/worker/release/worker-release-closing-turn'
 import type { RuntimeStatus } from '../../../../shared/runtime-session-contracts'
 import { z } from 'zod'
 import { getOrchestrationPeerCapabilityCache } from '../federation/orchestration-peer-capability-cache'
@@ -10,9 +10,9 @@ import { OrchestrationError } from '../orchestration-error'
 import type { OrchestrationDb } from '../db/orchestration-db'
 import type { FederatedDispatchRow } from '../db/orchestration-records'
 import type { WorkerTerminalReleaseRuntime } from '../terminal-authority/release/worker-terminal-release-runtime'
-import type { WorkerReleaseReceipt } from '../../rpc/methods/orchestration/worker/worker-release-completion'
-import { releaseUnknownRecovery } from '../../rpc/methods/orchestration/worker/worker-release-unknown-recovery'
-import type { resolvePinnedFederatedServer } from '../../rpc/methods/orchestration/worker/pinned-federated-server'
+import type { WorkerReleaseReceipt } from '../../rpc/methods/orchestration/worker/release/worker-release-completion'
+import { releaseUnknownRecovery } from '../../rpc/methods/orchestration/worker/release/worker-release-unknown-recovery'
+import type { resolvePinnedFederatedServer } from './pinned-federated-server'
 
 // Leaves the host 25 s for capture and close after a full closing-turn wait, inside the CLI's 60 s.
 const FEDERATED_RELEASE_TIMEOUT_MS = WORKER_RELEASE_CLOSING_TURN_TIMEOUT_MS + 25_000

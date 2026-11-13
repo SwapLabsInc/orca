@@ -124,7 +124,7 @@ function scanIncompleteReason(
   }
   const issues = result.issues ?? []
   // A `notice` is not a failure, but a list AT the cap is one the scanner stopped appending to, so
-  // the rows that did not fit were DROPPED (src/main/ai-vault/session-scan-issues.ts). A stalled
+  // the rows that did not fit were DROPPED (src/main/ai-vault/parsing/session-scan-issues.ts). A stalled
   // WSL distro or unreachable remote root records one refusal per discovered path, and filtering
   // notices out of that list answers about the handful that survived, not the scan. The list's own
   // completeness is what fails here, so the answer is unverifiable rather than empty.
