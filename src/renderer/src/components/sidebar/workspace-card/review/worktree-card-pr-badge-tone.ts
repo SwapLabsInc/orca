@@ -17,6 +17,7 @@ export type WorktreeCardPrBadgeReason =
   | { kind: 'conflicts' }
   | { kind: 'checks'; outcome: 'failure' | 'cancelled' | 'pending' | 'success' }
   | { kind: 'gitHubMergeState'; input: GitHubPRMergeStateInput }
+  | { kind: 'mergeabilityUnconfirmed' }
   | { kind: 'gitLabMergeState'; review: HostedReviewInfo }
 
 export type WorktreeCardPrBadgeStatus = {
@@ -26,8 +27,7 @@ export type WorktreeCardPrBadgeStatus = {
 
 const READY_MERGE_KINDS: ReadonlySet<GitHubPRMergeStateKind> = new Set([
   'mergeable_checks_passed',
-  'mergeable',
-  'checks_passed'
+  'mergeable'
 ])
 
 function requestedChangesReason(review: HostedReviewInfo): WorktreeCardPrBadgeReason | null {
@@ -49,6 +49,10 @@ function gitHubMergeStateStatus(review: HostedReviewInfo): WorktreeCardPrBadgeSt
   const { kind } = resolveGitHubPRMergeState(queueless)
   if (READY_MERGE_KINDS.has(kind)) {
     return { tone: 'ready', reason: { kind: 'gitHubMergeState', input } }
+  }
+  // Why: Source Control rechecks unconfirmed mergeability before merging; the badge can't, so it waits.
+  if (kind === 'checks_passed') {
+    return { tone: 'pending', reason: { kind: 'mergeabilityUnconfirmed' } }
   }
   return {
     tone: kind === 'blocked' ? 'failed' : 'pending',

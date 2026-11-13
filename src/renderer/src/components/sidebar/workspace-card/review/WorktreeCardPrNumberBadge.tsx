@@ -42,6 +42,8 @@ function reasonLabel(
       return reviewChecksStatusLabel(reason.outcome, t)
     case 'gitHubMergeState':
       return presentGitHubPRMergeState(reason.input, t).label
+    case 'mergeabilityUnconfirmed':
+      return t('auto.components.github.pr.merge.state.f958920f3a', 'Checking')
     case 'gitLabMergeState':
       return presentGitLabMRMergeState(reason.review, t).label
   }

@@ -13,6 +13,9 @@ describe('getWorktreeCardPrBadgeStatus', () => {
     const approved = { mergeStateStatus: 'CLEAN', reviewDecision: 'APPROVED' } as const
     expect(tone(referenceReview(42, approved))).toBe('ready')
     expect(tone(referenceReview(42, { ...approved, mergeQueueRequired: true }))).toBe('ready')
+    expect(tone(referenceReview(42, { mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }))).toBe(
+      'pending'
+    )
     expect(
       tone(
         referenceReview(42, {
