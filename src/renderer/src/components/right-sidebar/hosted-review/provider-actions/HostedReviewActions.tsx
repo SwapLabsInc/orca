@@ -11,7 +11,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
-import { presentGitHubPRMergeState } from '@/components/github-pr-merge-state'
+import {
+  hostedReviewMergeStateInput,
+  presentGitHubPRMergeState
+} from '@/components/github-pr-merge-state'
 import type { PRInfo } from '../../../../../../shared/github/pull-request-types'
 import type { Repo } from '../../../../../../shared/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
@@ -88,18 +91,7 @@ export default function HostedReviewActions({
       return { ...presentGitLabMRMergeState(review, t), autoMergeAction: null }
     }
     const presentation = presentGitHubPRMergeState(
-      {
-        ...githubPR,
-        state: review.state,
-        mergeable: review.mergeable,
-        mergeStateStatus: review.mergeStateStatus,
-        reviewDecision: review.reviewDecision,
-        checksStatus: review.status,
-        checksSummary: review.checksSummary,
-        autoMergeEnabled: review.autoMergeEnabled,
-        autoMergeAllowed: review.autoMergeAllowed,
-        mergeQueueRequired: review.mergeQueueRequired
-      },
+      { ...githubPR, ...hostedReviewMergeStateInput(review) },
       t
     )
     if (!githubPR?.stack || !stackMergeScope) {

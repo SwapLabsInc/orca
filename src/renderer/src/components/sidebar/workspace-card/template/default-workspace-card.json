@@ -62,6 +62,11 @@
                   "el": "Title",
                   "props": { "dimWhenRead": "=vars.newStyle", "tooltip": "=!vars.hoverDetails" }
                 },
+                {
+                  "el": "PrNumberBadge",
+                  "when": "!ws.isRenaming",
+                  "props": { "hasHoverDetails": "=vars.hoverDetails" }
+                },
                 { "el": "RenameError", "when": "ws.hasRenameError && !ws.isRenaming" },
                 {
                   "el": "PrimaryBadge",

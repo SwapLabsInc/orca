@@ -100,7 +100,9 @@ it('keeps failed exact refreshes stale while retaining their last known details'
   })
   read.mockRejectedValue(new Error('Disconnected'))
   await readWorkspaceReferenceDetails(request)
-  const hook = renderHook(() => useWorkspaceReferenceDetails(workspace, referenceRepo, null, false))
+  const hook = renderHook(() =>
+    useWorkspaceReferenceDetails(workspace, referenceRepo, null, false, false)
+  )
   expect(hook.result.current[getWorkspaceAttachmentKey(request.item)]).toMatchObject({
     stale: true,
     review: { number: 1 }
@@ -110,7 +112,7 @@ it('does not revive primary success after an exact lookup returns unavailable', 
   const request = getWorkspaceReferenceRequest(referenceAttachment(1), workspace, referenceRepo)
   await readWorkspaceReferenceDetails(request)
   const hook = renderHook(() =>
-    useWorkspaceReferenceDetails(workspace, referenceRepo, referenceReview(1), false)
+    useWorkspaceReferenceDetails(workspace, referenceRepo, referenceReview(1), false, false)
   )
   expect(hook.result.current[getWorkspaceAttachmentKey(request.item)]).toBeUndefined()
 })

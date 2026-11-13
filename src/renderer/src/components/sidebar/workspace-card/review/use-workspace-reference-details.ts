@@ -7,7 +7,6 @@ import { getWorkspaceAttachmentKey } from '../../../../../../shared/workspace-at
 import { getWorkspaceAttachments } from '../../../../../../shared/workspace-attachments/workspace-attachments'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 import { canReadWorkspaceReferenceReview } from './workspace-reference-review-source'
-import { useWslHostOffForRepo } from '../../use-wsl-host-off-review'
 import {
   getWorkspaceReferenceRequest,
   getWorkspaceReferenceRuntimeVersion,
@@ -23,11 +22,11 @@ export function useWorkspaceReferenceDetails(
   workspace: Worktree,
   repo: Repo | undefined,
   review: WorktreeCardPrDisplay | null,
-  hoverOpen: boolean
+  hoverOpen: boolean,
+  /** Its WSL host is off: show what is cached as last known, and don't ask the host. */
+  hostOff: boolean
 ): WorkspaceReferenceDetailsMap {
   const runtimeVersion = getWorkspaceReferenceRuntimeVersion(workspace, repo)
-  // Its WSL host is off: show what is cached as last known, and don't ask the host.
-  const hostOff = useWslHostOffForRepo(repo)
   const requests = useMemo(
     () =>
       getWorkspaceAttachments(workspace).map((item) => ({
