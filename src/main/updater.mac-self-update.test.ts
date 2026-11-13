@@ -69,7 +69,7 @@ vi.mock('./updater/releases/updater-release-readiness', async (importOriginal) =
 }))
 vi.mock('./local-builds/local-build-switch', () => moduleFactories.localBuildSwitch())
 vi.mock('./local-builds/local-build-feed-server', () => moduleFactories.localBuildFeedServer())
-vi.mock('./startup/hydrate-shell-path', () => ({
+vi.mock('./startup/shell-environment/hydrate-shell-path', () => ({
   runWithLaunchPath: (action: () => unknown): unknown => action()
 }))
 vi.mock('./updater/mac-self-update/mac-self-update-activation', () => ({

@@ -1,4 +1,5 @@
-import type { PtySpawnOptions, PtySpawnResult } from '../../../providers/pty-provider-contract'
+import type { PtySpawnOptions } from '../../../providers/pty/provider-contract'
+import type { PtySpawnResult } from '../../../providers/pty/spawn-result'
 import { SessionNotFoundError } from '../../protocol/daemon-errors'
 import type { DaemonPtyAdapter } from '../adapter/daemon-pty-adapter'
 import { routeSpawnOrHold } from './daemon-router-newer-daemon-hold'

@@ -52,6 +52,8 @@ export function selectOrchestrationPointerBatch(input: {
   waiters: ReadonlySet<OrchestrationMessageWaiter> | undefined
   reservedTypes: ReadonlySet<string> | undefined
   silentTypes?: readonly string[]
+  /** A terminal's own mailbox leaves rows a Run owns undelivered for routing to move. */
+  excludeRunOwnedDirect?: boolean
 }): OrchestrationPointerBatch {
   if (hasUnfilteredOrchestrationWaiter(input.waiters)) {
     return { messages: [], heldDeliveryId: undefined }
@@ -67,6 +69,7 @@ export function selectOrchestrationPointerBatch(input: {
     input.db.getUndeliveredUnreadMessages(input.mailboxHandle, undefined, {
       excludeTypes,
       excludeIds: held?.messageIds,
+      excludeRunOwnedDirect: input.excludeRunOwnedDirect,
       limit
     })
   const messages = select([...excludedTypes], ORCHESTRATION_DELIVERY_BATCH_LIMIT)

@@ -23,7 +23,7 @@ describe('mac self-update launch wiring', () => {
     expect(runtimeSource.slice(guard, signal)).not.toContain('runAfterFirstWindowShown(')
 
     const serveSource = readFileSync(
-      join(process.cwd(), 'src/main/startup/main-process-serve.ts'),
+      join(process.cwd(), 'src/main/startup/serve-launch/main-process-serve.ts'),
       'utf8'
     )
     expect(serveSource).not.toContain('reportMacSelfUpdateLaunchOutcome')
