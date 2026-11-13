@@ -1,4 +1,5 @@
 import { useWorkspaceReferenceDetails } from '../review/use-workspace-reference-details'
+import { useWslHostOffForRepo } from '../../use-wsl-host-off-review'
 import { getWorkspaceAttachments } from '../../../../../../shared/workspace-attachments/workspace-attachments'
 import { summarizeWorkspaceReviewChecks } from '../../../../../../shared/workspace-review-checks'
 import { canShowWorkspaceDeleteQuickAction } from '../../workspace-actions/deletion/workspace-delete-quick-action'
@@ -48,11 +49,14 @@ export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
   const shouldRefreshHostedReview = foundation.newCardStyle ? showStatus : showPR
   const detailsHoverControl = useWorktreeCardDetailsHoverControl()
   const hoverDetailsOpen = detailsHoverControl.hoverOpen
+  // Its WSL host is off, so every review surface on the card shows the last known status.
+  const reviewStale = useWslHostOffForRepo(repo)
   const referenceDetails = useWorkspaceReferenceDetails(
     worktree,
     repo,
     review.prDisplay,
-    hoverDetailsOpen
+    hoverDetailsOpen,
+    reviewStale
   )
   const reviewChecks = summarizeWorkspaceReviewChecks(
     getWorkspaceAttachments(worktree),
@@ -164,6 +168,7 @@ export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
     detailsHoverControl,
     referenceDetails,
     reviewChecks,
+    reviewStale,
     showStatus,
     showIssue,
     showLinearIssue,

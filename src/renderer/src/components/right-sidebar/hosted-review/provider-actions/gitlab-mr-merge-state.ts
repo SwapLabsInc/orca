@@ -17,80 +17,42 @@ function blockedPresentation(label: string, tooltip: string): MergePresentation 
   return { label, tooltip, directMergeAvailable: false }
 }
 
-/** Map GitLab detailed_merge_status (stored on mergeStateStatus) to a blocked/checking label. */
-function presentUnknownMergeState(
-  mergeStateStatus: string | null | undefined,
-  checksStatus: GitLabMRMergeStateReview['status'],
-  t: Translate = translate
-): MergePresentation {
-  const status = (mergeStateStatus ?? '').toLowerCase()
-  switch (status) {
+/** What keeps a not-yet-mergeable MR from merging, per its detailed_merge_status. */
+export type GitLabMergeBlocker =
+  | 'approval_required'
+  | 'changes_requested'
+  | 'unresolved_threads'
+  | 'checks_must_pass'
+  | 'checks_pending'
+  | 'behind'
+  | 'draft'
+  | 'checking'
+  | 'blocked'
+  | 'unreported'
+
+/** Group GitLab detailed_merge_status (stored on mergeStateStatus) by blocker. */
+export function getGitLabMergeBlocker(
+  mergeStateStatus: string | null | undefined
+): GitLabMergeBlocker {
+  switch ((mergeStateStatus ?? '').toLowerCase()) {
     case 'not_approved':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.5105b0e584', 'Approval required'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.46dc85711b',
-          'GitLab requires approval before this MR can merge'
-        )
-      )
+      return 'approval_required'
     case 'requested_changes':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.893a999c8c', 'Changes requested'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.c65408a99d',
-          'A reviewer requested changes on this merge request'
-        )
-      )
+      return 'changes_requested'
     case 'discussions_not_resolved':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.01ab632a21', 'Unresolved threads'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.4191fdfcec',
-          'GitLab requires unresolved discussions to be resolved before merge'
-        )
-      )
+      return 'unresolved_threads'
     case 'ci_must_pass':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.bf628700f6', 'Checks must pass'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.37d8637c70',
-          'GitLab requires the pipeline to succeed before this MR can merge'
-        )
-      )
+      return 'checks_must_pass'
     case 'ci_still_running':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.65c847ad1e', 'Checks pending'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.049ea91a82',
-          'The pipeline is still running'
-        )
-      )
+      return 'checks_pending'
     case 'need_rebase':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.382c70faeb', 'Behind'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.2c61100b3a',
-          'Update the branch before merging'
-        )
-      )
+      return 'behind'
     case 'draft_status':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.b2715092c6', 'Draft'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.d63bb6f76e',
-          'This merge request is still a draft'
-        )
-      )
+      return 'draft'
     case 'checking':
     case 'unchecked':
     case 'preparing':
-      return blockedPresentation(
-        t('auto.components.right.sidebar.gitlab.mr.merge.state.195917574e', 'Checking'),
-        t(
-          'auto.components.right.sidebar.gitlab.mr.merge.state.ff6db2db63',
-          'GitLab is still computing this merge request status'
-        )
-      )
+      return 'checking'
     case 'blocked_status':
     case 'policies_denied':
     case 'external_status_checks':
@@ -100,6 +62,84 @@ function presentUnknownMergeState(
     case 'jira_association_missing':
     case 'title_regex':
     case 'not_open':
+      return 'blocked'
+    default:
+      return 'unreported'
+  }
+}
+
+/** Map a GitLab merge blocker to a blocked/checking label. */
+function presentUnknownMergeState(
+  mergeStateStatus: string | null | undefined,
+  checksStatus: GitLabMRMergeStateReview['status'],
+  t: Translate = translate
+): MergePresentation {
+  switch (getGitLabMergeBlocker(mergeStateStatus)) {
+    case 'approval_required':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.5105b0e584', 'Approval required'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.46dc85711b',
+          'GitLab requires approval before this MR can merge'
+        )
+      )
+    case 'changes_requested':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.893a999c8c', 'Changes requested'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.c65408a99d',
+          'A reviewer requested changes on this merge request'
+        )
+      )
+    case 'unresolved_threads':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.01ab632a21', 'Unresolved threads'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.4191fdfcec',
+          'GitLab requires unresolved discussions to be resolved before merge'
+        )
+      )
+    case 'checks_must_pass':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.bf628700f6', 'Checks must pass'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.37d8637c70',
+          'GitLab requires the pipeline to succeed before this MR can merge'
+        )
+      )
+    case 'checks_pending':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.65c847ad1e', 'Checks pending'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.049ea91a82',
+          'The pipeline is still running'
+        )
+      )
+    case 'behind':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.382c70faeb', 'Behind'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.2c61100b3a',
+          'Update the branch before merging'
+        )
+      )
+    case 'draft':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.b2715092c6', 'Draft'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.d63bb6f76e',
+          'This merge request is still a draft'
+        )
+      )
+    case 'checking':
+      return blockedPresentation(
+        t('auto.components.right.sidebar.gitlab.mr.merge.state.195917574e', 'Checking'),
+        t(
+          'auto.components.right.sidebar.gitlab.mr.merge.state.ff6db2db63',
+          'GitLab is still computing this merge request status'
+        )
+      )
+    case 'blocked':
       return blockedPresentation(
         t('auto.components.right.sidebar.gitlab.mr.merge.state.4ecc0d90ee', 'Blocked'),
         t(
@@ -107,7 +147,7 @@ function presentUnknownMergeState(
           'GitLab reports this merge request is blocked'
         )
       )
-    default:
+    case 'unreported':
       // Without a usable merge reason, surface the actionable failed pipeline instead of Checking.
       if (checksStatus === 'failure') {
         return blockedPresentation(

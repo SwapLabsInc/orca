@@ -5,8 +5,41 @@ import {
   type GitHubPRMergeStateInput,
   type GitHubPRMergeStateKind
 } from '../../../shared/github/pull-request-merge-state'
+import type { HostedReviewInfo } from '../../../shared/source-control/hosted-review/hosted-review-contracts'
 import { translate } from '@/i18n/i18n'
 import type { Translate } from '@/i18n/use-translate'
+
+export type HostedReviewMergeStateFields = Pick<HostedReviewInfo, 'state'> &
+  Partial<
+    Pick<
+      HostedReviewInfo,
+      | 'status'
+      | 'checksSummary'
+      | 'mergeable'
+      | 'mergeStateStatus'
+      | 'reviewDecision'
+      | 'autoMergeEnabled'
+      | 'autoMergeAllowed'
+      | 'mergeQueueRequired'
+    >
+  >
+
+/** The merge-state input Source Control derives from a hosted review. */
+export function hostedReviewMergeStateInput(
+  review: HostedReviewMergeStateFields
+): GitHubPRMergeStateInput {
+  return {
+    state: review.state,
+    mergeable: review.mergeable,
+    mergeStateStatus: review.mergeStateStatus,
+    reviewDecision: review.reviewDecision,
+    checksStatus: review.status,
+    checksSummary: review.checksSummary,
+    autoMergeEnabled: review.autoMergeEnabled,
+    autoMergeAllowed: review.autoMergeAllowed,
+    mergeQueueRequired: review.mergeQueueRequired
+  }
+}
 
 export type GitHubPRAutoMergeAction = {
   kind: 'enable' | 'disable'

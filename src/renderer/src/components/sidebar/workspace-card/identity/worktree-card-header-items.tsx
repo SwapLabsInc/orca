@@ -143,14 +143,17 @@ type IdentityBadgeProps = {
   hasHoverDetails: boolean
 }
 
-function renderIdentityIcon(
-  { card, hasHoverDetails }: IdentityBadgeProps,
-  label: string,
-  icon: React.ReactNode
-): React.JSX.Element {
+/** Title-row indicators own their tooltip, so the details card yields while one is hovered or focused. */
+export function getIdentityIndicatorProps({
+  card,
+  hasHoverDetails
+}: {
+  card: Pick<WorktreeCardController, 'detailsHoverControl'>
+  hasHoverDetails: boolean
+}) {
   const { detailsHoverControl } = card
   const closeDetails = (): void => detailsHoverControl.handleHoverOpenChange(false)
-  const resumeDetails = (event: React.PointerEvent<HTMLSpanElement>): void => {
+  const resumeDetails = (event: React.PointerEvent<HTMLElement>): void => {
     const root = event.currentTarget.closest('[data-worktree-card-hover-trigger]')
     const next = event.relatedTarget
     if (
@@ -164,15 +167,25 @@ function renderIdentityIcon(
       detailsHoverControl.handleHoverOpenChange(true)
     }
   }
+  return {
+    'data-worktree-card-identity-indicator': '',
+    onPointerEnter: closeDetails,
+    onPointerLeave: resumeDetails,
+    onFocus: closeDetails
+  }
+}
+
+function renderIdentityIcon(
+  props: IdentityBadgeProps,
+  label: string,
+  icon: React.ReactNode
+): React.JSX.Element {
   return (
     <span
       role="img"
       aria-label={label}
       tabIndex={0}
-      data-worktree-card-identity-indicator=""
-      onPointerEnter={closeDetails}
-      onPointerLeave={resumeDetails}
-      onFocus={closeDetails}
+      {...getIdentityIndicatorProps(props)}
       className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {icon}

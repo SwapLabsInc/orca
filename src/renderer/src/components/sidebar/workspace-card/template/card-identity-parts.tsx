@@ -23,6 +23,7 @@ import { shouldBeginWorktreeRename } from '../controller/worktree-card-model'
 import { WorktreeCardSshHostControl } from '../host/WorktreeCardSshHostControl'
 import { WorktreeHostContextBadge } from '../host/WorktreeHostContextBadge'
 import { WorktreeTitleInlineRename } from '../identity/WorktreeTitleInlineRename'
+import { WorktreeCardPrNumberBadge } from '../review/WorktreeCardPrNumberBadge'
 import { cardElement } from './card-template-compiler'
 
 type Card = WorktreeCardController
@@ -91,6 +92,17 @@ function sidebarLabel(text: string, tooltip: unknown): React.ReactNode {
 
 export const CARD_IDENTITY_PARTS = {
   Title: part(['dimWhenRead', 'tooltip'], (props, _children, card) => title(props, card)),
+  // Why: one PR per badge, so never a folder's child summary; and only while the card refreshes it.
+  PrNumberBadge: part(['hasHoverDetails'], (props, _children, card) =>
+    card.shouldRefreshHostedReview && card.hoverReview ? (
+      <WorktreeCardPrNumberBadge
+        card={card}
+        review={card.hoverReview}
+        stale={card.reviewStale}
+        hasHoverDetails={props.hasHoverDetails === true}
+      />
+    ) : null
+  ),
   RepoChip: part([], (_props, _children, { repo }) =>
     repo ? <WorktreeCardRepoChip repo={repo} /> : null
   ),
