@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_LIVE_AGENT_STATUSES } from './agent-status-capacity-eviction'
 import { createTestStore, seedStore } from '../../testing/app-store-test-fixture'
-import { makeTab } from '../../terminals/terminal-tab.test-fixture'
+import { makeTab } from '../../terminals/testing/terminal-tab.test-fixture'
 
 function seedTab(store: ReturnType<typeof createTestStore>, rootedLeafId?: string): void {
   seedStore(store, {
