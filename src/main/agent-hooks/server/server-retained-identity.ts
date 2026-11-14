@@ -1,10 +1,10 @@
 import {
-  agentProviderSessionsEqual,
   isResumableTuiAgent,
   normalizeAgentProviderSession,
   type AgentProviderSessionMetadata,
   type ResumableTuiAgent
 } from '../../../shared/agent-session/lifecycle/agent-session-resume'
+import { agentProviderSessionsEqual } from '../../../shared/agent-session/lifecycle/resume/agent-provider-session-equality'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 import { isWslHookRelayConnectionId } from '../../../shared/wsl-hook-relay-contract'
 import type { HookListenerState } from '../../../shared/agent-hook-listener/listener-state'

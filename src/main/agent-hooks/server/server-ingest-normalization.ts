@@ -12,7 +12,7 @@ import type { HookRootEvidenceReader } from '../../../shared/agent-hook-listener
 import { readAgentProcessIdentity } from '../../../shared/agent-status/process/agent-process-presence'
 import { normalizeHookPayload } from '../../../shared/agent-hook-listener/normalization/normalize-hook-payload'
 import { parseHookEnvelope } from '../../../shared/agent-hook-listener/hook-envelope'
-import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude-session-end'
+import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude/lifecycle/claude-session-end'
 import {
   isAgentHookSource,
   type AgentHookSource

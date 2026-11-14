@@ -14,7 +14,7 @@ vi.mock('../../../shared/remote-runtime/host-store/runtime-environment-store', (
   resolveEnvironment: mocks.resolveEnvironment
 }))
 
-vi.mock('../../ipc/runtime-environments/runtime-environment-transport-routing', () => ({
+vi.mock('../../ipc/runtime-environments/requests/runtime-environment-transport-routing', () => ({
   callRuntimeEnvironment: mocks.callRuntimeEnvironment
 }))
 

@@ -1,16 +1,16 @@
 import { replaceRecordEntries } from '@/store/keyed-record-transitions'
-import { sleepingAgentRecordIndex } from '../../terminals/sleeping-agent-record-index'
+import { sleepingAgentRecordIndex } from '../../terminals/sleep/sleeping-agent-record-index'
 import type { AppState } from '../../types'
 import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
 import { mainAgentStatusEqual } from '../../../../../shared/agent-status/lifecycle/main-agent-status'
 import { agentTurnEndedUncleanly } from '../../../../../shared/agent-status/lifecycle/agent-main-agent-verdict'
-import {
-  agentProviderSessionsEqual,
-  type AgentProviderSessionMetadata,
-  type SleepingAgentLaunchConfig,
-  type SleepingAgentSessionRecord
+import type {
+  AgentProviderSessionMetadata,
+  SleepingAgentLaunchConfig,
+  SleepingAgentSessionRecord
 } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { resumeRecordFromStatus } from '../../../../../shared/agent-session/lifecycle/agent-resume-record-from-status'
+import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/resume/agent-provider-session-equality'
+import { resumeRecordFromStatus } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-record-from-status'
 import type { TerminalTab } from '../../../../../shared/workspace-layout/terminal-tab-types'
 import { findTabForAgentEntry } from './agent-status-pane-key-tab-binding'
 

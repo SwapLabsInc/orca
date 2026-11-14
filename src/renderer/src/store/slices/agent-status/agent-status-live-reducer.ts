@@ -1,4 +1,4 @@
-import { replaceRecordEntries } from '@/store/keyed-record-transitions'
+import { linkRecordWrite, replaceRecordEntries } from '@/store/keyed-record-transitions'
 import { projectAgentPaneConversation } from './agent-pane-conversation'
 import type { AppState } from '../../types'
 import type { AgentStatusEntry } from '../../../../../shared/agent-status/contracts/agent-status-types'
@@ -14,8 +14,8 @@ import {
   shouldRetireSleepingRecord
 } from './agent-status-sleeping-records'
 import type { AgentStatusLiveEntryBuild } from './agent-status-live-entry-builder'
-import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { liveResumeRecordChange } from '../../../../../shared/agent-session/lifecycle/agent-resume-record-from-status'
+import { agentProviderSessionsEqual } from '../../../../../shared/agent-session/lifecycle/resume/agent-provider-session-equality'
+import { liveResumeRecordChange } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-record-from-status'
 import { retiresLaunch } from './agent-status-launch-config'
 
 export type AgentStatusLiveUpdateReduction = {
@@ -118,6 +118,9 @@ export function reduceAgentStatusLiveUpdate(
     nextLiveCount
   )
   noteLiveAgentStatusCount(nextLive, nextLiveCount - evictedPaneKeys.length)
+  // Why: per-workspace readers skip status updates for panes they don't read; the cap protects
+  // `paneKey`, so this write and its evictions are exactly the changed keys.
+  linkRecordWrite(nextLive, previousLive, [paneKey, ...evictedPaneKeys])
   const evictedOrphans = evictedPaneKeys.length > 0
   const evictedEntries: AgentStatusEntry[] = []
   if (evictedOrphans) {

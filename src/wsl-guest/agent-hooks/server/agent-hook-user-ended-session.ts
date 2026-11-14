@@ -6,7 +6,7 @@ import {
   isSameAgentProcess,
   readAgentProcessIdentity
 } from '../../../shared/agent-status/process/agent-process-presence'
-import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude-session-end'
+import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude/lifecycle/claude-session-end'
 import {
   AGENT_HOOK_USER_ENDED_SESSION_STATE,
   type AgentHookRelayEnvelope,

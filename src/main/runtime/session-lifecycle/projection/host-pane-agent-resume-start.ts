@@ -10,10 +10,8 @@ import type {
   MobileTerminalCommand,
   MobileTerminalResumeCommand
 } from '../../terminal/launch/mobile-terminal-startup'
-import {
-  agentProviderSessionsEqual,
-  type SleepingAgentSessionRecord
-} from '../../../../shared/agent-session/lifecycle/agent-session-resume'
+import type { SleepingAgentSessionRecord } from '../../../../shared/agent-session/lifecycle/agent-session-resume'
+import { agentProviderSessionsEqual } from '../../../../shared/agent-session/lifecycle/resume/agent-provider-session-equality'
 import { makePaneKey } from '../../../../shared/workspace-layout/stable-pane-id'
 import {
   resolveTuiAgentLaunchArgs,
