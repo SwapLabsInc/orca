@@ -1,4 +1,4 @@
-import type { RemoteServerUpdateSupport } from './remote-server-update'
+import type { RemoteServerUpdateSupport } from './remote-runtime/host-catalog/remote-server-update'
 
 export const SERVER_UPDATE_HELP_URL_ENV = 'ORCA_SERVER_UPDATE_HELP_URL' as const
 export const SERVER_UPDATE_HELP_URL_MAX_LENGTH = 2048

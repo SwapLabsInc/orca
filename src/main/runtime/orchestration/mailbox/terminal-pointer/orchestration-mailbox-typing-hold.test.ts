@@ -30,7 +30,7 @@ const RECHECK_SLACK_MS = 2_500
 async function idleCoordinator(prefix: string) {
   vi.useFakeTimers()
   const db = createDatabase(prefix)
-  const { runtime, write } = createRuntime(db)
+  const { runtime, write } = await createRuntime(db)
   const run = createBoundRun(db, 'Typing hold Run')
   await driveToLiveIdle(runtime)
   const arrive = (subject: string, type: MessageType = 'status') => {

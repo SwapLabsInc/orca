@@ -3,7 +3,7 @@
 
 import { OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs } from './build-headless-mobile-session-browser-tabs'
 import { RuntimeDelegatedWorktreeEdgeProjection } from '../../runtime-delegated-worktree-edge-projection'
-import type { RuntimeSyncWindowGraphResult } from '../../../../shared/runtime-session-contracts'
+import type { RuntimeSyncWindowGraphResult } from '../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
 
 type Runtime = OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs
 
@@ -14,11 +14,11 @@ export abstract class OrcaRuntimeWithDelegatedWorktreeEdgeSync extends OrcaRunti
     getHandleForPaneKey: (paneKey) => this.getTerminalHandleForPaneKey(paneKey)
   })
 
-  override syncWindowGraph(
+  override async syncWindowGraph(
     ...args: Parameters<Runtime['syncWindowGraph']>
-  ): RuntimeSyncWindowGraphResult {
+  ): Promise<RuntimeSyncWindowGraphResult> {
     return {
-      ...super.syncWindowGraph(...args),
+      ...(await super.syncWindowGraph(...args)),
       ...this.delegatedWorktreeEdgeProjection.buildSyncWindowGraphFields()
     }
   }

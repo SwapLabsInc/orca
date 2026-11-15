@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PublicKnownRuntimeEnvironment } from '../../../../../shared/remote-runtime/host-catalog/runtime-environments'
-import type { RuntimeStatus } from '../../../../../shared/runtime-types'
+import type { RuntimeStatus } from '../../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
 import type {
   RemoteServerUpdateInstallResult,
   RemoteServerUpdaterSnapshot
-} from '../../../../../shared/remote-server-update'
+} from '../../../../../shared/remote-runtime/host-catalog/remote-server-update'
 import {
   inspectRemoteServerUpdate,
   type RemoteServerUpdateTransport

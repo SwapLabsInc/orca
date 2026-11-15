@@ -1,3 +1,4 @@
+import type { SleepingAgentSessionRecord } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { linkRecordWrite, replaceRecordEntries } from '@/store/keyed-record-transitions'
 import { projectAgentPaneConversation } from './agent-pane-conversation'
 import type { AppState } from '../../types'
@@ -39,22 +40,10 @@ export function reduceAgentStatusLiveUpdate(
     providerSession,
     providerSessionChanged,
     migrationUnsupported,
-    retentionRelevantChange,
+    aggregateRelevantChange,
     sortRelevantChange
   } = build
   const paneKey = entry.paneKey
-  let nextRetentionSuppressedPaneKeys = state.retentionSuppressedPaneKeys
-  if (paneKey in nextRetentionSuppressedPaneKeys) {
-    nextRetentionSuppressedPaneKeys = { ...nextRetentionSuppressedPaneKeys }
-    delete nextRetentionSuppressedPaneKeys[paneKey]
-  }
-  const nextRetainedAgents =
-    paneKey in state.retainedAgentsByPaneKey
-      ? { ...state.retainedAgentsByPaneKey }
-      : state.retainedAgentsByPaneKey
-  if (nextRetainedAgents !== state.retainedAgentsByPaneKey) {
-    delete nextRetainedAgents[paneKey]
-  }
   let nextSleepingAgentSessions = state.sleepingAgentSessionsByPaneKey
   let nextLaunchConfigs = state.agentLaunchConfigByPaneKey
   const retainsSleepingRecord =
@@ -93,18 +82,21 @@ export function reduceAgentStatusLiveUpdate(
   if (recordChange === 'clear' && retainsSleepingRecord) {
     const refreshed = refreshRetainedSleepingRecord(existingSleepingRecord, entry, launchRetired)
     if (refreshed !== existingSleepingRecord) {
-      nextSleepingAgentSessions = replaceRecordEntries(state.sleepingAgentSessionsByPaneKey, [
-        [paneKey, refreshed]
-      ])
+      nextSleepingAgentSessions = replaceRecordEntries<SleepingAgentSessionRecord>(
+        state.sleepingAgentSessionsByPaneKey,
+        [[paneKey, refreshed]]
+      )
     }
   } else if (recordChange === 'clear') {
-    nextSleepingAgentSessions = replaceRecordEntries<
-      AppState['sleepingAgentSessionsByPaneKey'][string]
-    >(state.sleepingAgentSessionsByPaneKey, [[paneKey, null]])
+    nextSleepingAgentSessions = replaceRecordEntries<SleepingAgentSessionRecord>(
+      state.sleepingAgentSessionsByPaneKey,
+      [[paneKey, null]]
+    )
   } else if (recordChange) {
-    nextSleepingAgentSessions = replaceRecordEntries(state.sleepingAgentSessionsByPaneKey, [
-      [paneKey, recordChange.set]
-    ])
+    nextSleepingAgentSessions = replaceRecordEntries<SleepingAgentSessionRecord>(
+      state.sleepingAgentSessionsByPaneKey,
+      [[paneKey, recordChange.set]]
+    )
   }
   const previousLive = state.agentStatusByPaneKey
   const nextLive = { ...previousLive, [paneKey]: entry }
@@ -112,7 +104,7 @@ export function reduceAgentStatusLiveUpdate(
   const evictedPaneKeys = capLiveAgentStatusesInPlace(
     nextLive,
     paneKey,
-    () => classifyPaneKeyLiveness(state),
+    () => classifyPaneKeyLiveness(state.terminalLayoutsByTabId),
     updatedAt,
     undefined,
     nextLiveCount
@@ -134,19 +126,23 @@ export function reduceAgentStatusLiveUpdate(
     nextSleepingAgentSessions = removePaneKeys(nextSleepingAgentSessions, evicted)
     nextLaunchConfigs = removePaneKeys(nextLaunchConfigs, evicted)
   }
-  const nextConversations = projectConversation(state, entry)
+  const nextConversations = projectConversation(
+    state,
+    entry,
+    undefined,
+    undefined,
+    build.conversationSource
+  )
   const patch: Partial<AppState> = {
     agentStatusByPaneKey: nextLive,
     ...(nextConversations !== state.agentConversationsByPaneKey
       ? { agentConversationsByPaneKey: nextConversations }
       : {}),
-    retainedAgentsByPaneKey: nextRetainedAgents,
     sleepingAgentSessionsByPaneKey: nextSleepingAgentSessions,
     agentLaunchConfigByPaneKey: nextLaunchConfigs,
     migrationUnsupportedByPtyId: migrationUnsupported.next,
-    retentionSuppressedPaneKeys: nextRetentionSuppressedPaneKeys,
     agentStatusEpoch:
-      retentionRelevantChange || migrationUnsupported.changed || evictedOrphans
+      aggregateRelevantChange || migrationUnsupported.changed || evictedOrphans
         ? state.agentStatusEpoch + 1
         : state.agentStatusEpoch,
     sortEpoch:

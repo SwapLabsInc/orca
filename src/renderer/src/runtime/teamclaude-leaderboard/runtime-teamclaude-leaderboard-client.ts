@@ -1,6 +1,6 @@
-import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
+import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import type { TeamClaudeLeaderboardSnapshot } from '../../../../shared/teamclaude-leaderboard-types'
-import { hasRuntimeRpcErrorCode } from '../../../../shared/runtime-rpc-error-code'
+import { hasRuntimeRpcErrorCode } from '../../../../shared/remote-runtime/rpc/runtime-rpc-error-code'
 import { callRuntimeRpc } from '../rpc/calls/runtime-rpc-call'
 
 // The host's own read is bounded at 10 s; leave room for the paired-runtime hop.

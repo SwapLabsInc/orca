@@ -1,6 +1,6 @@
 import { app, net } from 'electron'
 import { runProcess } from '@orca/process-host'
-import { ORCA_APP_ID } from '../../../shared/local-build-compatibility'
+import { ORCA_APP_ID } from '../../../shared/remote-runtime/orcad-distribution/local-build-compatibility'
 import { readMacSelfUpdatePublicKey } from '../../../shared/mac-self-update-public-key'
 import {
   getReleaseSource,

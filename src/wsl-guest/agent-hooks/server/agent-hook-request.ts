@@ -19,7 +19,7 @@ import {
   type RelayHookAdmissionOptions
 } from '../status/agent-hook-event-admission'
 import type { RelayUserEndedSessionReporter } from './agent-hook-user-ended-session'
-import { CLAUDE_AGENT_VIEW_PATH } from '../../../shared/claude-agent-view'
+import { CLAUDE_AGENT_VIEW_PATH } from '../../../shared/agent-hook-listener/providers/claude/view/claude-agent-view'
 
 export async function handleRelayHookRequest(
   req: IncomingMessage,

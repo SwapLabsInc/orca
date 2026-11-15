@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DelegatedWorktreeEdge } from '../../../../shared/worktree/delegated-worktree-edge'
-import type { RuntimeSyncWindowGraphResult } from '../../../../shared/runtime-session-contracts'
+import type { RuntimeSyncWindowGraphResult } from '../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
 import type { AppState } from '../../store/types'
 
 vi.mock(
