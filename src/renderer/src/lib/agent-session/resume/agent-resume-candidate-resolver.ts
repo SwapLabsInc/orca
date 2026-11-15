@@ -9,7 +9,7 @@ import {
   type ResumableTuiAgent
 } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import { normalizeRuntimePathForComparison } from '../../../../../shared/cross-platform-path'
-import { parseWslUncPath } from '../../../../../shared/wsl-paths'
+import { parseWslUncPath } from '../../../../../shared/file-access/wsl-paths'
 
 export type ResolveAgentResumeCandidateArgs = {
   candidates: readonly AgentResumeCandidate[]

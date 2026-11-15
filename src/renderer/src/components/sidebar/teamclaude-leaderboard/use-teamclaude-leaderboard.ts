@@ -5,7 +5,7 @@ import {
   runtimeTargetForOwnerEnvironment
 } from '@/runtime/rpc/targets/runtime-client-target'
 import { getTeamClaudeLeaderboard } from '@/runtime/teamclaude-leaderboard/runtime-teamclaude-leaderboard-client'
-import type { RuntimeClientTarget } from '../../../../../shared/runtime-client-target'
+import type { RuntimeClientTarget } from '../../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import {
   TEAMCLAUDE_LEADERBOARD_REFRESH_MS,
   type TeamClaudeLeaderboardSnapshot

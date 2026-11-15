@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { PublicKnownRuntimeEnvironment } from '../../../../../../shared/remote-runtime/host-catalog/runtime-environments'
-import type { RemoteServerUpdateSupport } from '../../../../../../shared/remote-server-update'
+import type { RemoteServerUpdateSupport } from '../../../../../../shared/remote-runtime/host-catalog/remote-server-update'
 import type { RemoteServerUpdateEntry } from '@/runtime/hosts/updates/remote-server-update-coordinator'
 import { useAppStore } from '@/store'
 import { TooltipProvider } from '../../../ui/tooltip'

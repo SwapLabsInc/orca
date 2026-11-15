@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { RemoteServerUpdateSupport } from './remote-server-update'
+import type { RemoteServerUpdateSupport } from './remote-runtime/host-catalog/remote-server-update'
 import {
   parseServerUpdateHelpUrl,
   readRemoteServerUpdateSupport,
