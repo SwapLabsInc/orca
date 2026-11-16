@@ -1,7 +1,7 @@
 import type {
   TeamClaudeLeaderboardEntry,
   TeamClaudeLeaderboardSnapshot
-} from '../../shared/teamclaude-leaderboard-types'
+} from '../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import { TeamClaudeLeaderboardError } from './teamclaude-leaderboard-error'
 
 /** One client's `usageWindows.clients[name].windows['1d']` counters from the status payload. */

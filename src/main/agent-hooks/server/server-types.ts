@@ -1,6 +1,6 @@
 import type { ProgramStatusFacet } from '../../../shared/program-status/facet'
 import type { RowAgentIdentity } from '../identity/pane-agent-identities'
-import type { ClaudeStatusLineRateLimits } from '../../../shared/claude-statusline-rate-limits'
+import type { ClaudeStatusLineRateLimits } from '../../../shared/agent-usage/rate-limits/claude-statusline-rate-limits'
 import type { PersistedAgentExitEvidence } from './agent-exit-evidence'
 import type { RetainedIdentityCause } from './server-retained-identity'
 import type {
@@ -11,7 +11,7 @@ import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/
 import type { AgentStatusClearIpcPayload } from '../../../shared/agent-status/contracts/agent-status-ipc-payload'
 import type { AgentStatusState } from '../../../shared/agent-status/contracts/agent-status-types'
 import type { AgentStatusObservation } from '../../../shared/agent-status/contracts/agent-status-observation'
-import type { AgentKind } from '../../../shared/telemetry-events'
+import type { AgentKind } from '../../../shared/telemetry/schemas/telemetry-property-schemas'
 import type { LegacyPaneKeyAliasEntry } from '../../../shared/persisted-state-types'
 import type { CodexRemoteRosterAuthority } from '../../../shared/agent-hook-listener/providers/codex/codex-state'
 import type { AgentHookSource } from '../../../shared/agent-hook-listener/transport/agent-hook-relay'
@@ -42,6 +42,7 @@ export type IncomingAgentHookEvent = AgentHookEventPayload & {
 }
 
 export type EnrichedAgentHookEventPayload = AgentHookEventPayload & {
+  paneSleep?: { ptyId: string; incarnationId?: string }
   /** Live acknowledgement of the matching renderer retirement; never cached. */
   authorityRestartId?: string
   receivedAt: number
@@ -144,6 +145,8 @@ export type ProviderSessionChangeListener = (
   providerSessions: AgentHookProviderSessionIdentity[]
 ) => void
 export type AgentHookStatusRowIdentity = {
+  providerSession?: EnrichedAgentHookEventPayload['providerSession']
+  agentType?: EnrichedAgentHookEventPayload['payload']['agentType']
   paneKey: string
   worktreeId?: string
   terminalHandle?: string

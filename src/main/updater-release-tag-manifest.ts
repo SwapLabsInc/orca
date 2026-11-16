@@ -1,6 +1,6 @@
 // LOCAL: what a release tag's manifest proves about the build its feed advertises.
 
-import { getVersionReleaseSource, type ReleaseSource } from '../shared/release-sources'
+import { getVersionReleaseSource, type ReleaseSource } from '../shared/updater/release-sources'
 import { compareVersions, isValidVersion } from './updater/releases/updater-fallback'
 import {
   probeReleaseManifest,

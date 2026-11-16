@@ -26,15 +26,15 @@ import { useReleaseSourceStatuses } from './use-release-source-statuses'
 import { UpdateDelaySetting } from './UpdateDelaySetting'
 import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { UnsupportedSystemUpdateHint } from './UnsupportedSystemUpdateHint'
-import { getReleaseNotesUrlForVersion } from '../../../../../shared/release-channel'
+import { getReleaseNotesUrlForVersion } from '../../../../../shared/updater/release-channel'
 import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
 import {
   RELEASE_SOURCES,
   getReleaseSource,
   getVersionReleaseSource,
   isMultiSourceBuild
-} from '../../../../../shared/release-sources'
-import type { UpdateStatus } from '../../../../../shared/update-status-types'
+} from '../../../../../shared/updater/release-sources'
+import type { UpdateStatus } from '../../../../../shared/updater/update-status-types'
 
 function CheckForUpdatesButton({
   updateStatus,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   AgentResumeCandidate,
   AgentResumeResolution
-} from '../../../../../shared/agent-resume-candidate'
+} from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { decideAgentResumeForPane, type AgentResumePaneInputs } from './agent-resume-pane-decision'
 
 const candidate: AgentResumeCandidate = {

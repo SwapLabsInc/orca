@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readIpcErrorDetail } from '@/runtime/errors/ipc-error'
-import type { ReleaseSourceStatus } from '../../../../../shared/update-status-types'
+import type { ReleaseSourceStatus } from '../../../../../shared/updater/update-status-types'
 
 export type ReleaseSourceStatusesState = {
   /** Null until the first list resolves; a refresh keeps the previous rows until the next one lands. */

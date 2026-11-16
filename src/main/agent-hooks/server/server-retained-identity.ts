@@ -52,6 +52,7 @@ export function retainResumeIdentity(
 ): EnrichedAgentHookEventPayload {
   const {
     launchToken: _launchToken,
+    paneSleep: _paneSleep,
     resumeAfterTerminalLoss: _resumeAfterTerminalLoss,
     terminalHandle,
     ...resumeIdentity

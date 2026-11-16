@@ -8,16 +8,16 @@ import {
   requiresManualInstall,
   type ReleaseBuild,
   type ReleaseChannel
-} from '../../../shared/release-channel'
+} from '../../../shared/updater/release-channel'
 import {
   getReleaseSource,
   getReleaseSourceOrPrimary,
   PRIMARY_RELEASE_SOURCE,
   type ReleaseSource
-} from '../../../shared/release-sources'
-import type { ReleaseSourceStatus } from '../../../shared/update-status-types'
+} from '../../../shared/updater/release-sources'
+import type { ReleaseSourceStatus } from '../../../shared/updater/update-status-types'
 import { compareVersions } from './updater-fallback'
-import { profileStateBuildCompatibilityError } from '../../../shared/profile-state-build-compatibility'
+import { profileStateBuildCompatibilityError } from '../../../shared/updater/profile-state-build-compatibility'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { verifyReleaseTagManifest } from './updater-prerelease-feed'
 import { listReleaseBuilds, resolveTargetBuild } from './updater-release-builds'
@@ -35,7 +35,7 @@ import {
 } from '../updater-build-selection-refusals'
 import { UpdaterMenuChecks, type PinnedBuildTarget } from '../lifecycle/updater-menu-checks'
 import { listReleaseSourceStatuses } from '../updater-release-sources'
-import { updaterCodedMessage } from '../../../shared/updater-failure-copy'
+import { updaterCodedMessage } from '../../../shared/updater/updater-failure-copy'
 import { updaterErrorMessage } from '../lifecycle/updater-coded-error'
 
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {

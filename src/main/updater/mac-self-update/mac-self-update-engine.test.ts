@@ -2,7 +2,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { setReleaseSourcesLiteralForTest } from '../../../shared/release-sources.fixture'
+import { setReleaseSourcesLiteralForTest } from '../../../shared/updater/release-sources.fixture'
 import {
   FIXTURE_FEED_URL,
   FIXTURE_RELEASE_PAGE_URL,
@@ -19,7 +19,7 @@ vi.mock('../updater-lifecycle-diagnostics', () => ({ recordUpdaterLifecycle: vi.
 
 // Why hoisted: the source registry reads its define once, when the first import loads it.
 vi.hoisted(async () => {
-  const fixture = await import('../../../shared/release-sources.fixture')
+  const fixture = await import('../../../shared/updater/release-sources.fixture')
   fixture.setReleaseSourcesLiteralForTest(fixture.FORK_RELEASE_SOURCES_LITERAL)
 })
 

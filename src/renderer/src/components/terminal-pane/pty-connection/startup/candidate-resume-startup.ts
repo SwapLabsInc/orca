@@ -1,6 +1,6 @@
-import { createNonSecureContextUuid as createBrowserUuid } from '../../../../../../shared/non-secure-context-uuid'
+import { createNonSecureContextUuid as createBrowserUuid } from '../../../../../../shared/identifiers/non-secure-context-uuid'
 import { buildAgentResumeStartupPlan } from '../../../../../../shared/agent-launch/startup/tui-agent-resume-startup'
-import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv,

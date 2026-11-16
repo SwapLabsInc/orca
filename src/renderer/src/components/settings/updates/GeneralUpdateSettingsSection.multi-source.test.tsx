@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ReleaseSourceStatus, UpdateStatus } from '../../../../../shared/update-status-types'
+import type {
+  ReleaseSourceStatus,
+  UpdateStatus
+} from '../../../../../shared/updater/update-status-types'
 import { useAppStore } from '../../../store'
 import { GeneralUpdateSettingsSection } from './GeneralUpdateSettingsSection'
 
@@ -13,7 +16,7 @@ vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
 
 // Why hoisted: the source registry reads the define once, when the component's imports load.
 const { sources } = await vi.hoisted(async () => {
-  const sources = await import('../../../../../shared/release-sources.fixture')
+  const sources = await import('../../../../../shared/updater/release-sources.fixture')
   sources.setReleaseSourcesLiteralForTest(sources.FORK_RELEASE_SOURCES_LITERAL)
   return { sources }
 })

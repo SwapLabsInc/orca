@@ -4,7 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RuntimeClientTarget } from '../../../../../shared/remote-runtime/host-catalog/runtime-client-target'
-import type { TeamClaudeLeaderboardSnapshot } from '../../../../../shared/teamclaude-leaderboard-types'
+import type { TeamClaudeLeaderboardSnapshot } from '../../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import { getTeamClaudeLeaderboard } from '@/runtime/teamclaude-leaderboard/runtime-teamclaude-leaderboard-client'
 import {
   useTeamClaudeLeaderboard,

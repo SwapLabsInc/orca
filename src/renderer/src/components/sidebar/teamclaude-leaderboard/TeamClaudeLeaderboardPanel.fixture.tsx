@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { defineFixture } from '../../../component-fixtures/component-fixture'
-import type { TeamClaudeLeaderboardEntry } from '../../../../../shared/teamclaude-leaderboard-types'
+import type { TeamClaudeLeaderboardEntry } from '../../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import { TeamClaudeLeaderboardPanel } from './TeamClaudeLeaderboardPanel'
 import type { TeamClaudeLeaderboardRankChange } from './teamclaude-leaderboard-standing'
 import type { TeamClaudeLeaderboardView } from './use-teamclaude-leaderboard'

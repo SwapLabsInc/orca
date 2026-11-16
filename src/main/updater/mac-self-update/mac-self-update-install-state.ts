@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { compareAppVersions } from '../../../shared/app-version'
+import { compareAppVersions } from '../../../shared/app-lifecycle/identity/app-version'
 import type { MacSelfUpdateHelperOutcome } from './mac-self-update-helper'
 import type { MacSelfUpdatePaths } from './mac-self-update-paths'
 

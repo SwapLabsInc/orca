@@ -1,4 +1,4 @@
-import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 
 /** The pty binding that owns a pane's resume state: an opaque key matched by identity, never read. */
 export type AgentResumeOwner = WeakKey

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { getAgentResumePaneHandler } from '@/lib/agent-session/resume/agent-resume-pane-handlers'
 import { getPendingAgentResumeChoices } from '@/lib/agent-session/resume/pending-agent-resume-choices'
 import { resetAgentResumeSessionReservations } from '@/lib/agent-session/resume/agent-resume-session-reservations'
@@ -9,10 +9,10 @@ import { installActivePanePtyBinding } from '../lifecycle/active-pane-pty-bindin
 import type { ConnectPanePtySession } from '../connect-pane-pty-session'
 
 const storeState: {
-  agentStatusByPaneKey: Record<string, unknown>
+  agentStatusByPaneKey: Map<string, unknown>
   terminalLayoutsByTabId: Record<string, unknown>
   settings: Record<string, unknown>
-} = { agentStatusByPaneKey: {}, terminalLayoutsByTabId: {}, settings: {} }
+} = { agentStatusByPaneKey: new Map(), terminalLayoutsByTabId: {}, settings: {} }
 
 // Real leaf UUIDs: the claim rule resolves a row's pane from its key, and `parsePaneKey` rejects
 // anything else. Only the liveness-sensitive cases below need them.
@@ -132,7 +132,7 @@ function buildSession(
 beforeEach(() => {
   vi.clearAllMocks()
   resetAgentResumeSessionReservations()
-  storeState.agentStatusByPaneKey = {}
+  storeState.agentStatusByPaneKey = new Map()
   storeState.terminalLayoutsByTabId = {}
   fetchCandidates.mockResolvedValue({ kind: 'complete', candidates: [makeCandidate()] })
 })
@@ -335,9 +335,9 @@ describe('revalidating a claim at chooser selection', () => {
   it('refuses a candidate that went live after the chooser was populated', async () => {
     const session = buildSession(OWN_PANE_KEY)
     const candidate = makeCandidate()
-    storeState.agentStatusByPaneKey = {
-      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'working' }
-    }
+    storeState.agentStatusByPaneKey = new Map([
+      [SIBLING_PANE_KEY, { providerSession: candidate.providerSession, state: 'working' }]
+    ])
     bindLayout('tab-9', SIBLING_LEAF, 'pty-9')
 
     const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
@@ -350,9 +350,9 @@ describe('revalidating a claim at chooser selection', () => {
   it('refuses a candidate whose only row is a done-but-live sibling pane', async () => {
     const session = buildSession(OWN_PANE_KEY)
     const candidate = makeCandidate()
-    storeState.agentStatusByPaneKey = {
-      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'done' }
-    }
+    storeState.agentStatusByPaneKey = new Map([
+      [SIBLING_PANE_KEY, { providerSession: candidate.providerSession, state: 'done' }]
+    ])
     bindLayout('tab-9', SIBLING_LEAF, 'pty-9')
 
     const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
@@ -363,9 +363,9 @@ describe('revalidating a claim at chooser selection', () => {
   it('resumes once the pane that held the row is gone from this renderer', async () => {
     const session = buildSession(OWN_PANE_KEY)
     const candidate = makeCandidate()
-    storeState.agentStatusByPaneKey = {
-      [SIBLING_PANE_KEY]: { providerSession: candidate.providerSession, state: 'done' }
-    }
+    storeState.agentStatusByPaneKey = new Map([
+      [SIBLING_PANE_KEY, { providerSession: candidate.providerSession, state: 'done' }]
+    ])
 
     const handler = getAgentResumePaneHandler(OWN_PANE_KEY, session.transport)
     expect(handler?.(candidate)).toBe(true)
@@ -379,13 +379,12 @@ describe('the restart this feature exists for', () => {
   it('recovers a pane whose own nonterminal row came back restoredUnconfirmed', async () => {
     const candidate = makeCandidate()
     const session = buildSession(OWN_PANE_KEY)
-    storeState.agentStatusByPaneKey = {
-      [OWN_PANE_KEY]: {
-        providerSession: candidate.providerSession,
-        state: 'working',
-        restoredUnconfirmed: true
-      }
-    }
+    storeState.agentStatusByPaneKey = new Map([
+      [
+        OWN_PANE_KEY,
+        { providerSession: candidate.providerSession, state: 'working', restoredUnconfirmed: true }
+      ]
+    ])
     bindLayout('tab-1', OWN_LEAF, 'pty-1')
 
     await session.attemptAgentResumeRecovery()

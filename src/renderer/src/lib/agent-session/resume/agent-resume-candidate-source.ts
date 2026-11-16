@@ -1,4 +1,4 @@
-import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import {
   AI_VAULT_SCAN_ISSUE_LIMIT,
   type AiVaultListArgs,

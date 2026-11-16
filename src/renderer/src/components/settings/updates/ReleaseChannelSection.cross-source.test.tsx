@@ -7,7 +7,7 @@ import { ReleaseChannelSection } from './ReleaseChannelSection'
 
 // Why hoisted: the source registry reads the define once, when the component's imports load.
 const { platformRef, sources } = await vi.hoisted(async () => {
-  const sources = await import('../../../../../shared/release-sources.fixture')
+  const sources = await import('../../../../../shared/updater/release-sources.fixture')
   sources.setReleaseSourcesLiteralForTest(sources.FORK_RELEASE_SOURCES_LITERAL)
   const platformRef: { current: NodeJS.Platform } = { current: 'darwin' }
   return { platformRef, sources }

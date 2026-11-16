@@ -5,8 +5,8 @@ import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../shared/release-sources.fixture'
-import type { ReleaseBuild } from '../shared/release-channel'
+} from '../shared/updater/release-sources.fixture'
+import type { ReleaseBuild } from '../shared/updater/release-channel'
 import type * as ReleaseBuildsModule from './updater/releases/updater-release-builds'
 
 const { appMock, moduleFactories, resetUpdaterMocks } = await vi.hoisted(async () =>

@@ -1,7 +1,7 @@
 import type {
   AgentResumeCandidate,
   AgentResumeResolution
-} from '../../../../../shared/agent-resume-candidate'
+} from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import type { ExecutionHostId } from '../../../../../shared/execution-host'
 import type { ResumableTuiAgent } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import type { AgentResumeCandidateScan } from './agent-resume-candidate-source'

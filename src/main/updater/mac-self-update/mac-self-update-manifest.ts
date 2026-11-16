@@ -1,11 +1,17 @@
 import { createPublicKey, verify as verifyEd25519, type KeyObject } from 'node:crypto'
-import { compareAppVersions, isValidAppVersion } from '../../../shared/app-version'
+import {
+  compareAppVersions,
+  isValidAppVersion
+} from '../../../shared/app-lifecycle/identity/app-version'
 import {
   getMacSelfUpdateZipName,
   isMacSelfUpdateArchitecture,
   type MacSelfUpdateArchitecture
-} from '../../../shared/mac-self-update-assets'
-import { getVersionReleaseSource, type ReleaseSource } from '../../../shared/release-sources'
+} from '../../../shared/updater/mac-self-update-assets'
+import {
+  getVersionReleaseSource,
+  type ReleaseSource
+} from '../../../shared/updater/release-sources'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 
 export const MAC_SELF_UPDATE_MANIFEST_SCHEMA = 1

@@ -1,5 +1,5 @@
-import type { ReleaseSourceId } from '../../release-sources'
-import type { UpdateStatus } from '../../update-status-types'
+import type { ReleaseSourceId } from '../../updater/release-sources'
+import type { UpdateStatus } from '../../updater/update-status-types'
 
 export const REMOTE_SERVER_UPDATE_CAPABILITY = 'updater.remote-control.v1' as const
 

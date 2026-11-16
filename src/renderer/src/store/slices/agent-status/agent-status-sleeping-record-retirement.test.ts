@@ -313,7 +313,7 @@ describe('sleeping record retirement on live status updates', () => {
         )
     }
 
-    expect(store.getState().agentStatusByPaneKey['tab-1:leaf-evictable']).toBeUndefined()
+    expect(store.getState().agentStatusByPaneKey.get('tab-1:leaf-evictable')).toBeUndefined()
     expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-evictable']).toBeUndefined()
   })
 })

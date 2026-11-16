@@ -12,7 +12,7 @@ import {
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../../../../../shared/release-sources.fixture'
+} from '../../../../../shared/updater/release-sources.fixture'
 
 const environment: PublicKnownRuntimeEnvironment = {
   id: 'server-1',

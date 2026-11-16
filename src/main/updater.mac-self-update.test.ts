@@ -2,7 +2,7 @@ import type { getReleaseDownloadUrl } from './updater/releases/updater-release-r
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater/testing/updater-test-module-loader'
 import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
-import { setReleaseSourcesLiteralForTest } from '../shared/release-sources.fixture'
+import { setReleaseSourcesLiteralForTest } from '../shared/updater/release-sources.fixture'
 import {
   createMacSelfUpdateEngineFixture,
   type MacSelfUpdateEngineFixture
@@ -41,7 +41,7 @@ const activation = vi.hoisted((): ActivationAnswers => ({
 // Why hoisted: the fixture's engine verifies versions against the registry its own import loaded,
 // which is not the copy `vi.resetModules()` hands the updater.
 vi.hoisted(async () => {
-  const fixture = await import('../shared/release-sources.fixture')
+  const fixture = await import('../shared/updater/release-sources.fixture')
   fixture.setReleaseSourcesLiteralForTest(fixture.FORK_RELEASE_SOURCES_LITERAL)
 })
 

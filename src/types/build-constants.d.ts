@@ -10,12 +10,12 @@ declare const ORCA_DIAGNOSTICS_TOKEN_URL: string | null
 // Full commit the build was made from (`git rev-parse HEAD`); official skill installs pin to it.
 declare const ORCA_BUILD_COMMIT: string
 
-// ORCA_LAYOUT_OWNER is declared and read in one place: src/shared/layout-owner-switch.ts.
+// ORCA_LAYOUT_OWNER is declared and read in one place: src/shared/workspace-layout/layout-owner-switch.ts.
 
 // ORCA_RELEASE_SOURCES (the update-source registry) is declared beside its
-// reader in `src/shared/release-sources.ts`, because the renderer typecheck
+// reader in `src/shared/updater/release-sources.ts`, because the renderer typecheck
 // includes `src/shared` but not this directory.
 //
 // ORCA_SWAPLABS_UPDATE_PUBLIC_KEY (LOCAL: the key SwapLabs macOS builds verify
 // update manifests with) is declared beside its reader in
-// `src/shared/mac-self-update-public-key.ts` for the same reason.
+// `src/shared/updater/mac-self-update-public-key.ts` for the same reason.

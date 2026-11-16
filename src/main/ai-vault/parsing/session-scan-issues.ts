@@ -7,7 +7,7 @@ import {
   type AiVaultScanIssueText
 } from '../../../shared/ai-vault/scanning/ai-vault-scan-issue-copy'
 import { WslTranscriptFsError } from '../../native-chat/transcript-filesystem/wsl-transcript-fs-error'
-import { errorMessage } from '../../../shared/error-message'
+import { errorMessage } from '../../../shared/errors/error-message'
 
 // Bound IPC payloads when an unreachable host produces one issue per transcript.
 // Shared, because a list AT the bound is how a reader tells that issues were dropped.

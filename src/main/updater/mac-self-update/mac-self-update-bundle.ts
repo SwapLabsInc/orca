@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { runProcess } from '@orca/process-host'
 import type { ProcessResult, ProcessSpec } from '@orca/process-host/process-spec'
-import { compareAppVersions, isValidAppVersion } from '../../../shared/app-version'
+import {
+  compareAppVersions,
+  isValidAppVersion
+} from '../../../shared/app-lifecycle/identity/app-version'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 
 /** `runProcess`'s shape, injected so every macOS tool call is testable elsewhere. */

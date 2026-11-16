@@ -1,4 +1,4 @@
-import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { AI_VAULT_AGENT_LABELS } from '../../../../../shared/ai-vault/contracts/ai-vault-types'
 import { translate } from '@/i18n/i18n'
 

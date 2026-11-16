@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { getSettingsFocusedExecutionHostId } from '../../../../../../shared/execution-host'
 import type { ExecutionHostId } from '../../../../../../shared/execution-host'
-import { cloneDefaultWorkspaceStatuses } from '../../../../../../shared/workspace-statuses'
+import { cloneDefaultWorkspaceStatuses } from '../../../../../../shared/workspace/status/workspace-statuses'
 import { planSidebarRows } from '../../../../../../shared/sidebar-list/sidebar-row-plan'
 import { createSidebarPRGroupReader } from './pr-group-key'
 import { repo, remoteRepo, worktree } from './worktree-list-groups-test-fixtures'
 import type { DelegatedWorktreeEdge } from '../../../../../../shared/worktree/delegated-worktree-edge'
-import type { Repo } from '../../../../../../shared/repo-types'
+import type { Repo } from '../../../../../../shared/repository/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import type {
   ImportedWorktreesCardCandidate,

@@ -3,12 +3,12 @@ import { access, mkdir, mkdtemp, readdir, rm, rmdir } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
 import type { KeyObject } from 'node:crypto'
-import type { ReleaseSource } from '../../../shared/release-sources'
+import type { ReleaseSource } from '../../../shared/updater/release-sources'
 import {
   MAC_SELF_UPDATE_MAX_MANIFEST_BYTES,
   getMacSelfUpdateManifestName,
   getMacSelfUpdateSignatureName
-} from '../../../shared/mac-self-update-assets'
+} from '../../../shared/updater/mac-self-update-assets'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import type { UpdateEngine, UpdateEngineFeed } from '../update-engine'
 import {

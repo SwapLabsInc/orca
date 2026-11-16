@@ -1,4 +1,4 @@
-import type { UpdateStatus } from '../../shared/update-status-types'
+import type { UpdateStatus } from '../../shared/updater/update-status-types'
 import type { UpdateEngine } from './update-engine'
 
 export type UpdaterHandlerContext = {

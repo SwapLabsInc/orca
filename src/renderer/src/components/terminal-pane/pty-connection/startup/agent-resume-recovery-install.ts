@@ -10,7 +10,7 @@ import {
 } from '@/lib/agent-session/resume/agent-resume-session-reservations'
 import { resolveAgentResumeLaunchTarget } from '@/lib/agent-session/resume/agent-resume-launch-target'
 import { paneAgentResumeScopePath } from '@/lib/agent-session/resume/agent-resume-workspace-scope'
-import type { AgentResumeCandidate } from '../../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { isResumableTuiAgent } from '../../../../../../shared/agent-session/lifecycle/agent-session-resume'
 
 import { buildCandidateResumeStartup } from './candidate-resume-startup'
@@ -208,7 +208,7 @@ export function installAgentResumeRecovery(session: ConnectPanePtySession): void
         },
         // The pane's own row, from the host-owned status store — never the tab's.
         readPaneProviderSessionId: () =>
-          useAppStore.getState().agentStatusByPaneKey[session.cacheKey]?.providerSession?.id ??
+          useAppStore.getState().agentStatusByPaneKey.get(session.cacheKey)?.providerSession?.id ??
           null,
         readClaimedSessionIds: () =>
           claimedProviderSessionIds(useAppStore.getState(), session.cacheKey),

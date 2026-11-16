@@ -1,4 +1,4 @@
-import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../../../shared/release-sources'
+import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../../../shared/updater/release-sources'
 import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-fallback'
 import {
   AssetProbeBudget,

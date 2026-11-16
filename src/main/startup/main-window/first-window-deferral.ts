@@ -1,4 +1,5 @@
 import { app, type BrowserWindow } from 'electron'
+import { isHiddenHelperContents } from '../../browser/hidden-helper-window'
 
 function scheduleAfterFirstWindowShown(task: () => void, fallbackMs: number | null): void {
   let ran = false
@@ -21,9 +22,17 @@ function scheduleAfterFirstWindowShown(task: () => void, fallbackMs: number | nu
   }
   const fallback = fallbackMs === null ? null : setTimeout(run, fallbackMs)
   fallback?.unref?.()
-  app.once('browser-window-created', (_event: Electron.Event, window: BrowserWindow) => {
-    window.once('ready-to-show', run)
-  })
+  const waitForAppWindow = (): void => {
+    app.once('browser-window-created', (_event: Electron.Event, window: BrowserWindow) => {
+      // A hidden helper (such as a launch cookie restore's) is not the first app window.
+      if (isHiddenHelperContents(window.webContents)) {
+        waitForAppWindow()
+        return
+      }
+      window.once('ready-to-show', run)
+    })
+  }
+  waitForAppWindow()
 }
 
 /** Defer noncritical disk/probe work until first paint; fallback handles headless serve and GPU failures that never emit ready-to-show. */

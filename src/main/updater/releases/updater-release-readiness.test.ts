@@ -146,7 +146,7 @@ describe('probeReleaseManifest', () => {
     const { AssetProbeBudget, PRIMARY_RELEASE_SOURCE, probeReleaseManifest } =
       await import('./updater-release-readiness').then(async (module) => ({
         ...module,
-        PRIMARY_RELEASE_SOURCE: (await import('../../../shared/release-sources'))
+        PRIMARY_RELEASE_SOURCE: (await import('../../../shared/updater/release-sources'))
           .PRIMARY_RELEASE_SOURCE
       }))
 

@@ -6,9 +6,9 @@ import type {
   UpdateCheckOptions,
   UpdateSource,
   UpdateStatus
-} from '../../../shared/update-status-types'
-import type { ReleaseChannel } from '../../../shared/release-channel'
-import type { ReleaseSourceId } from '../../../shared/release-sources'
+} from '../../../shared/updater/update-status-types'
+import type { ReleaseChannel } from '../../../shared/updater/release-channel'
+import type { ReleaseSourceId } from '../../../shared/updater/release-sources'
 import type { PrimaryEventSuppression, UpdateCheckVariant } from './updater-types'
 
 export const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
