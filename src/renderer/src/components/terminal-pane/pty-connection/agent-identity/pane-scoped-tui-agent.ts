@@ -14,7 +14,7 @@ export function installPaneScopedTuiAgent(session: ConnectPanePtySession): void 
       paneStartupLaunchAgent: session.paneStartup?.launchAgent,
       paneStartupStatusAgent: session.paneStartup?.initialAgentStatus?.agent,
       registeredLaunchAgent: state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity.agentType,
-      statusEntryAgent: state.agentStatusByPaneKey[session.cacheKey]?.agentType,
+      statusEntryAgent: state.agentStatusByPaneKey.get(session.cacheKey)?.agentType,
       foregroundAgent: state.paneForegroundAgentByPaneKey[session.cacheKey]?.agent
     })
   }

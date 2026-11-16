@@ -1,5 +1,8 @@
-import type { ReleaseBuild, ReleaseChannel } from '../../../shared/release-channel'
-import { PRIMARY_RELEASE_SOURCE, type ReleaseSourceId } from '../../../shared/release-sources'
+import type { ReleaseBuild, ReleaseChannel } from '../../../shared/updater/release-channel'
+import {
+  PRIMARY_RELEASE_SOURCE,
+  type ReleaseSourceId
+} from '../../../shared/updater/release-sources'
 
 const DEFAULT_TTL_MS = 5 * 60_000
 

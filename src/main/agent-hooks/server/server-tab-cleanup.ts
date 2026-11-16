@@ -1,12 +1,66 @@
-import { clearPaneCacheState } from '../../../shared/agent-hook-listener/listener-state'
+import {
+  clearPaneCacheState,
+  clearPaneStatusCacheState
+} from '../../../shared/agent-hook-listener/listener-state'
 import { paneCacheKeyMatchesTab } from './server-status-identity'
-import { AgentHookServerCleanup } from './server-cleanup'
+import { AgentHookServerCleanup, type EndedProcessReconciliationOptions } from './server-cleanup'
 import type { ClearPaneStateOptions, EnrichedAgentHookEventPayload } from './server-types'
+import type { RetainedIdentityCause } from './server-retained-identity'
 import { releaseAgentExitKey } from './agent-exit-evidence'
-import type { RefusedPaneResume } from '../../../shared/agent-status/contracts/agent-status-ipc-payload'
+import { paneHasStateClaims } from '../../../shared/agent-hook-listener/pane-state-claims'
+import type {
+  AgentStatusCacheIdentity,
+  RefusedPaneResume
+} from '../../../shared/agent-status/contracts/agent-status-ipc-payload'
 import { agentProviderSessionsEqual } from '../../../shared/agent-session/lifecycle/resume/agent-provider-session-equality'
 
 export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
+  retireProcessAuthority(paneKey: string): void {
+    const { paneKeys, authorityChanged } = this.revokeProcessAuthority(paneKey)
+    const { untouched } = this.reconcileEndedProcess(paneKeys, undefined, (key) => {
+      const previous = this.state.lastStatusByPaneKey.get(key) as
+        | EnrichedAgentHookEventPayload
+        | undefined
+      this.clearRevokedPaneState(key)
+      this.commitStatusRowMutation(previous, undefined)
+    })
+    for (const key of untouched) {
+      this.clearTmuxInnerSubjects(key)
+      this.clearPaneProcessState(key)
+    }
+    if (authorityChanged) {
+      this.scheduleStatusPersist()
+      this.notifyStatusChangeListeners()
+    }
+  }
+
+  dropPersistedStatusEntry(identity: AgentStatusCacheIdentity): boolean {
+    return this.dropPersistedStatusEntries([identity]).length > 0
+  }
+
+  reconcileEndedProcessForPaneKeys(
+    paneKeys: Iterable<string>,
+    options?: EndedProcessReconciliationOptions
+  ): number {
+    // Why: an exit only the process proves cannot tell a lost terminal from an ended agent. Claude
+    // reports `other` when a signal ends it, and a probe after a restart finds every agent of a
+    // lost terminal gone, so such an exit stays resumable. A session the user ended is retired as
+    // agent-ended, and a shell that outlived the agent retires it on confirmation.
+    const retainIdentity: RetainedIdentityCause =
+      options?.userEnded ||
+      (options?.preserveResumeIdentity && !options.endedPresence && !options.terminalLost)
+        ? 'agent-ended'
+        : 'terminal-loss'
+    return this.reconcileEndedProcess(paneKeys, options, (key) =>
+      this.clearPaneState(key, { retainIdentity, endedPresence: options?.endedPresence })
+    ).cleared
+  }
+
+  /** Include latches that can revive work even when the visible row is done. */
+  protected hasLiveClaimsForPaneKey(paneKey: string): boolean {
+    return Boolean(this.getTmuxSelectedStatus(paneKey)) || paneHasStateClaims(this.state, paneKey)
+  }
+
   /** The host refused `paneKey`'s saved resume because a native chat is its conversation's home:
    *  forget the pane's claim here, with no resumable remnant, and tell renderers to forget theirs. */
   forgetRefusedPaneResume(paneKey: string, refused: RefusedPaneResume): void {
@@ -171,31 +225,16 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
       retainedIdentity && options?.endedPresence
         ? { ...retainedIdentity, agentPresence: options.endedPresence }
         : retainedIdentity
-    this.clearAssistantMessageRetry(resolvedPaneKey)
-    this.clearTranscriptPoll(resolvedPaneKey)
-    clearPaneCacheState(this.state, resolvedPaneKey)
-    this.activeHookTurnCompletedAtByPaneKey.delete(resolvedPaneKey)
-    this.currentAuthorityObservations.delete(resolvedPaneKey)
-    this.promptSentDedupeByPaneKey.delete(resolvedPaneKey)
-    this.restartedStatusLaunchTokenHashByPaneKey.delete(resolvedPaneKey)
-    // A retired pane's evidence clock cannot belong to its successor.
-    this.evidenceObservedAtByPaneKey.delete(resolvedPaneKey)
-    this.programStatusFacets.delete(resolvedPaneKey)
-    this.hookSilenceRechecks.cancel(resolvedPaneKey)
-    this.programStatusFacetRepublishes.cancel(resolvedPaneKey)
+    this.clearPaneProcessState(resolvedPaneKey)
+    clearPaneStatusCacheState(this.state, resolvedPaneKey)
     let clearedAlias = false
     for (const [legacyPaneKey, alias] of this.legacyPaneKeyAliases) {
       if (alias.stablePaneKey === resolvedPaneKey) {
         this.legacyPaneKeyAliases.delete(legacyPaneKey)
         paneKeys.add(legacyPaneKey)
         paneKeys.add(alias.stablePaneKey)
-        clearPaneCacheState(this.state, legacyPaneKey)
-        this.activeHookTurnCompletedAtByPaneKey.delete(legacyPaneKey)
-        this.currentAuthorityObservations.delete(legacyPaneKey)
-        this.promptSentDedupeByPaneKey.delete(legacyPaneKey)
-        this.restartedStatusLaunchTokenHashByPaneKey.delete(legacyPaneKey)
-        this.evidenceObservedAtByPaneKey.delete(legacyPaneKey)
-        this.programStatusFacets.delete(legacyPaneKey)
+        this.clearPaneProcessState(legacyPaneKey)
+        clearPaneStatusCacheState(this.state, legacyPaneKey)
         clearedAlias = true
       }
     }

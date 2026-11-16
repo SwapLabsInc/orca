@@ -5,7 +5,7 @@ import { translate } from '@/i18n/i18n'
 import { formatUiRelativeTime } from '@/i18n/relative-time-format'
 import { cn } from '@/lib/class-names'
 import { formatUsageTokens } from '@/components/stats/usage-overview-model'
-import type { TeamClaudeLeaderboardEntry } from '../../../../../shared/teamclaude-leaderboard-types'
+import type { TeamClaudeLeaderboardEntry } from '../../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import { TeamClaudeLeaderboardRankCell } from './TeamClaudeLeaderboardMedal'
 import type { TeamClaudeLeaderboardOkSnapshot } from './teamclaude-leaderboard-standing'
 

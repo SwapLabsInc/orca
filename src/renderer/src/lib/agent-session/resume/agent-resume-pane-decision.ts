@@ -1,7 +1,7 @@
 import type {
   AgentResumeCandidate,
   AgentResumeResolution
-} from '../../../../../shared/agent-resume-candidate'
+} from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 
 export type AgentResumePaneAction =
   /** Respawn this pane with the candidate's resume argv. */

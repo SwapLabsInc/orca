@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PRIMARY_RELEASE_SOURCE } from '../../../shared/release-sources'
+import { PRIMARY_RELEASE_SOURCE } from '../../../shared/updater/release-sources'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../../../shared/release-sources.fixture'
+} from '../../../shared/updater/release-sources.fixture'
 
 const fetchMock = vi.fn()
 vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
@@ -38,7 +38,7 @@ describe('listReleaseBuilds for another release source', () => {
     setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
     vi.resetModules()
     const module = await import('./updater-release-builds')
-    const { getReleaseSource } = await import('../../../shared/release-sources')
+    const { getReleaseSource } = await import('../../../shared/updater/release-sources')
     return { ...module, swaplabs: getReleaseSource('swaplabs')! }
   }
 

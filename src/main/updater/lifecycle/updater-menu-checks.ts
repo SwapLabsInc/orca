@@ -1,8 +1,8 @@
 import { app } from 'electron'
 import { isMacInstallRequested } from '../mac-install/updater-mac-install'
-import type { UpdateCheckOptions } from '../../../shared/update-status-types'
-import type { ReleaseChannel } from '../../../shared/release-channel'
-import type { ReleaseSourceId } from '../../../shared/release-sources'
+import type { UpdateCheckOptions } from '../../../shared/updater/update-status-types'
+import type { ReleaseChannel } from '../../../shared/updater/release-channel'
+import type { ReleaseSourceId } from '../../../shared/updater/release-sources'
 import { UpdaterScheduling } from './updater-scheduling'
 
 /** An exact build to pin: a tag in a channel, and for a cross-source jump the source and its listed version. */

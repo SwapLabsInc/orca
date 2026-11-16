@@ -3,7 +3,7 @@ import {
   getReleaseSourceOrPrimary,
   isMultiSourceBuild,
   type ReleaseSource
-} from '../../../shared/release-sources'
+} from '../../../shared/updater/release-sources'
 import { UpdaterInstallExecution } from '../lifecycle/updater-install-execution'
 import type { UpdateCheckVariant } from '../lifecycle/updater-types'
 import { recordRoutineCheckSkippedForUnknownSource } from '../updater-release-sources'

@@ -1,5 +1,5 @@
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
-import type { TeamClaudeLeaderboardSnapshot } from '../../../../shared/teamclaude-leaderboard-types'
+import type { TeamClaudeLeaderboardSnapshot } from '../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import { hasRuntimeRpcErrorCode } from '../../../../shared/remote-runtime/rpc/runtime-rpc-error-code'
 import { callRuntimeRpc } from '../rpc/calls/runtime-rpc-call'
 

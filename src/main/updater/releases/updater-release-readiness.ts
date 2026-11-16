@@ -3,16 +3,16 @@ import { parse } from 'yaml'
 import {
   FetchResponseBodyTooLargeError,
   readFetchResponseTextWithinLimit
-} from '../../../shared/fetch-response-body'
-import { PrioritySemaphore } from '../../../shared/priority-semaphore'
+} from '../../../shared/network/fetch-response-body'
+import { PrioritySemaphore } from '../../../shared/concurrency/priority-semaphore'
 import {
   MAC_SELF_UPDATE_MAX_MANIFEST_BYTES,
   getMacSelfUpdateManifestName,
   getMacSelfUpdateSignatureName,
   getMacSelfUpdateZipName
-} from '../../../shared/mac-self-update-assets'
-import { getUpdateManifestName } from '../../../shared/release-channel'
-import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../../../shared/release-sources'
+} from '../../../shared/updater/mac-self-update-assets'
+import { getUpdateManifestName } from '../../../shared/updater/release-channel'
+import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../../../shared/updater/release-sources'
 import { isValidVersion } from './updater-fallback'
 import {
   getReleaseDownloadUrlForRepo,

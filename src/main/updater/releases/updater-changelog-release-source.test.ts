@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../../../shared/release-sources.fixture'
+} from '../../../shared/updater/release-sources.fixture'
 
 const fetchMock = vi.fn()
 

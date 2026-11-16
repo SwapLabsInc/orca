@@ -5,7 +5,7 @@ import { createUpdaterMainWindowFake } from './updater-main-window.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../shared/release-sources.fixture'
+} from '../shared/updater/release-sources.fixture'
 
 const {
   appMock,

@@ -8,13 +8,13 @@ import {
   sortReleaseBuildsNewestFirst,
   type ReleaseBuild,
   type ReleaseChannel
-} from '../../../shared/release-channel'
-import { parseRetryAfterHeaderMs } from '../../../shared/retry-after-header'
+} from '../../../shared/updater/release-channel'
+import { parseRetryAfterHeaderMs } from '../../../shared/network/retry-after-header'
 import {
   PRIMARY_RELEASE_SOURCE,
   getVersionReleaseSource,
   type ReleaseSource
-} from '../../../shared/release-sources'
+} from '../../../shared/updater/release-sources'
 import {
   getGhRateLimitBlockedUntilMs,
   recordGhPrimaryRateLimit
@@ -23,7 +23,7 @@ import { isValidVersion } from './updater-fallback'
 import { rejectReleaseApiToken, resolveReleaseApiToken } from './updater-release-api-token'
 import { UpdaterCodedError } from '../lifecycle/updater-coded-error'
 import { getReleaseDownloadUrlForRepo } from '../../updater-release-urls'
-import { getMacSelfUpdateAssetNames } from '../../../shared/mac-self-update-assets'
+import { getMacSelfUpdateAssetNames } from '../../../shared/updater/mac-self-update-assets'
 import { getMacSelfUpdateInstallerSourceFor } from '../mac-self-update/mac-self-update-activation'
 
 export { getReleaseDownloadUrlForRepo }

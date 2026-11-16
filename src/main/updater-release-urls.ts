@@ -1,5 +1,5 @@
-import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/release-sources'
-import { escapeRegex } from '../shared/string-utils'
+import { PRIMARY_RELEASE_SOURCE, type ReleaseSource } from '../shared/updater/release-sources'
+import { escapeRegex } from '../shared/text/regex-escaping'
 
 /** GitHub release URLs the updater reads, built from a source's repo so no caller spells one. */
 

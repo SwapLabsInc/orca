@@ -1,8 +1,8 @@
 // @orca-isolated-worker: the release-source registry reads its define once, at first import.
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setReleaseSourcesLiteralForTest } from '../../../shared/release-sources.fixture'
-import type { ReleaseSource } from '../../../shared/release-sources'
+import { setReleaseSourcesLiteralForTest } from '../../../shared/updater/release-sources.fixture'
+import type { ReleaseSource } from '../../../shared/updater/release-sources'
 import { MacSelfUpdateError } from './mac-self-update-failure'
 import {
   createMacSelfUpdatePublicKey,
@@ -12,7 +12,7 @@ import {
 
 // Why hoisted: the source registry reads its define once, when the first import loads it.
 vi.hoisted(async () => {
-  const fixture = await import('../../../shared/release-sources.fixture')
+  const fixture = await import('../../../shared/updater/release-sources.fixture')
   fixture.setReleaseSourcesLiteralForTest(fixture.FORK_RELEASE_SOURCES_LITERAL)
 })
 

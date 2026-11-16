@@ -3,7 +3,7 @@ import { setHostSliceForTest } from '../../updater-host-slice.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../../../shared/release-sources.fixture'
+} from '../../../shared/updater/release-sources.fixture'
 
 const { netFetchMock } = vi.hoisted(() => ({ netFetchMock: vi.fn() }))
 
@@ -69,7 +69,7 @@ describe('the update delay on a source other than the primary', () => {
   it('dates titled and manifest-named releases from their own feed entries', async () => {
     respondWithDatedForkFeed()
     const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
-    const { getReleaseSource } = await import('../../../shared/release-sources')
+    const { getReleaseSource } = await import('../../../shared/updater/release-sources')
 
     const result = await fetchNewerReleaseTagsWithReadiness(CURRENT_VERSION, 1, {
       source: getReleaseSource('swaplabs')!,

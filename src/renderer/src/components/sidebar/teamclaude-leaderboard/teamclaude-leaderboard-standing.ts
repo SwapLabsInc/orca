@@ -1,7 +1,7 @@
 import type {
   TeamClaudeLeaderboardEntry,
   TeamClaudeLeaderboardSnapshot
-} from '../../../../../shared/teamclaude-leaderboard-types'
+} from '../../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 
 export type TeamClaudeLeaderboardOkSnapshot = Extract<
   TeamClaudeLeaderboardSnapshot,

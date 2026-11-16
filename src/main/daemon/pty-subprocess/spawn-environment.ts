@@ -24,11 +24,11 @@ import {
 import {
   expandWindowsEnvironmentVariables,
   expandWindowsPathEnvironmentVariables
-} from '../../../shared/windows-environment-expansion'
+} from '../../../shared/shell/launch/windows-environment-expansion'
 import { applyScrubSafeAgentEnvAliases } from '../../../shared/agent-hook-listener/transport/agent-hook-scrub-safe-env'
 import type { TuiAgent } from '../../../shared/agent-launch/catalog/tui-agent'
 import type { PtySubprocessOptions } from './pty-subprocess'
-import { REMOTE_VIEWER_CLIPBOARD_ENV } from '../../../shared/remote-viewer-clipboard-env'
+import { REMOTE_VIEWER_CLIPBOARD_ENV } from '../../../shared/clipboard/remote-viewer-clipboard-env'
 import { ORCAD_SERVER_LAUNCH_ENV_KEYS } from '../../../shared/remote-runtime/serve-supervisor/orcad-server-launch-env'
 import { stripInheritedAgentSessionEnv } from '../../../shared/agent-launch/startup/parent-agent-session-env'
 

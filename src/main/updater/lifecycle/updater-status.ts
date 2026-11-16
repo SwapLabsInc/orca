@@ -3,12 +3,12 @@ import { loadElectronAutoUpdater } from '../electron-updater-loader'
 import { createMacSelfUpdateEngineIfSupported } from '../mac-self-update/mac-self-update-activation'
 import type { UpdateEngine } from '../update-engine'
 import { statusesEqual } from '../releases/updater-fallback'
-import type { UpdateCheckOptions, UpdateStatus } from '../../../shared/update-status-types'
+import type { UpdateCheckOptions, UpdateStatus } from '../../../shared/updater/update-status-types'
 import {
   getVersionReleaseSource,
   isMultiSourceBuild,
   type ReleaseSourceId
-} from '../../../shared/release-sources'
+} from '../../../shared/updater/release-sources'
 import { UpdaterState as BaseUpdaterState } from './updater-state'
 
 export abstract class UpdaterStatus extends BaseUpdaterState {

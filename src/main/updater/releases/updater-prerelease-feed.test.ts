@@ -4,7 +4,7 @@ import { installNetRequestFetchAdapter } from '../testing/updater-net-request.fi
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
-} from '../../../shared/release-sources.fixture'
+} from '../../../shared/updater/release-sources.fixture'
 
 const ORIGINAL_PLATFORM = process.platform
 const ORIGINAL_ARCH = process.arch
@@ -334,7 +334,7 @@ describe('fetchNewerReleaseTag across release sources', () => {
 
   async function loadFeed() {
     const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
-    const { getReleaseSource } = await import('../../../shared/release-sources')
+    const { getReleaseSource } = await import('../../../shared/updater/release-sources')
     return { fetchNewerReleaseTagsWithReadiness, swaplabs: getReleaseSource('swaplabs')! }
   }
 
@@ -549,7 +549,7 @@ describe('fetchNewerReleaseTag across release sources', () => {
       return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('') })
     })
     const { verifyReleaseTagManifest } = await import('./updater-prerelease-feed')
-    const { PRIMARY_RELEASE_SOURCE } = await import('../../../shared/release-sources')
+    const { PRIMARY_RELEASE_SOURCE } = await import('../../../shared/updater/release-sources')
 
     await expect(
       verifyReleaseTagManifest(

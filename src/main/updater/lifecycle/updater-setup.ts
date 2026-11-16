@@ -1,13 +1,13 @@
 import { app, powerMonitor } from 'electron'
 import type { BrowserWindow } from 'electron'
-import type { ReleaseBuild, ReleaseChannel } from '../../../shared/release-channel'
+import type { ReleaseBuild, ReleaseChannel } from '../../../shared/updater/release-channel'
 import type { ReleaseBuildListOptions } from '../releases/updater-release-build-cache'
 import type {
   LinuxPackageInstallInstructions,
   ReleaseSourceStatus,
   UpdateCheckOptions,
   UpdateStatus
-} from '../../../shared/update-status-types'
+} from '../../../shared/updater/update-status-types'
 import type {
   RemoteServerUpdateInstallResult,
   RemoteServerUpdaterSnapshot,
@@ -21,7 +21,7 @@ import { readUpdateErrorPresentation } from '../mac-self-update/mac-self-update-
 import { getMacSelfUpdateLaunchFailure } from '../mac-self-update/mac-self-update-launch-outcome'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getLatestReleaseDownloadUrl } from '../../updater-release-urls'
-import { getReleaseSourceOrPrimary } from '../../../shared/release-sources'
+import { getReleaseSourceOrPrimary } from '../../../shared/updater/release-sources'
 import { AUTO_UPDATE_CHECK_INTERVAL_MS } from './updater-state'
 import { UpdaterDownloadInstall } from './updater-download-install'
 import { configureMacShipItScheduling } from '../mac-install/macos-shipit-scheduling'

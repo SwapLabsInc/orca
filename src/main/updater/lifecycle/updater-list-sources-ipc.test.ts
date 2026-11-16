@@ -2,7 +2,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { Store } from '../../persistence/loading-store/store'
-import type { ReleaseSourceStatus } from '../../../shared/update-status-types'
+import type { ReleaseSourceStatus } from '../../../shared/updater/update-status-types'
 
 type InvokeHandler = (event: Partial<IpcMainInvokeEvent>, ...args: unknown[]) => unknown
 

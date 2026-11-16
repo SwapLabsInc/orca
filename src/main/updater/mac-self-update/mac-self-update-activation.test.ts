@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setReleaseSourcesLiteralForTest } from '../../../shared/release-sources.fixture'
-import type { ReleaseSource } from '../../../shared/release-sources'
+import { setReleaseSourcesLiteralForTest } from '../../../shared/updater/release-sources.fixture'
+import type { ReleaseSource } from '../../../shared/updater/release-sources'
 import type * as MacSelfUpdateBundle from './mac-self-update-bundle'
 
 type RunningBuild = {
@@ -62,7 +62,7 @@ vi.mock('../updater-lifecycle-diagnostics', () => ({
   recordUpdaterLifecycle: recordUpdaterLifecycleMock
 }))
 vi.mock('@orca/process-host', () => ({ runProcess: vi.fn() }))
-vi.mock('../../../shared/mac-self-update-public-key', () => ({
+vi.mock('../../../shared/updater/mac-self-update-public-key', () => ({
   readMacSelfUpdatePublicKey: () => runningBuild.publicKey
 }))
 vi.mock('./mac-self-update-bundle', async (importActual) => ({

@@ -4,7 +4,7 @@ import { pinnedReleaseSourceForStatus } from '../updater-error-status-fields'
 import { ReleaseFeedPreflightError } from './updater-state'
 import type { CheckFailureSource } from './updater-state'
 import { UpdaterReleaseFeed } from '../releases/updater-release-feed'
-import { updaterCodedMessage } from '../../../shared/updater-failure-copy'
+import { updaterCodedMessage } from '../../../shared/updater/updater-failure-copy'
 
 export abstract class UpdaterCheckFailure extends UpdaterReleaseFeed {
   protected isRetryableReleaseFeedPreflightFailure(sourceError: unknown): boolean {

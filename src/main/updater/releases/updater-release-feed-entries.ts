@@ -1,6 +1,9 @@
 import { net } from 'electron'
-import { normalizeTagToVersion } from '../../../shared/release-channel'
-import { getVersionReleaseSource, type ReleaseSource } from '../../../shared/release-sources'
+import { normalizeTagToVersion } from '../../../shared/updater/release-channel'
+import {
+  getVersionReleaseSource,
+  type ReleaseSource
+} from '../../../shared/updater/release-sources'
 import { isSourceVersion } from '../../updater-release-tag-manifest'
 import { getMacSelfUpdateSourceFor } from '../mac-self-update/mac-self-update-activation'
 import { isValidVersion } from './updater-fallback'

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { compareAppVersions } from '../../src/shared/app-version'
+import { compareAppVersions } from '../../src/shared/app-lifecycle/identity/app-version'
 import {
   SWAPLABS_PRERELEASE_IDENTIFIER,
   assertSwaplabsVersionAdvances,

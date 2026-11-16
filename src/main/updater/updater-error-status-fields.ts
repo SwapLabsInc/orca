@@ -1,5 +1,5 @@
-import type { ReleaseSourceId } from '../../shared/release-sources'
-import type { UpdateStatus } from '../../shared/update-status-types'
+import type { ReleaseSourceId } from '../../shared/updater/release-sources'
+import type { UpdateStatus } from '../../shared/updater/update-status-types'
 import {
   pickUpdateErrorPresentation,
   type UpdateErrorPresentation

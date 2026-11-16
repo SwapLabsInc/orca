@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentResumeCandidate } from '../../../../../shared/agent-resume-candidate'
+import type { AgentResumeCandidate } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { buildAgentResumeChooserRows } from './agent-resume-chooser-rows'
 
 const HOST_NOW = 1_789_000_000_000

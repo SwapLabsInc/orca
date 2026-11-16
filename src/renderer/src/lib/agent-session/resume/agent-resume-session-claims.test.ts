@@ -35,7 +35,7 @@ function stateWith(
   sleepingAgentSessionsByPaneKey: AgentResumeClaimState['sleepingAgentSessionsByPaneKey'] = {}
 ): AgentResumeClaimState {
   return {
-    agentStatusByPaneKey,
+    agentStatusByPaneKey: Object.entries(agentStatusByPaneKey),
     sleepingAgentSessionsByPaneKey,
     terminalLayoutsByTabId: Object.fromEntries(
       Object.entries(ptyIdsByLeafId).map(([tabId, bindings]) => [

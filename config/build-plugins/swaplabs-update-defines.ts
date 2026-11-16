@@ -1,6 +1,6 @@
 import type { UserConfig } from 'electron-vite'
-import { parseReleaseSources } from '../../src/shared/release-sources'
-import { parseMacSelfUpdatePublicKey } from '../../src/shared/mac-self-update-public-key'
+import { parseReleaseSources } from '../../src/shared/updater/release-sources'
+import { parseMacSelfUpdatePublicKey } from '../../src/shared/updater/mac-self-update-public-key'
 
 // LOCAL: SwapLabs update-source defines, spread into the main and renderer `define` blocks.
 // Why a compile-time define, like the build identity: the registry says which

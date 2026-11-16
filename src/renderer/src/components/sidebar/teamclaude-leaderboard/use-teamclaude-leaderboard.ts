@@ -9,7 +9,7 @@ import type { RuntimeClientTarget } from '../../../../../shared/remote-runtime/h
 import {
   TEAMCLAUDE_LEADERBOARD_REFRESH_MS,
   type TeamClaudeLeaderboardSnapshot
-} from '../../../../../shared/teamclaude-leaderboard-types'
+} from '../../../../../shared/teamclaude-leaderboard/teamclaude-leaderboard-types'
 import {
   getTeamClaudeLeaderboardRankChange,
   type TeamClaudeLeaderboardOkSnapshot,

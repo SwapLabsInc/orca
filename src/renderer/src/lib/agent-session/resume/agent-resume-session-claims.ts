@@ -4,7 +4,7 @@ import { parsePaneKey } from '../../../../../shared/workspace-layout/stable-pane
 
 /** Only the terminal maps the rule reads; a plain shape so the rule is testable without a store. */
 export type AgentResumeClaimState = {
-  agentStatusByPaneKey: Readonly<Record<string, AgentStatusEntry | undefined>>
+  agentStatusByPaneKey: Iterable<readonly [string, AgentStatusEntry | undefined]>
   /** A pane's queued resume. It names a session before any status row does, so a status-only
    *  claim set is blind for the whole window between queueing and spawn. */
   sleepingAgentSessionsByPaneKey: Readonly<Record<string, SleepingAgentSessionRecord | undefined>>
@@ -58,7 +58,7 @@ export function agentResumeSessionsClaimedByOtherPanes(
   paneKey: string
 ): Set<string> {
   const claimed = new Set<string>()
-  for (const [rowPaneKey, entry] of Object.entries(state.agentStatusByPaneKey)) {
+  for (const [rowPaneKey, entry] of state.agentStatusByPaneKey) {
     if (!entry?.providerSession || rowPaneKey === paneKey) {
       continue
     }

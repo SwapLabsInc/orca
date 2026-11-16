@@ -2,7 +2,7 @@ import {
   parseServerUpdateHelpUrl,
   SERVER_UPDATE_HELP_URL_ENV,
   SERVER_UPDATE_HELP_URL_MAX_LENGTH
-} from '../../shared/remote-server-update-help-url'
+} from '../../shared/remote-runtime/host-catalog/remote-server-update-help-url'
 
 export function readServerUpdateHelpUrlEnv(env: NodeJS.ProcessEnv = process.env): string | null {
   const raw = env[SERVER_UPDATE_HELP_URL_ENV]

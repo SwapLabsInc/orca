@@ -4,9 +4,9 @@ import {
   isPerfPrereleaseAppVersion,
   isPrereleaseAppVersion,
   isValidAppVersion
-} from '../../../../../shared/app-version'
-import { readRemoteServerUpdateSupport } from '../../../../../shared/remote-server-update-help-url'
-import { getVersionReleaseSource } from '../../../../../shared/release-sources'
+} from '../../../../../shared/app-lifecycle/identity/app-version'
+import { readRemoteServerUpdateSupport } from '../../../../../shared/remote-runtime/host-catalog/remote-server-update-help-url'
+import { getVersionReleaseSource } from '../../../../../shared/updater/release-sources'
 import {
   REMOTE_SERVER_UPDATE_CAPABILITY,
   type RemoteServerUpdateInstallResult,
@@ -19,7 +19,7 @@ import {
   type PublicKnownRuntimeEnvironment
 } from '../../../../../shared/remote-runtime/host-catalog/runtime-environments'
 import type { RuntimeStatus } from '../../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
-import type { UpdateCheckOptions } from '../../../../../shared/update-status-types'
+import type { UpdateCheckOptions } from '../../../../../shared/updater/update-status-types'
 import { waitForReplacementRuntime } from './remote-server-restart-wait'
 import { remoteServerUpdateErrorMessage } from './remote-server-update-errors'
 import { pollRemoteServerUpdater } from './remote-server-updater-polling'

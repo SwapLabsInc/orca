@@ -1,8 +1,8 @@
 import type React from 'react'
 import { useNow } from '@/hooks/use-now'
 import { useIntlLocale, useTranslate } from '@/i18n/use-translate'
-import { isDelayedUpdatePending } from '../../../../../shared/update-delay'
-import type { DelayedUpdate } from '../../../../../shared/update-status-types'
+import { isDelayedUpdatePending } from '../../../../../shared/updater/update-delay'
+import type { DelayedUpdate } from '../../../../../shared/updater/update-status-types'
 import { formatUpdateDelayDate } from './update-delay-copy'
 
 /** LOCAL: upstream's copy for a release the update delay holds, shared by both hint layouts. */

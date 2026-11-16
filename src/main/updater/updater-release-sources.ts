@@ -3,17 +3,17 @@ import {
   getVersionChannel,
   requiresManualInstall,
   type ReleaseBuild
-} from '../../shared/release-channel'
+} from '../../shared/updater/release-channel'
 import {
   RELEASE_SOURCES,
   getVersionReleaseSource,
   type ReleaseSource,
   type ReleaseSourceId
-} from '../../shared/release-sources'
+} from '../../shared/updater/release-sources'
 import type {
   ReleaseSourceInstallMode,
   ReleaseSourceStatus
-} from '../../shared/update-status-types'
+} from '../../shared/updater/update-status-types'
 import { isExternallyManagedLinuxInstall } from './linux-package/linux-update-package-type'
 import { recordUpdaterLifecycle } from './updater-lifecycle-diagnostics'
 import type { UpdateCheckVariant } from './lifecycle/updater-types'

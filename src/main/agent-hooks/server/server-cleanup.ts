@@ -1,10 +1,10 @@
+import { AgentHookServerPaneSleep } from './server-pane-sleep'
 import type { AgentProcessPresence } from '../../../shared/agent-status/process/agent-process-presence'
 import {
   admitLegacyAgentStatus,
   clearPaneCacheState,
   deleteLegacyAgentStatus
 } from '../../../shared/agent-hook-listener/listener-state'
-import { paneHasStateClaims } from '../../../shared/agent-hook-listener/pane-state-claims'
 import { AGENT_STATUS_2A_CURRENT_PRODUCER_MODE } from '../../../shared/agent-status/transport/agent-status-legacy-adapter'
 import type { AgentStatusCacheIdentity } from '../../../shared/agent-status/contracts/agent-status-ipc-payload'
 import {
@@ -15,11 +15,24 @@ import {
 import { worktreeIdsEqual } from '../../../shared/worktree/id'
 import { isLocalHookConnectionId } from '../../../shared/agent-hook-listener/transport/wsl-hook-relay-contract'
 import type { EnrichedAgentHookEventPayload } from './server-types'
-import { AgentHookServerAuthorityFences } from './server-authority-fences'
+
 import { recordAgentExit } from './agent-exit-evidence'
 import { retainResumeIdentity, type RetainedIdentityCause } from './server-retained-identity'
 
-export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFences {
+export type EndedProcessReconciliationOptions = {
+  /** The owner's process, marked ended: its own exit hook, or a probe that found it gone. */
+  endedPresence?: AgentProcessPresence
+  /** The pane's PTY outlived its agent (a confirmed shell foreground): keep the identity for a
+   *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
+   *  host re-creates, so the identity stays resumable. */
+  preserveResumeIdentity?: boolean
+  /** The pane's terminal died while Orca was down (the boot sweep): the identity stays resumable. */
+  terminalLost?: boolean
+  /** The user ended the session: keep the identity for a manual resume only. */
+  userEnded?: boolean
+}
+
+export abstract class AgentHookServerCleanup extends AgentHookServerPaneSleep {
   /** Resume identity survives teardown without claiming live work. */
   protected toRetainedProviderSessionRow(
     entry: EnrichedAgentHookEventPayload | null | undefined,
@@ -71,10 +84,6 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
     this.emitStatusDropped(deleted.paneKey)
   }
 
-  dropPersistedStatusEntry(identity: AgentStatusCacheIdentity): boolean {
-    return this.dropPersistedStatusEntries([identity]).length > 0
-  }
-
   /** Persist and notify once for the evicted batch. */
   dropPersistedStatusEntries(identities: readonly AgentStatusCacheIdentity[]): string[] {
     const evicted: string[] = []
@@ -119,34 +128,21 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
     return evicted
   }
 
-  /** Reconcile dead panes whose restored PTYs may never rebuild the spawn-time ptyPaneKey mapping. */
-  reconcileEndedProcessForPaneKeys(
+  /** Reconcile dead panes whose restored PTYs may never rebuild the spawn-time ptyPaneKey mapping.
+   *  `clearPane` owns the row: the identity the pane retains and the mutation it commits. */
+  protected reconcileEndedProcess(
     paneKeys: Iterable<string>,
-    options?: {
-      /** The owner's process, marked ended: its own exit hook, or a probe that found it gone. */
-      endedPresence?: AgentProcessPresence
-      /** The pane's PTY outlived its agent (a confirmed shell foreground): keep the identity for a
-       *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
-       *  host re-creates, so the identity stays resumable. */
-      preserveResumeIdentity?: boolean
-      /** The pane's terminal died while Orca was down (the boot sweep): the identity stays resumable. */
-      terminalLost?: boolean
-      /** The user ended the session: keep the identity for a manual resume only. */
-      userEnded?: boolean
-    }
-  ): number {
-    // Why: an exit only the process proves cannot tell a lost terminal from an ended agent. Claude
-    // reports `other` when a signal ends it, and a probe after a restart finds every agent of a
-    // lost terminal gone, so such an exit stays resumable. A session the user ended is retired as
-    // agent-ended, and a shell that outlived the agent retires it on confirmation.
-    const retainIdentity: RetainedIdentityCause =
-      options?.userEnded ||
-      (options?.preserveResumeIdentity && !options.endedPresence && !options.terminalLost)
-        ? 'agent-ended'
-        : 'terminal-loss'
+    options: EndedProcessReconciliationOptions | undefined,
+    clearPane: (paneKey: string) => void
+  ): { cleared: number; untouched: string[] } {
+    const untouched: string[] = []
     let cleared = 0
     for (const paneKey of paneKeys) {
       const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
+      if (this.preservesStoppingDone(resolvedPaneKey)) {
+        untouched.push(resolvedPaneKey)
+        continue
+      }
       if (options?.endedPresence) {
         // Cleanup drops aliases, but readers may still hold either key.
         const paneKeys = new Set([resolvedPaneKey, paneKey])
@@ -159,20 +155,13 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
         this.scheduleStatusPersist()
       }
       if (!this.hasLiveClaimsForPaneKey(resolvedPaneKey)) {
+        untouched.push(resolvedPaneKey)
         continue
       }
-      this.clearPaneState(resolvedPaneKey, {
-        retainIdentity,
-        endedPresence: options?.endedPresence
-      })
+      clearPane(resolvedPaneKey)
       cleared += 1
     }
-    return cleared
-  }
-
-  /** Include latches that can revive work even when the visible row is done. */
-  protected hasLiveClaimsForPaneKey(paneKey: string): boolean {
-    return Boolean(this.getTmuxSelectedStatus(paneKey)) || paneHasStateClaims(this.state, paneKey)
+    return { cleared, untouched }
   }
 
   dropStatusEntriesForRemovedWorktree(worktreeId: string, host?: ExecutionHostScope): void {
@@ -259,7 +248,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
     for (const [paneKey, rawEntry] of this.state.lastStatusByPaneKey) {
       const entry = rawEntry as EnrichedAgentHookEventPayload
       // Why: unstamped rows can't be attributed to one host; leave them for normal pane teardown.
-      if (entry.connectionId !== normalizedConnectionId) {
+      if (entry.paneSleep || entry.connectionId !== normalizedConnectionId) {
         continue
       }
       const deleted = this.deleteStatusEntry(paneKey, { preserveAuthority: true })

@@ -2,13 +2,13 @@ import {
   AGENT_RESUME_SUBSTANCE_FLOOR_MESSAGES,
   type AgentResumeCandidate,
   type AgentResumeResolution
-} from '../../../../../shared/agent-resume-candidate'
+} from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import {
   isResumableTuiAgent,
   normalizeAgentProviderSession,
   type ResumableTuiAgent
 } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
-import { normalizeRuntimePathForComparison } from '../../../../../shared/cross-platform-path'
+import { normalizeRuntimePathForComparison } from '../../../../../shared/file-access/cross-platform-path'
 import { parseWslUncPath } from '../../../../../shared/file-access/wsl-paths'
 
 export type ResolveAgentResumeCandidateArgs = {

@@ -1,12 +1,12 @@
 import { app, net } from 'electron'
 import { runProcess } from '@orca/process-host'
 import { ORCA_APP_ID } from '../../../shared/remote-runtime/orcad-distribution/local-build-compatibility'
-import { readMacSelfUpdatePublicKey } from '../../../shared/mac-self-update-public-key'
+import { readMacSelfUpdatePublicKey } from '../../../shared/updater/mac-self-update-public-key'
 import {
   getReleaseSource,
   getVersionReleaseSource,
   type ReleaseSource
-} from '../../../shared/release-sources'
+} from '../../../shared/updater/release-sources'
 import { getCanonicalUserDataPath } from '../../persistence/loading-store/user-data-path'
 import { hasServeUpdateSupervisor } from '../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'

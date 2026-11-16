@@ -3,7 +3,7 @@ import {
   AGENT_RESUME_SUBSTANCE_FLOOR_MESSAGES,
   type AgentResumeCandidate,
   type AgentResumeResolution
-} from '../../../../../shared/agent-resume-candidate'
+} from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
 import { RESUMABLE_TUI_AGENTS } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import {
   resolveAgentResumeCandidate,

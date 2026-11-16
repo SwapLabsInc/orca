@@ -1,4 +1,4 @@
-import type { ReleaseSource } from '../../shared/release-sources'
+import type { ReleaseSource } from '../../shared/updater/release-sources'
 import type { ReleaseTagManifestVerdict } from './releases/updater-prerelease-feed'
 
 /** Why a message per verdict: the dev picked this tag by hand, so the refusal must say what the release actually holds. */

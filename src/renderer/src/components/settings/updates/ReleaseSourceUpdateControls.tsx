@@ -10,11 +10,14 @@ import { updaterMessageText } from '@/app-shell/updates/updater-message-copy'
 import {
   compareReleaseVersions,
   getReleaseNotesUrlForVersion
-} from '../../../../../shared/release-channel'
+} from '../../../../../shared/updater/release-channel'
 import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { UnsupportedSystemUpdateHint } from './UnsupportedSystemUpdateHint'
-import { getReleaseSourceOrPrimary } from '../../../../../shared/release-sources'
-import type { ReleaseSourceStatus, UpdateStatus } from '../../../../../shared/update-status-types'
+import { getReleaseSourceOrPrimary } from '../../../../../shared/updater/release-sources'
+import type {
+  ReleaseSourceStatus,
+  UpdateStatus
+} from '../../../../../shared/updater/update-status-types'
 
 type ReleaseSourceControlsProps = {
   /** Null until the first list resolves. */

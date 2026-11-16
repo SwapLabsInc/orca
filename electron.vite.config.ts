@@ -17,10 +17,13 @@ import { createProcessHostDevRebuildPlugin } from './config/build-plugins/proces
 import { createViteCacheRetentionPlugin } from './config/build-plugins/vite-cache-retention'
 import { MAIN_BUILD_ENTRY_POINTS } from './config/build-plugins/main-build-entry-points'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
-import { createDevServeConfig } from './config/build-plugins/dev-serve-config'
+import { createDevServeConfig, withSwaplabsUpdateDefines } from './config/vite-config-wrappers'
+import {
+  ignoreIneffectiveDynamicImport,
+  RENDERER_CHUNK_SIZE_WARNING_LIMIT_KB
+} from './config/build-plugins/rollup-warning-filter'
 import { reactPluginOptions } from './config/build-plugins/react-compiler'
 import { resolveBuildSourceCommit } from './config/scripts/build-identity/build-source-commit.mjs'
-import { withSwaplabsUpdateDefines } from './config/build-plugins/swaplabs-update-defines'
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
   'stream-json',
@@ -228,6 +231,7 @@ export const electronViteConfig: UserConfig = withSwaplabsUpdateDefines({
       },
       rollupOptions: {
         input: MAIN_BUILD_ENTRY_POINTS,
+        onwarn: ignoreIneffectiveDynamicImport,
         // CLI builds replace exported entries; keep their internals separate without moving startup paths.
         preserveEntrySignatures: 'exports-only',
         // Electron and sidecar launchers require stable CommonJS paths despite Rolldown’s SSR ESM default.
@@ -300,6 +304,7 @@ export const electronViteConfig: UserConfig = withSwaplabsUpdateDefines({
     build: {
       manifest: true,
       reportCompressedSize: false,
+      chunkSizeWarningLimit: RENDERER_CHUNK_SIZE_WARNING_LIMIT_KB,
       modulePreload: { polyfill: true },
       minify: 'oxc',
       target: 'es2020',
@@ -307,6 +312,7 @@ export const electronViteConfig: UserConfig = withSwaplabsUpdateDefines({
       rollupOptions: {
         // Shared chunks must not import HTML entries that mount another React root.
         preserveEntrySignatures: 'strict',
+        onwarn: ignoreIneffectiveDynamicImport,
         output: { charset: 'ascii' },
         input: {
           index: resolve('src/renderer/index.html'),

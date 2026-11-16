@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useTranslate } from '@/i18n/use-translate'
-import type { UnsupportedSystemUpdate } from '../../../../../shared/update-status-types'
+import type { UnsupportedSystemUpdate } from '../../../../../shared/updater/update-status-types'
 
 /** LOCAL: upstream's copy for a release this Mac's macOS cannot run, shared by both hint layouts. */
 export function UnsupportedSystemUpdateHint({
