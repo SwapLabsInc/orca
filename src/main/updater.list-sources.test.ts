@@ -17,7 +17,7 @@ const { listReleaseBuildsMock } = vi.hoisted(() => ({ listReleaseBuildsMock: vi.
 vi.mock('electron', () => moduleFactories.electron())
 vi.mock('electron-updater', () => moduleFactories.electronUpdater())
 vi.mock('./updater/electron-updater-loader', () => moduleFactories.electronUpdaterLoader())
-vi.mock('./ipc/pty/kill-all', () => moduleFactories.ptyKillAll())
+vi.mock('./ipc/pty/provider/kill-all', () => moduleFactories.ptyKillAll())
 vi.mock('./updater/linux-package/linux-update-package-type', () =>
   moduleFactories.linuxUpdatePackageType()
 )

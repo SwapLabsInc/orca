@@ -1,4 +1,4 @@
-import type { ExecutionHostId } from '../../../execution-host'
+import type { ExecutionHostId } from '../../../execution-host/execution-host'
 import type { AgentProviderSessionMetadata, ResumableTuiAgent } from '../agent-session-resume'
 
 /** One resumable conversation an execution host holds for a workspace, normalized from

@@ -5,12 +5,12 @@ import {
   type HostIdByWorktreeId,
   type HostSessionSlices
 } from './workspace-session-host-split'
-import { getDefaultWorkspaceSession } from '../../../../../shared/constants'
+import { getDefaultWorkspaceSession } from '../../../../../shared/orca-profiles/constants'
 import {
   LOCAL_EXECUTION_HOST_ID,
   toSshExecutionHostId,
   type ExecutionHostId
-} from '../../../../../shared/execution-host'
+} from '../../../../../shared/execution-host/execution-host'
 import type { SleepingAgentSessionRecord } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import type { WorkspaceSessionState } from '../../../../../shared/workspace-session/workspace-session-state-types'
 

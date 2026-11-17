@@ -10,6 +10,6 @@
 2 src/renderer/src/components/sidebar/teamclaude-leaderboard/TeamClaudeLeaderboardMedal.tsx # fork leaderboard, predates this ratchet
 2 src/renderer/src/components/sidebar/teamclaude-leaderboard/TeamClaudeLeaderboardPanel.tsx # fork leaderboard, predates this ratchet
 1 src/renderer/src/components/tab-group/TabGroupEmptyState.tsx # fork, predates this ratchet
-1 src/renderer/src/components/tab-group/useTabGroupCreationCommands.ts
+1 src/renderer/src/components/tab-group/workspace-model/useTabGroupCreationCommands.ts
 4 src/renderer/src/components/terminal-pane/session-restore/AgentResumeChooser.tsx # fork #6, predates this ratchet
 3 src/renderer/src/components/worktree-creation/PendingNativeChatCreation.tsx

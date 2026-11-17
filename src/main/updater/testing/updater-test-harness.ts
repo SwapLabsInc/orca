@@ -157,7 +157,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     autoUpdaterMock.disableDifferentialDownload = false
     autoUpdaterMock.autoRunAppAfterInstall = true
     autoUpdaterMock.logger = undefined
-    delete (autoUpdaterMock as Record<string, unknown>).verifyUpdateCodeSignature
+    Reflect.deleteProperty(autoUpdaterMock, 'verifyUpdateCodeSignature')
   }
 
   const autoUpdaterMock: AutoUpdaterMock = {
@@ -167,13 +167,13 @@ export function createUpdaterMocks(): UpdaterMocks {
     allowPrerelease: false,
     allowDowngrade: false,
     disableDifferentialDownload: false,
-    logger: undefined as { error: (message: unknown) => void } | undefined,
+    logger: undefined,
     on,
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
     quitAndInstall: vi.fn(),
     setFeedURL: vi.fn(),
-    updateConfigPath: undefined as string | undefined,
+    updateConfigPath: undefined,
     emit,
     reset
   }
