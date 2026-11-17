@@ -14,6 +14,7 @@ type TimerGlobals = {
 }
 
 // DOM and Node timer overloads disagree; preserve their handles while tracking both shapes.
+// oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: these four globals are the timer functions; the overloads differ only in handle type.
 const timerGlobals = globalThis as unknown as TimerGlobals
 
 const armedTimeouts = new Set<RealTimerHandle>()

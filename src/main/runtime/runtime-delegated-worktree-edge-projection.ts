@@ -1,4 +1,4 @@
-import { toRuntimeExecutionHostId } from '../../shared/execution-host'
+import { toRuntimeExecutionHostId } from '../../shared/execution-host/execution-host'
 import type { DelegatedWorktreeEdge } from '../../shared/worktree/delegated-worktree-edge'
 import type { RuntimeSyncWindowGraphResult } from '../../shared/remote-runtime/session-graph/runtime-session-contracts'
 import type { DelegatedWorktreePlacementRow } from './orchestration/db/delegated-worktree-placement-row'

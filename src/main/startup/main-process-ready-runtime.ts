@@ -51,6 +51,7 @@ import { refreshInstalledOpenCodeStatusPlugins } from '../opencode/status-hooks/
 import { pruneDesktopOrcadArtifactCache } from '../orcad/artifact-slots/orcad-artifact-cache-retention'
 import { runGatedWslMoveDesktopRewritePass } from '../persistence/moving-wsl-projects/desktop-state/wsl-move-desktop-rewrite'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../shared/workspace-layout/layout-owner-switch'
+import { reapLeftoverMacOSPermissionStatusHelpers } from '../computer/macos-permissions/macos-permission-status-leftover-reap'
 import { repairDuplicatePtyPanesOnStart } from '../runtime/terminal/identity/moved-pane-owner-rekey'
 import { WslUsageReporter } from '../telemetry/wsl-usage-reporter'
 import { reportMacSelfUpdateLaunchOutcome } from '../updater/mac-self-update/mac-self-update-launch-outcome'
@@ -130,6 +131,10 @@ export async function initializeReadyRuntimeServices(): Promise<void> {
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
   runAfterFirstWindowShown(() => {
     new WslUsageReporter(store, app.getPath('userData')).start()
+  }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
+  // Suspended permission probes left by older builds hold LaunchServices slots until every app launch hangs.
+  runAfterFirstWindowShown(() => {
+    void reapLeftoverMacOSPermissionStatusHelpers()
   }, WORKTREE_TRASH_SWEEP_FALLBACK_MS)
   runAfterFirstWindowShown(() => {
     void pruneDesktopOrcadArtifactCache(app.getPath('userData')).catch((error) => {

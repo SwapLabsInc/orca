@@ -181,6 +181,7 @@ export function createPanePtyBinding(session: ConnectPanePtySession): PanePtyBin
       session.spawnedFreshPtyId === ptyId && !Number.isFinite(session.lastTerminalInputAt),
     dispose() {
       session.disposed = true
+      session.deps.releaseResumeInPlace?.()
       // A replaced connection must not leave a resume handler pointing at a transport that no
       // longer owns this pane.
       session.agentResumeRecoveryUnregister?.()

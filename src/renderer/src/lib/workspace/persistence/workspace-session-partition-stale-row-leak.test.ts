@@ -5,8 +5,8 @@ import {
   LOCAL_EXECUTION_HOST_ID,
   toSshExecutionHostId,
   type ExecutionHostId
-} from '../../../../../shared/execution-host'
-import { getDefaultWorkspaceSession } from '../../../../../shared/constants'
+} from '../../../../../shared/execution-host/execution-host'
+import { getDefaultWorkspaceSession } from '../../../../../shared/orca-profiles/constants'
 import { fetchWorkspaceSessionWithRuntimeHostOwners } from './workspace-session-host-hydration'
 import {
   patchWorkspaceSessionByHost,

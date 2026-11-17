@@ -2,7 +2,7 @@ import type {
   AgentResumeCandidate,
   AgentResumeResolution
 } from '../../../../../shared/agent-session/lifecycle/resume/agent-resume-candidate'
-import type { ExecutionHostId } from '../../../../../shared/execution-host'
+import type { ExecutionHostId } from '../../../../../shared/execution-host/execution-host'
 import type { ResumableTuiAgent } from '../../../../../shared/agent-session/lifecycle/agent-session-resume'
 import type { AgentResumeCandidateScan } from './agent-resume-candidate-source'
 import { resolveAgentResumeCandidate } from './agent-resume-candidate-resolver'

@@ -2,7 +2,7 @@ import {
   toRuntimeExecutionHostId,
   toSshExecutionHostId,
   type ExecutionHostId
-} from '../../../../../shared/execution-host'
+} from '../../../../../shared/execution-host/execution-host'
 import { isWorkspaceSessionRecord } from '../../../../../shared/workspace-session/workspace-session-host-records'
 
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell

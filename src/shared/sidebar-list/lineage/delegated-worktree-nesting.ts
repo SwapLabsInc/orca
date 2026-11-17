@@ -1,4 +1,4 @@
-import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../execution-host'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../execution-host/execution-host'
 import type { DelegatedWorktreeEdge } from '../../worktree/delegated-worktree-edge'
 import {
   composeWorktreeHostIdentity,

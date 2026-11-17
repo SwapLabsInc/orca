@@ -235,6 +235,26 @@ describe('resuming an agent whose terminal was lost', () => {
     }
   })
 
+  it('keeps a dismissed identity through a certified PTY exit without making it resumable', async () => {
+    // A paired host re-creates a pane whose PTY ended, so the identity outlives the PTY; the agent
+    // had already ended, so a re-created pane must not bring it back.
+    const server = await startServer()
+    try {
+      await runIdleTurn(server)
+      server.dropStatusEntry(PANE)
+
+      expect(server.reconcileEndedProcessForPaneKeys([PANE])).toBe(1)
+
+      expect(server.getStatusSnapshotForPane(PANE)[0]).toMatchObject({
+        providerSessionOnly: true,
+        providerSession: { id: SESSION }
+      })
+      expect(server.selectTerminalLossResume(PANE, notLive)).toBeNull()
+    } finally {
+      server.stop()
+    }
+  })
+
   it('gives one conversation to one pane: a live pane keeps it, else the newest pane wins', async () => {
     const server = await startServer()
     try {
