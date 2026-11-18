@@ -1,6 +1,7 @@
 import { getProviderChecksOutcome } from '../../../../../../shared/source-control/checks/provider-check-summary'
 import React from 'react'
 import { Bell, GitBranch, Moon } from 'lucide-react'
+import { StateIndicatorTooltip } from '@/components/StateIndicatorTooltip'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
 import { useTranslate, type Translate } from '@/i18n/use-translate'
@@ -24,7 +25,8 @@ import { selectIsSleepingWorktree } from '../../workspace-actions/sleep/use-work
 import { getEphemeralVmHostState } from '../../../../../../shared/execution-host/execution-host-health'
 import { getVmStateLabel, VmStateIcon, WorktreeCardVmStateBadge } from './WorktreeCardVmStateBadge'
 import type { WorktreeCardPrDisplay } from '../review/worktree-card-pr-display'
-import { getReviewLabel, ReviewIcon } from '../review/worktree-review-presentation'
+import { getNumberedReviewLabel } from '../review/worktree-review-number-label'
+import { ReviewIcon } from '../review/worktree-review-presentation'
 import type { WorkspaceReviewChecksSummary } from '../../../../../../shared/workspace-attachments/workspace-review-checks'
 import {
   WorkspaceReviewChecksIndicator,
@@ -93,7 +95,7 @@ export function overlayNewCardUnreadStatus(
 }
 
 function getReviewStatusLabel(review: WorktreeCardPrDisplay, t: Translate = translate): string {
-  const values = { review: getReviewLabel(review) }
+  const values = { review: getNumberedReviewLabel(review) }
   if (review.state === 'merged') {
     return t('workspace.reviewStatus.merged', '{{review}}: Merged', values)
   }
@@ -107,7 +109,7 @@ function getReviewStatusLabel(review: WorktreeCardPrDisplay, t: Translate = tran
     ? getProviderChecksOutcome(review.checksSummary, review.status)
     : undefined
   if (outcome === 'cancelled') {
-    return `${getReviewLabel(review)}: ${checksLabel(outcome, t)}`
+    return `${values.review}: ${checksLabel(outcome, t)}`
   }
   if (outcome === 'failure') {
     return t('workspace.reviewStatus.checksFailed', '{{review}} checks: Failed', values)
@@ -263,7 +265,14 @@ export function WorktreeCardStatusSlot({
   }
 
   if (!unreadActionEnabled) {
-    return overlayNewCardUnreadStatus(passiveStatus, showNewCardUnreadAlert)
+    // Why: the lane's review icon is color only; hovering it names the review and its number.
+    const reviewTooltip = canShowReviewStatus && prDisplay && !collectionChecks ? reviewLabel : null
+    return overlayNewCardUnreadStatus(
+      <StateIndicatorTooltip label={reviewTooltip} side="right">
+        {passiveStatus}
+      </StateIndicatorTooltip>,
+      showNewCardUnreadAlert
+    )
   }
 
   const actionLabel = isUnread

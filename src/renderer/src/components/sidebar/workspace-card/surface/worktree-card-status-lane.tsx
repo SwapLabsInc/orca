@@ -1,7 +1,6 @@
 import React from 'react'
 
 import { cn } from '@/lib/class-names'
-import { useWslHostOffForRepo } from '../../use-wsl-host-off-review'
 import { WorktreeCardStatusSlot } from './WorktreeCardStatusSlot'
 import type { WorktreeCardController } from '../controller/use-worktree-card-controller'
 import {
@@ -17,7 +16,6 @@ export function WorktreeCardStatusLane({
   card: WorktreeCardController
   showUnreadAction: boolean
 }): React.JSX.Element {
-  const reviewStale = useWslHostOffForRepo(card.repo)
   // The dot also speaks for its agents and collapsed child workspaces.
   const rolledUpUnread = useWorktreeCardRolledUpUnread()
   const lineageStatus = useWorktreeCardLineageLaneStatus()
@@ -43,7 +41,7 @@ export function WorktreeCardStatusLane({
         reviewChecks={card.reviewChecks.total > 0 ? card.reviewChecks : undefined}
         newCardStyle={card.newCardStyle}
         hasBranchIdentity={Boolean(card.branchIdentityDisplay)}
-        reviewStale={reviewStale}
+        reviewStale={card.reviewStale}
       />
     </div>
   )

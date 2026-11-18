@@ -1,4 +1,7 @@
-import { getProviderChecksOutcome } from '../../../../../../shared/source-control/checks/provider-check-summary'
+import {
+  getProviderChecksOutcome,
+  type CheckPresentationOutcome
+} from '../../../../../../shared/source-control/checks/provider-check-summary'
 import React from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getReviewChecksTone } from '../review/worktree-review-presentation'
@@ -103,13 +106,7 @@ export function ReviewChecksBadge({
     return null
   }
 
-  const label = t(
-    'auto.components.sidebar.WorktreeCardMetadataStatusBadges.checksStatus',
-    'Checks: {{status}}',
-    {
-      status: checksLabel(status, t)
-    }
-  )
+  const label = reviewChecksStatusLabel(status, t)
 
   if (status === 'cancelled') {
     return (
@@ -153,6 +150,17 @@ export function ReviewChecksBadge({
   )
 }
 
+export function reviewChecksStatusLabel(
+  status: CheckPresentationOutcome,
+  t: Translate = translate
+): string {
+  return t(
+    'auto.components.sidebar.WorktreeCardMetadataStatusBadges.checksStatus',
+    'Checks: {{status}}',
+    { status: checksLabel(status, t) }
+  )
+}
+
 export function reviewStateLabel(
   state: WorktreeCardPrDisplay['state'],
   label: 'MR' | 'PR',
@@ -189,13 +197,7 @@ export function ReviewChecksIndicator({
   if (!status || status === 'neutral') {
     return null
   }
-  const label = t(
-    'auto.components.sidebar.WorktreeCardMetadataStatusBadges.checksStatus',
-    'Checks: {{status}}',
-    {
-      status: checksLabel(status, t)
-    }
-  )
+  const label = reviewChecksStatusLabel(status, t)
   const Icon =
     status === 'success'
       ? CircleCheck
