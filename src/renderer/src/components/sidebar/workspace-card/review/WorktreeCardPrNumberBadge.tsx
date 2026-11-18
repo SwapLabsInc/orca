@@ -16,6 +16,7 @@ import {
   type WorktreeCardPrBadgeReason,
   type WorktreeCardPrBadgeTone
 } from './worktree-card-pr-badge-tone'
+import { getNumberedReviewLabel, getReviewNumber } from './worktree-review-number-label'
 import { getReviewLabel } from './worktree-review-presentation'
 
 // Why: no merged-state token exists; callout-important carries the same purple GitHub uses for merged.
@@ -67,12 +68,11 @@ export function WorktreeCardPrNumberBadge({
   if (!status) {
     return null
   }
-  const reviewLabel = getReviewLabel(review)
-  const reviewNumber = `${reviewLabel === 'MR' ? '!' : '#'}${review.number}`
+  const numberedLabel = getNumberedReviewLabel(review)
   const reason = reasonLabel(review, status.reason, t)
   const label = stale
-    ? `${reviewLabel} ${reviewNumber} · ${reason} · ${t('workspace.links.lastKnownStatus', 'Last known status')}`
-    : `${reviewLabel} ${reviewNumber} · ${reason}`
+    ? `${numberedLabel} · ${reason} · ${t('workspace.links.lastKnownStatus', 'Last known status')}`
+    : `${numberedLabel} · ${reason}`
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -86,7 +86,7 @@ export function WorktreeCardPrNumberBadge({
             TONE_CLASS_NAMES[stale ? 'neutral' : status.tone]
           )}
         >
-          {reviewNumber}
+          {getReviewNumber(review)}
         </span>
       </TooltipTrigger>
       <TooltipContent

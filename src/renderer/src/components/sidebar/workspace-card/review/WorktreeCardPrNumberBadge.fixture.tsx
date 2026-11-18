@@ -1,8 +1,9 @@
-import { getDefaultSettings } from '../../../../../../shared/constants'
+import { getDefaultSettings } from '../../../../../../shared/orca-profiles/constants'
 import type { HostedReviewInfo } from '../../../../../../shared/source-control/hosted-review/hosted-review-contracts'
-import type { WorktreeCardProperty } from '../../../../../../shared/ui-chrome-types'
+import type { WorktreeCardProperty } from '../../../../../../shared/ui-chrome/ui-chrome-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review/hosted-review-cache-identity'
+import { makeTab } from '@/store/terminals/testing/terminal-tab.test-fixture'
 import { defineFixture } from '../../../../component-fixtures/component-fixture'
 import { makeRepo, makeWorktree } from '../../../worktree-jump/worktree-jump-palette-test-fixtures'
 import WorktreeCard from '../surface/WorktreeCard'
@@ -154,7 +155,7 @@ const cases: BadgeCase[] = [
 ]
 
 function cardsFixture(
-  style: { newCardStyle: boolean; compact?: boolean },
+  style: { newCardStyle: boolean; compact?: boolean; awake?: boolean },
   properties: WorktreeCardProperty[],
   shown = cases,
   interact?: (frame: HTMLElement) => Promise<void>
@@ -187,6 +188,8 @@ function cardsFixture(
         : []
     )
   )
+  // A live terminal keeps a card awake, so its status lane shows the review icon, not the moon.
+  const awakeIds = style.awake ? shown.map((entry) => entry.id) : []
   return defineFixture({
     width: 320,
     store: {
@@ -194,7 +197,11 @@ function cardsFixture(
       repos: [repo],
       worktreesByRepo: { [repo.id]: worktrees },
       worktreeCardProperties: properties,
-      hostedReviewCache
+      hostedReviewCache,
+      tabsByWorktree: Object.fromEntries(
+        awakeIds.map((id) => [id, [makeTab({ id: `tab-${id}`, worktreeId: id })]])
+      ),
+      ptyIdsByTabId: Object.fromEntries(awakeIds.map((id) => [`tab-${id}`, [`pty-${id}`]]))
     },
     render: () => (
       <div className="flex flex-col gap-1 bg-worktree-sidebar p-2 text-worktree-sidebar-foreground">
@@ -213,17 +220,32 @@ function cardsFixture(
   })
 }
 
-function tooltipFixture(caseId: string, expected: string) {
+const OPEN_TOOLTIP = {
+  // Why: tooltips open on keyboard focus only, so a key press has to come first.
+  badge: (frame: HTMLElement) => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    frame.querySelector<HTMLElement>('[data-worktree-card-identity-indicator]')?.focus()
+  },
+  // The lane icon takes no focus, so it is hovered.
+  laneIcon: (frame: HTMLElement) => {
+    frame
+      .querySelector('[data-worktree-card-status-slot] [data-slot="tooltip-trigger"]')
+      ?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }))
+  }
+}
+
+function tooltipFixture(trigger: keyof typeof OPEN_TOOLTIP, caseId: string, expected: string) {
   return cardsFixture(
-    { newCardStyle: true },
+    { newCardStyle: true, awake: trigger === 'laneIcon' },
     ['status', 'branch'],
     cases.filter((entry) => entry.id === caseId),
     async (frame) => {
-      frame.querySelector<HTMLElement>('[data-worktree-card-identity-indicator]')?.focus()
-      await new Promise((resolve) => setTimeout(resolve, 400))
+      OPEN_TOOLTIP[trigger](frame)
+      // Hover waits out the 600ms open delay.
+      await new Promise((resolve) => setTimeout(resolve, 900))
       const tooltip = document.querySelector('[data-slot="tooltip-content"]')?.textContent
       if (!tooltip?.includes(expected)) {
-        throw new Error(`Focusing the badge should open a tooltip naming ${expected}`)
+        throw new Error(`The ${trigger} should open a tooltip naming ${expected}`)
       }
     }
   )
@@ -242,7 +264,15 @@ export const compact = cardsFixture({ newCardStyle: false, compact: true }, [
 ])
 
 /** Failing CI outranks the approval gate, and the tooltip names the failing checks. */
-export const failingTooltip = tooltipFixture('pr-checks-failed', 'PR #1153')
+export const failingTooltip = tooltipFixture('badge', 'pr-checks-failed', 'PR #1153')
 
 /** GitLab numbers MRs with `!`, and requested changes read as failed. */
-export const gitLabTooltip = tooltipFixture('mr-changes', 'MR !42')
+export const gitLabTooltip = tooltipFixture('badge', 'mr-changes', 'MR !42')
+
+/** Awake cards lead with the review icon in the status lane instead of the moon. */
+export const awake = cardsFixture({ newCardStyle: true, awake: true }, ['status', 'branch'])
+
+/** Hovering the status lane's review icon names the PR number with its status. */
+export const laneIconTooltip = tooltipFixture('laneIcon', 'pr-checks-failed', 'PR #1153')
+
+export const gitLabLaneIconTooltip = tooltipFixture('laneIcon', 'mr-changes', 'MR !42')
