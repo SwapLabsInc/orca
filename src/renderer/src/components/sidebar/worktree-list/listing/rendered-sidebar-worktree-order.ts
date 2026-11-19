@@ -37,6 +37,7 @@ import {
   getVisibleSidebarHostIdSet
 } from '../../../../../../shared/sidebar-list/hosts/host-filtering'
 import { selectWorkspaceBoardStatuses } from '@/store/workspaces/status/host-workspace-status-columns'
+import { indexHiddenProjects } from '../../../../../../shared/project/catalog/hidden-projects'
 
 const EMPTY_REPO_ID_SET: ReadonlySet<string> = Object.freeze(new Set<string>())
 const EMPTY_IMPORTED_BY_REPO: ReadonlyMap<string, ImportedWorktreesCardCandidate> = new Map()
@@ -107,6 +108,7 @@ export function computeRenderedSidebarRows(
     defaultHostId,
     pinnedDisplayPolicy,
     filterRepoIds: state.filterRepoIds,
+    hiddenProjects: indexHiddenProjects(state.repos, defaultHostId),
     delegatedWorktreeEdges: state.delegatedWorktreeEdges
   }).render(state.collapsedGroups)
 

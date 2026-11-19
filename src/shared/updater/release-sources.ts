@@ -249,3 +249,16 @@ export function getReleaseSourceVersionPattern(source: ReleaseSource): RegExp | 
     'i'
   )
 }
+
+/** Whether a server's version orders against this client's. A host that names its source is
+ *  believed; one that does not is placed by its version string, so an older host still compares.
+ *  An unknown source on either side is not comparable. */
+export function shareReleaseSource(
+  serverSource: ReleaseSourceId | null | undefined,
+  serverVersion: string | null,
+  clientVersion: string
+): boolean {
+  const source =
+    serverSource ?? (serverVersion === null ? null : getVersionReleaseSource(serverVersion))
+  return source !== null && source === getVersionReleaseSource(clientVersion)
+}

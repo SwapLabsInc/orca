@@ -7,6 +7,7 @@ import type { SidebarLineageParentIdentities } from './lineage/worktree-lineage-
 import type { DelegatedWorktreeEdge } from '../worktree/delegated-worktree-edge'
 import type { WorkspaceStatusDefinition, Worktree } from '../worktree/types'
 import type { ExecutionHostId } from '../execution-host/execution-host'
+import type { HiddenProjects } from '../project/catalog/hidden-projects'
 import { ALL_GROUP_KEY, PINNED_GROUP_KEY } from './sections/group-keys'
 import { appendOrderedGroups, type SectionAppendContext } from './sections/group-sections'
 
@@ -88,6 +89,8 @@ export type SidebarRowPlanInputs = {
   defaultHostId: ExecutionHostId
   pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy
   filterRepoIds: readonly string[]
+  /** A hidden project's rows reach the plan only under a folder workspace; they never make its section. */
+  hiddenProjects?: HiddenProjects
   /** Cross-host workers this window's runtime placed, nested under their coordinators. */
   delegatedWorktreeEdges?: readonly DelegatedWorktreeEdge[]
 }
@@ -129,12 +132,12 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
 
   const projectGroupPaths = getProjectGroupOccurrencePaths(projectGroups)
   // Folder rows are occurrences too, so a folder parent nests its children like any other row.
-  const folders = getSidebarFolderOccurrences(renderableFolderWorkspaces)
+  const folders = getSidebarFolderOccurrences(renderableFolderWorkspaces, inputs.hiddenProjects)
   const lineageChildren = nestLineage
     ? getSidebarLineageChildrenWithDelegated(inputs, folders.rows)
     : new Map<string, Worktree[]>()
   const occurrencePlan = buildWorktreeOccurrencePlan({
-    rows: [...worktrees, ...folders.rows],
+    rows: folders.withPlacedRows(worktrees, lineageChildren),
     identityOf: getWorktreeHostIdentity,
     childrenByParentIdentity: lineageChildren,
     isPinned: (worktree) => worktree.isPinned === true && !folders.isFolder(worktree),
@@ -148,7 +151,7 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
           ? folders.boundRowsByGroupId(natural, displayRootByIdentity, lineageChildren)
           : null
       // Rows under a folder still count in their own projects; only their display moves.
-      const naturalWorktrees = natural.filter((row) => !folders.isFolder(row))
+      const naturalWorktrees = folders.projectRows(natural, groupBy === 'repo')
       const groups: OrderedGroupEntry[] =
         groupBy === 'none'
           ? [[ALL_GROUP_KEY, { label: '', items: naturalWorktrees, repoIds: new Set() }]]
