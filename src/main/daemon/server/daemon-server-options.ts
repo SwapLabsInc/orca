@@ -16,6 +16,7 @@ export type DaemonServerOptions = {
   entryPath?: string
   appVersion?: string
   spawnerExecPath?: string
+  providerSpawn?: boolean
   protocolVersion?: number
   onIdleShutdown?: () => void
   onRpcShutdown?: () => void

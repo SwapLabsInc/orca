@@ -6,7 +6,7 @@ import {
   isValidAppVersion
 } from '../../../../../shared/app-lifecycle/identity/app-version'
 import { readRemoteServerUpdateSupport } from '../../../../../shared/remote-runtime/host-catalog/remote-server-update-help-url'
-import { getVersionReleaseSource } from '../../../../../shared/updater/release-sources'
+import { shareReleaseSource } from '../../../../../shared/updater/release-sources'
 import {
   REMOTE_SERVER_UPDATE_CAPABILITY,
   type RemoteServerUpdateInstallResult,
@@ -21,6 +21,7 @@ import {
 import type { RuntimeStatus } from '../../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
 import type { UpdateCheckOptions } from '../../../../../shared/updater/update-status-types'
 import { waitForReplacementRuntime } from './remote-server-restart-wait'
+import { getRemoteServerNewerThanClientVersion } from './remote-server-version-skew'
 import { remoteServerUpdateErrorMessage } from './remote-server-update-errors'
 import { pollRemoteServerUpdater } from './remote-server-updater-polling'
 
@@ -51,6 +52,8 @@ export type RemoteServerUpdateEntry = {
   error: string | null
   /** This desktop updates it over SSH, not through the host's own updater. */
   managedOverSsh?: boolean
+  /** This app's version when it was compared; read through getRemoteServerNewerThanClientVersion. */
+  clientVersion?: string | null
 }
 
 export type RemoteServerUpdateTransport = {
@@ -127,23 +130,21 @@ export async function inspectRemoteServerUpdate(
   const currentVersion = status.appVersion?.trim() || null
   const supportsRemoteUpdate = status.capabilities?.includes(REMOTE_SERVER_UPDATE_CAPABILITY)
   const support = readRemoteServerUpdateSupport(status.remoteUpdateSupport)
-  // Why: versions only order within one release source. A host that names its source is
-  // believed; one that does not is placed by its version string, so an older host still
-  // compares — and a fork build is never called "outdated" against upstream's semver.
-  const serverSource =
-    status.releaseSource ??
-    (currentVersion === null ? null : getVersionReleaseSource(currentVersion))
-  // Why: an unknown source on either side is not comparable, so the host stays manual.
-  const sameReleaseSource =
-    serverSource !== null && serverSource === getVersionReleaseSource(clientVersion)
-  const versionComparable =
-    currentVersion !== null &&
-    isValidAppVersion(currentVersion) &&
-    isValidAppVersion(clientVersion) &&
-    sameReleaseSource
+  // Why: versions only order within one release source, so a fork build is never called
+  // "outdated" against upstream's semver, and an unknown source keeps the host manual.
+  const sameReleaseSource = shareReleaseSource(status.releaseSource, currentVersion, clientVersion)
+  const versionsValid =
+    currentVersion !== null && isValidAppVersion(currentVersion) && isValidAppVersion(clientVersion)
+  const versionComparable = versionsValid && sameReleaseSource
   const outdated = versionComparable && compareAppVersions(currentVersion, clientVersion) < 0
+  // A newer server is not heading to this app's version; offering it would read as a downgrade.
+  const comparedTarget =
+    getRemoteServerNewerThanClientVersion({ currentVersion, clientVersion }) === null
+      ? clientVersion
+      : currentVersion
   const statusFields = {
     currentVersion,
+    clientVersion,
     runtimeId: status.runtimeId,
     liveTabCount: status.liveTabCount,
     liveLeafCount: status.liveLeafCount,
@@ -155,7 +156,7 @@ export async function inspectRemoteServerUpdate(
       ...base,
       ...statusFields,
       phase: versionComparable && !outdated ? 'current' : 'manual',
-      targetVersion: versionComparable ? clientVersion : null
+      targetVersion: versionComparable ? comparedTarget : null
     }
   }
 
@@ -207,7 +208,7 @@ export async function inspectRemoteServerUpdate(
     ...base,
     ...statusFields,
     phase: versionComparable && !outdated ? 'current' : 'available',
-    targetVersion: clientVersion
+    targetVersion: comparedTarget
   }
 }
 

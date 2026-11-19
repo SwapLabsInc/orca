@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useNow } from '@/hooks/use-now'
+import { useNow } from '@/lib/window-activity/use-now'
 import { useIntlLocale, useTranslate } from '@/i18n/use-translate'
 import { isDelayedUpdatePending } from '../../../../../shared/updater/update-delay'
 import type { DelayedUpdate } from '../../../../../shared/updater/update-status-types'

@@ -17,7 +17,12 @@ import {
   type AgentHookSource
 } from '../../../shared/agent-hook-listener/transport/agent-hook-relay'
 import { launchTokenHash } from '../../../shared/agent-hook-listener/transport/agent-hook-spool'
-import { isSameAgentProcess } from '../../../shared/agent-status/process/agent-process-presence'
+import {
+  isSameAgentProcess,
+  readAgentProcessIdentity
+} from '../../../shared/agent-status/process/agent-process-presence'
+import { parseHookEnvelope } from '../../../shared/agent-hook-listener/hook-envelope'
+import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude/lifecycle/claude-session-end'
 
 export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
   /** The agent session the execution host may resume when it re-creates `paneKey`'s terminal. */
@@ -75,6 +80,22 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     return envelope.reportsUserEndedSessions === true
       ? { ...event, reportsUserEndedSessions: true }
       : event
+  }
+
+  /** The session a local Claude hook says its user ended, read from the raw hook body. */
+  protected readClaudeUserEndedSession(body: unknown): NormalizedLocalHook['userEndedSession'] {
+    const envelope = parseHookEnvelope(this.state, 'claude', body, this.env)
+    const sessionId = envelope ? readClaudeUserEndedSessionId(envelope) : null
+    if (!envelope || !sessionId) {
+      return undefined
+    }
+    const sender = readAgentProcessIdentity(envelope.record.agentProcess)
+    return {
+      paneKey: envelope.paneKey,
+      sessionId,
+      ...(envelope.launchToken ? { launchToken: envelope.launchToken } : {}),
+      ...(sender ? { sender } : {})
+    }
   }
 
   /** Normalizes a live (not replayed) hook, first retiring the session its user ended. */
