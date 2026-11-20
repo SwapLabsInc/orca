@@ -57,7 +57,11 @@ export type RemoteServerUpdateEntry = {
 }
 
 export type RemoteServerUpdateTransport = {
-  getRuntimeStatus: (environmentId: string, timeoutMs?: number) => Promise<RuntimeStatus>
+  getRuntimeStatus: (
+    environmentId: string,
+    timeoutMs?: number,
+    options?: { force?: true }
+  ) => Promise<RuntimeStatus>
   getUpdaterStatus: (
     environmentId: string,
     timeoutMs?: number
@@ -201,14 +205,11 @@ export async function inspectRemoteServerUpdate(
 
   // Why: without asking the host, the only offer the client can make is its own version,
   // which means nothing across sources — a fork server is updated from its own releases.
-  if (!sameReleaseSource) {
-    return { ...base, ...statusFields, phase: 'manual', targetVersion: null }
-  }
   return {
     ...base,
     ...statusFields,
-    phase: versionComparable && !outdated ? 'current' : 'available',
-    targetVersion: comparedTarget
+    phase: !sameReleaseSource ? 'manual' : versionComparable && !outdated ? 'current' : 'available',
+    targetVersion: sameReleaseSource ? comparedTarget : null
   }
 }
 

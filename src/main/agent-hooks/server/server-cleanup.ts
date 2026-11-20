@@ -1,4 +1,4 @@
-import { AgentHookServerPaneSleep } from './server-pane-sleep'
+import { AgentHookServerRetainedPaneIdentity } from './server-retained-pane-identity'
 import type { AgentProcessPresence } from '../../../shared/agent-status/process/agent-process-presence'
 import {
   admitLegacyAgentStatus,
@@ -16,12 +16,13 @@ import { worktreeIdsEqual } from '../../../shared/worktree/id'
 import { isLocalHookConnectionId } from '../../../shared/agent-hook-listener/transport/wsl-hook-relay-contract'
 import type { EnrichedAgentHookEventPayload } from './server-types'
 
-import { recordAgentExit } from './agent-exit-evidence'
-import { retainResumeIdentity, type RetainedIdentityCause } from './server-retained-identity'
+import { endedPresenceOf } from './agent-exit-evidence'
 
 export type EndedProcessReconciliationOptions = {
   /** The owner's process, marked ended: its own exit hook, or a probe that found it gone. */
   endedPresence?: AgentProcessPresence
+  /** The pane's shell is back: a process-less owner ended. */
+  confirmedExit?: boolean
   /** The pane's PTY outlived its agent (a confirmed shell foreground): keep the identity for a
    *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
    *  host re-creates, so the identity stays resumable. */
@@ -30,34 +31,11 @@ export type EndedProcessReconciliationOptions = {
   terminalLost?: boolean
   /** The user ended the session: keep the identity for a manual resume only. */
   userEnded?: boolean
+  /** One pane's identity, already read while its row stayed unchanged. */
+  known?: { paneKey: string; identity: ReturnType<AgentHookServerCleanup['paneAgentIdentity']> }
 }
 
-export abstract class AgentHookServerCleanup extends AgentHookServerPaneSleep {
-  /** Resume identity survives teardown without claiming live work. */
-  protected toRetainedProviderSessionRow(
-    entry: EnrichedAgentHookEventPayload | null | undefined,
-    cause: RetainedIdentityCause = 'agent-ended'
-  ): EnrichedAgentHookEventPayload | null {
-    if (
-      !entry?.providerSession ||
-      !entry.payload.agentType ||
-      entry.payload.agentType === 'unknown'
-    ) {
-      return null
-    }
-    return retainResumeIdentity(entry, cause)
-  }
-
-  /** Re-admits the identity a pane retains once its live claims are gone. */
-  protected admitRetainedIdentity(retained: EnrichedAgentHookEventPayload): void {
-    admitLegacyAgentStatus(
-      this.state,
-      'main-status-cleanup',
-      retained,
-      AGENT_STATUS_2A_CURRENT_PRODUCER_MODE
-    )
-  }
-
+export abstract class AgentHookServerCleanup extends AgentHookServerRetainedPaneIdentity {
   /** Dismiss the row while preserving the live agent's caches; PTY teardown uses clearPaneState. */
   dropStatusEntry(
     paneKey: string,
@@ -129,36 +107,59 @@ export abstract class AgentHookServerCleanup extends AgentHookServerPaneSleep {
   }
 
   /** Reconcile dead panes whose restored PTYs may never rebuild the spawn-time ptyPaneKey mapping.
-   *  `clearPane` owns the row: the identity the pane retains and the mutation it commits. */
+   *  A `clearPane` that returns true owns the row: the identity it retains and its mutation. */
   protected reconcileEndedProcess(
     paneKeys: Iterable<string>,
     options: EndedProcessReconciliationOptions | undefined,
-    clearPane: (paneKey: string) => void
+    clearPane: (paneKey: string, endedPresence: AgentProcessPresence | undefined) => true | void
   ): { cleared: number; untouched: string[] } {
     const untouched: string[] = []
     let cleared = 0
     for (const paneKey of paneKeys) {
       const resolvedPaneKey = this.resolvePaneKeyAlias(paneKey)
-      if (this.preservesStoppingDone(resolvedPaneKey)) {
+      if (this.preservesStoppingAgent(resolvedPaneKey)) {
         untouched.push(resolvedPaneKey)
         continue
       }
-      if (options?.endedPresence) {
-        // Cleanup drops aliases, but readers may still hold either key.
-        const paneKeys = new Set([resolvedPaneKey, paneKey])
-        for (const [aliasKey, alias] of this.legacyPaneKeyAliases) {
-          if (alias.stablePaneKey === resolvedPaneKey) {
-            paneKeys.add(aliasKey)
-          }
-        }
-        recordAgentExit(this.agentExitedAtByPaneKey, paneKeys, options.endedPresence)
-        this.scheduleStatusPersist()
+      const previous = this.state.lastStatusByPaneKey.get(resolvedPaneKey) as
+        | EnrichedAgentHookEventPayload
+        | undefined
+      let identity =
+        options?.known?.paneKey === resolvedPaneKey ? options.known.identity : undefined
+      const identityOf = () =>
+        identity === undefined ? (identity = this.paneAgentIdentity(resolvedPaneKey)) : identity
+      const endedPresence =
+        options?.endedPresence ??
+        // A process the presence probe reaches gets its exit from the probe, not a possibly newer
+        // row (WSL/SSH have no probe, so their mark stands); a shared server (tmux, OpenCode)
+        // outlives the command that finished at the pane's shell.
+        (options?.confirmedExit &&
+        (!previous?.agentPresence?.process || previous.connectionId !== null) &&
+        identityOf()?.executionHost !== 'shared'
+          ? previous
+            ? endedPresenceOf(previous)
+            : { agent: identityOf()?.status.agentType ?? 'unknown', ended: true }
+          : undefined)
+      if (endedPresence) {
+        this.recordPaneAgentExit(paneKey, endedPresence, identityOf()?.status)
       }
       if (!this.hasLiveClaimsForPaneKey(resolvedPaneKey)) {
         untouched.push(resolvedPaneKey)
         continue
       }
-      clearPane(resolvedPaneKey)
+      const resumeRow = options?.preserveResumeIdentity
+        ? this.toRetainedProviderSessionRow(previous)
+        : null
+      const retained =
+        resumeRow && endedPresence ? { ...resumeRow, agentPresence: endedPresence } : resumeRow
+      if (clearPane(resolvedPaneKey, endedPresence) !== true) {
+        if (retained) {
+          this.admitRetainedIdentity(retained)
+          this.scheduleStatusPersist()
+          this.notifyStatusChangeListeners()
+        }
+        this.commitStatusRowMutation(previous, retained)
+      }
       cleared += 1
     }
     return { cleared, untouched }

@@ -11,7 +11,6 @@ import {
   type BotChatResetParams,
   type BotUpdateParams
 } from '../../../../shared/rpc-contract/bots-params'
-import { assertBotAgentRunsOnThisHost } from '../../../bots/bot-agent-host-refusal'
 import { googleSetupRuns } from '../../../google/google-setup-runs'
 import { readSharedBotActivity } from '../../../bots/bot-activity-host'
 import {
@@ -22,6 +21,7 @@ import {
 } from '../../../bots/bot-chat-session'
 import { readPairedBotRosters, withPairedBotRosters } from '../../../bots/paired-bot-rosters'
 import { botOfSession } from '../../../bots/bot-session-tabs'
+import { openEmptyBotChat, runtimeBotChatTreeHost } from '../../../bots/bot-chat-tree-host'
 import { forgetDeletedBotTools } from './bots-tools'
 import { composioBotsOf } from './bots-composio'
 import { ownerOnly } from './bots-caller-gates'
@@ -48,7 +48,6 @@ async function updateBot(params: BotUpdateParams, context: RpcContext) {
   if (members !== undefined || added !== undefined || permissionMode !== undefined) {
     ownerOnly(context, 'Only your owner changes your Who can ask or permissions, in Orca.')
   }
-  assertBotAgentRunsOnThisHost(params.updates.agent)
   const bot = await context.runtime.bots.update(params.botId, params.updates)
   if (params.updates.skillProjects !== undefined) {
     relinkBotSkills(bot, context.runtime.listRepos())
@@ -257,10 +256,15 @@ export const BOT_METHODS = [
       if (!bot) {
         throw new Error('bot_not_found')
       }
-      assertBotAgentRunsOnThisHost(params.agent)
-      return {
-        sessionId: await startBotSession(runtime, botOnAgent(bot, params.agent))
-      }
+      const onAgent = botOnAgent(bot, params.agent)
+      // Like a blank page: an empty chat already open is the new chat, not one more.
+      const empty = await openEmptyBotChat(runtimeBotChatTreeHost(runtime), onAgent).catch(
+        (error: unknown) => {
+          console.error('[bots] failed to look for an empty chat to reuse:', error)
+          return null
+        }
+      )
+      return { sessionId: empty ?? (await startBotSession(runtime, onAgent)) }
     }
   })
 ]

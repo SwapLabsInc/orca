@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Badge } from '../../ui/badge'
 import { Button } from '../../ui/button'
 import { translate } from '@/i18n/i18n'
+import { useTranslate } from '@/i18n/use-translate'
 import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
 import { readIpcErrorDetail } from '@/runtime/errors/ipc-error'
 import { updaterMessageText } from '@/app-shell/updates/updater-message-copy'
@@ -278,6 +279,7 @@ export function ReleaseSourceUpdateHint({
   /** True when an error status has no known download target, so it reads as a failed check. */
   checkFailed: boolean
 }): React.JSX.Element | null {
+  const t = useTranslate()
   const label = getStatusSourceLabel(updateStatus, runningSourceId)
   switch (updateStatus.state) {
     case 'idle':
@@ -348,10 +350,12 @@ export function ReleaseSourceUpdateHint({
         <>
           {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
           {updateStatus.version} ({label}){' '}
-          {translate(
-            'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
-            'is ready to install.'
-          )}{' '}
+          {updateStatus.installing
+            ? t('settings.automaticUpdates.installingStatus', 'is being installed.')
+            : translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
+                'is ready to install.'
+              )}{' '}
           {updateStatus.source !== 'local' && <ReleaseNotesLink version={updateStatus.version} />}
         </>
       )

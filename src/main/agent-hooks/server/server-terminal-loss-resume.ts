@@ -98,6 +98,19 @@ export abstract class AgentHookServerTerminalLossResume extends AgentHookServerT
     }
   }
 
+  /** A hook that leaves no status of its own, with the session its user ended when it says so. */
+  protected withClaudeUserEndedSession(
+    event: NormalizedLocalHook['event'],
+    body: unknown
+  ): NormalizedLocalHook {
+    // Why: a live hook for another pane says nothing about this session.
+    if (event && !event.agentPresence?.ended) {
+      return { event }
+    }
+    const userEndedSession = this.readClaudeUserEndedSession(body)
+    return userEndedSession ? { event, userEndedSession } : { event }
+  }
+
   /** Normalizes a live (not replayed) hook, first retiring the session its user ended. */
   protected normalizeLiveLocalHookPayload(
     source: AgentHookSource,

@@ -9,6 +9,7 @@ vi.mock('./GeneralRemoteServerUpdates', () => ({
 }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
 vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
+vi.mock('./AutomaticUpdatesSetting', () => ({ AutomaticUpdatesSetting: () => null }))
 
 // Why hoisted: the source registry reads the define once, when the component's imports load.
 const { sources } = await vi.hoisted(async () => {

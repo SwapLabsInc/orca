@@ -26,6 +26,8 @@ import { useReleaseSourceStatuses } from './use-release-source-statuses'
 import { UpdateDelaySetting } from './UpdateDelaySetting'
 import { DelayedUpdateHint } from './DelayedUpdateHint'
 import { UnsupportedSystemUpdateHint } from './UnsupportedSystemUpdateHint'
+import { AutomaticUpdatesSetting } from './AutomaticUpdatesSetting'
+import { isWebClientLocation } from '@/app-shell/platform/web-client-location'
 import { getReleaseNotesUrlForVersion } from '../../../../../shared/updater/release-channel'
 import { openAppHttpLinkFromAnchor } from '@/lib/browser/navigation/app-http-link-open'
 import {
@@ -62,7 +64,13 @@ function CheckForUpdatesButton({
             )
           : getUpdateCheckHint()
       }
-      disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading' || staged}
+      disabled={
+        updateStatus.state === 'checking' ||
+        updateStatus.state === 'downloading' ||
+        (updateStatus.state === 'error' && updateStatus.messageCode === 'macStagingTimeout') ||
+        (updateStatus.state === 'downloaded' && updateStatus.installing) ||
+        staged
+      }
     >
       {updateStatus.state === 'checking' ? (
         <Loader2 className="size-3.5 animate-spin" />
@@ -160,6 +168,11 @@ export function GeneralUpdateSettingsSection({
     updateStatus.state === 'error' &&
     updateStatus.retryAction === 'install' &&
     updateStatus.retryable !== false
+  // An automatic install restarts by itself, so it offers no restart button.
+  const automaticInstall =
+    updateStatus.state === 'downloaded' &&
+    updateStatus.automaticDownload === true &&
+    updateStatus.installing === true
 
   useEffect(() => {
     let cancelled = false
@@ -227,7 +240,7 @@ export function GeneralUpdateSettingsSection({
                 onCheck={handleCheck}
                 holdWhileStaged
               />
-              {updateStatus.state === 'downloaded' ? (
+              {updateStatus.state === 'downloaded' && !automaticInstall ? (
                 <RestartToUpdateButton
                   version={updateStatus.version}
                   installing={updateStatus.installing}
@@ -257,7 +270,7 @@ export function GeneralUpdateSettingsSection({
                 <DownloadUpdateButton version={updateStatus.version} />
               ) : installRetryOffered ? (
                 <RetryInstallButton onRetry={handleRestartToUpdate} />
-              ) : updateStatus.state === 'downloaded' ? (
+              ) : updateStatus.state === 'downloaded' && !automaticInstall ? (
                 <RestartToUpdateButton
                   version={updateStatus.version}
                   installing={updateStatus.installing}
@@ -288,6 +301,7 @@ export function GeneralUpdateSettingsSection({
           <ReleaseSourceListErrors sources={releaseSources.sources} error={releaseSources.error} />
         ) : null}
       </SearchableSetting>
+      {isWebClientLocation() ? null : <AutomaticUpdatesSetting />}
       <UpdateDelaySetting />
       {channelSwitcherRevealed ? <ReleaseChannelSection /> : null}
       <GeneralRemoteServerUpdates />
@@ -328,7 +342,7 @@ function SingleSourceUpdateHint({
               )
             : t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8311da27ba',
-                'is available. Click "Download Update" to download it.'
+                'is available.'
               )}{' '}
           {updateStatus.source !== 'local' && (
             <a
@@ -367,10 +381,12 @@ function SingleSourceUpdateHint({
         <>
           {t('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
           {updateStatus.version}{' '}
-          {t(
-            'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
-            'is ready to install.'
-          )}{' '}
+          {updateStatus.installing
+            ? t('settings.automaticUpdates.installingStatus', 'is being installed.')
+            : t(
+                'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
+                'is ready to install.'
+              )}{' '}
           {updateStatus.source !== 'local' && (
             <a
               href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}

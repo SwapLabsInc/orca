@@ -21,7 +21,9 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
     if (
       this.pendingQuitAndInstallTimer ||
       this.quitAndInstallInProgress ||
-      isMacInstallRequested()
+      isMacInstallRequested() ||
+      this.macInstallerStagingVersion !== null ||
+      this.currentStatus.state === 'downloading'
     ) {
       return
     }
@@ -46,10 +48,7 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
     if (this.localBuildSelectionInProgress || this.pinnedBuildSelectionInProgress) {
       return
     }
-    if (
-      this.activeUpdateSource !== 'release' &&
-      (this.currentStatus.state === 'checking' || this.currentStatus.state === 'downloading')
-    ) {
+    if (this.activeUpdateSource !== 'release' && this.currentStatus.state === 'checking') {
       return
     }
     // Why: a staged pinned build stays registered with electron-updater's quit handler, so unpinning

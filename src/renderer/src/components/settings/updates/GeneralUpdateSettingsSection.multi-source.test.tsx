@@ -13,6 +13,7 @@ vi.mock('./GeneralRemoteServerUpdates', () => ({
 }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
 vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
+vi.mock('./AutomaticUpdatesSetting', () => ({ AutomaticUpdatesSetting: () => null }))
 
 // Why hoisted: the source registry reads the define once, when the component's imports load.
 const { sources } = await vi.hoisted(async () => {
@@ -327,7 +328,7 @@ it('keeps a local-build offer out of the source buttons', async () => {
   })
   expect(screen.queryByRole('button', { name: /0\.9\.0-local\.1 \(SwapLabs\)/ })).toBeNull()
   expect(forkButton().disabled).toBe(true)
-  expect(screen.getByText(/is available\. Click "Download Update" to download it\./)).toBeTruthy()
+  expect(screen.getByText(/is available\./)).toBeTruthy()
   expect(screen.queryByText('Release notes')).toBeNull()
   fireEvent.click(button)
   expect(download).toHaveBeenCalledTimes(1)

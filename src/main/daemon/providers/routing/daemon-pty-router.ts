@@ -21,8 +21,7 @@ import type {
 import { DaemonSessionOwnerResolver } from './daemon-session-owner-resolution'
 import type { DaemonIdleRetirementResult } from '../adapter/daemon-pty-runtime-state'
 import { DaemonRouterRetirement } from './daemon-router-retirement'
-import { routeSpawnOrHold } from './daemon-router-newer-daemon-hold'
-import { spawnDrainSafe } from './daemon-router-drained-daemon'
+import { routeSpawn } from './daemon-router-drained-daemon'
 import { findLegacySessionOwner } from './daemon-router-legacy-owner'
 import { retireExitedLegacyAdapter, type ExitedLegacyVerdict } from './daemon-router-exited-legacy'
 import type { WriteSettlement } from '../../../../shared/terminal/pty/lifecycle/pty-write-settlement'
@@ -86,8 +85,7 @@ export class DaemonPtyRouter implements IPtyProvider {
       const adapter =
         (opts.sessionId ? this.sessionAdapters.get(opts.sessionId) : undefined) ??
         (await findLegacySessionOwner(opts, this.current, this.legacy, this.legacyExitProof))
-      const target = await routeSpawnOrHold(opts, adapter, this.current, this.ownerResolver)
-      const { result, owner } = await spawnDrainSafe(opts, target, this.current, this.ownerResolver)
+      const { result, owner } = await routeSpawn(opts, adapter, this.current, this.ownerResolver)
       if (owner && !result.exitedBeforeSpawnReply) {
         this.ownerResolver.recordRoute(result.id, owner, result.incarnationId)
       }
@@ -227,6 +225,7 @@ export class DaemonPtyRouter implements IPtyProvider {
   }
 
   reportFocusLost = async (id: string): Promise<void> => this.adapterFor(id).reportFocusLost?.(id)
+  requestRepaint = async (id: string): Promise<void> => this.adapterFor(id).requestRepaint?.(id)
 
   async closeStartupQueryAuthority(id: string): Promise<number> {
     return (await this.adapterFor(id).closeStartupQueryAuthority?.(id)) ?? 0

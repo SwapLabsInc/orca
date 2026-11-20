@@ -70,6 +70,12 @@ export abstract class OrcaRuntimeWithAgentSessionResumeOwnership extends OrcaRun
     tab: RuntimeMobileSessionTerminalTab
   ): Promise<PaneResumeStartup | Record<string, never> | undefined> {
     const stored = this.getPaneSleepingAgentRecord(worktreeId, tab)
+    const identity = this.readPaneAgentIdentity(makePaneKey(tab.parentTabId, tab.leafId), stored)
+    // SwapLabs #30: an exit only the process proved leaves a lost terminal's session resumable.
+    const ended = identity?.ended && (stored || !this.selectsTerminalLossResume(tab))
+    if (ended || identity?.executionHost === 'shared') {
+      return {}
+    }
     let record = stored
       ? this.isPaneOwnedResumeRecord(stored)
         ? stored

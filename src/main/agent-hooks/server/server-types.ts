@@ -192,6 +192,10 @@ export type AgentPromptSentDedupeEntry = {
 export type NormalizedLocalHook = {
   event: AgentHookEventPayload | null
   onAccepted?: () => void
+  /** A Stop without its text whose transcript normalize skipped; read it off the event loop. */
+  stopTranscriptPath?: string
+  /** A Droid Stop's transcript, read off the event loop for the turn verdict Droid appends after it. */
+  droidVerdictTranscriptPath?: string
   /** A hook that says the user ended the pane's agent session: no status row, or the owner's exit. */
   userEndedSession?: UserEndedAgentSession
 }
