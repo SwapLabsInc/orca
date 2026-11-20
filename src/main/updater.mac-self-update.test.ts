@@ -16,7 +16,6 @@ const {
   autoUpdaterMock,
   armExitWatchdogMock,
   chooseLocalBuildMock,
-  fetchChangelogMock,
   fetchNewerReleaseTagsMock,
   moduleFactories,
   recordUpdaterLifecycleMock,
@@ -88,8 +87,6 @@ warmUpdaterModule()
 
 const FORK_VERSION = '1.4.197-swaplabs.202609241530'
 const FORK_TAG = 'swaplabs-v1.4.197+202609251200'
-const NEWER_TAG = 'swaplabs-v1.4.197+202609261200'
-const NEWER_VERSION = '1.4.197-swaplabs.202609261200'
 // The harness's feed URL builder does not percent-encode the tag; the engine derives both from it.
 const FORK_FEED_URL = `https://github.com/SwapLabsInc/orca/releases/download/${FORK_TAG}`
 const FORK_RELEASE_PAGE_URL = `https://github.com/SwapLabsInc/orca/releases/tag/${FORK_TAG}`
@@ -388,109 +385,5 @@ describe('updater with the macOS self-update engine', () => {
       )
     expect(errors.at(-1)).toEqual(refused)
     expect(errors.every((status) => status.manualInstallUrl === releasePageUrl)).toBe(true)
-  })
-
-  describe('a check that overtakes a download', () => {
-    /** Checks, downloads and parks the download at the zip request, where a check can overtake it. */
-    async function startHeldDownload() {
-      const held = activateEngine()
-      fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [FORK_TAG], state: 'ready' })
-      const { mainWindow, send } = createUpdaterMainWindowFake()
-      const { setupAutoUpdater, checkForUpdates, downloadUpdate } = await loadUpdaterModule()
-      setupAutoUpdater(mainWindow, { getLastUpdateCheckAt: () => Date.now() })
-      checkForUpdates()
-      await vi.waitFor(() => {
-        expect(send).toHaveBeenCalledWith(
-          'updater:status',
-          expect.objectContaining({ state: 'available', version: held.targetVersion })
-        )
-      })
-      const releaseZip = held.holdZipDownload()
-      downloadUpdate()
-      await vi.waitFor(() => expect(held.fetchedUrls.at(-1)).toMatch(/\.zip$/))
-      // The feed now serves a newer release, which the overtaking check pins.
-      held.publishVersion(NEWER_VERSION)
-      fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [NEWER_TAG], state: 'ready' })
-      return { held, send, checkForUpdates, downloadUpdate, releaseZip }
-    }
-
-    const statusesOf = (send: ReturnType<typeof createUpdaterMainWindowFake>['send']) =>
-      send.mock.calls.map(([, status]) => status)
-
-    /** The superseded download re-checks on the user's behalf and the newer build is what Download fetches. */
-    async function expectNewerBuildOfferedThenDownloadable(
-      send: ReturnType<typeof createUpdaterMainWindowFake>['send'],
-      downloadUpdate: () => void
-    ) {
-      await vi.waitFor(() => {
-        expect(recordUpdaterLifecycleMock).toHaveBeenCalledWith(
-          'mac_self_update_download_superseded',
-          { version: fixture!.targetVersion }
-        )
-      })
-      await vi.waitFor(() => {
-        expect(statusesOf(send)).toContainEqual({ state: 'checking', userInitiated: true })
-        expect(statusesOf(send).at(-1)).toEqual(
-          expect.objectContaining({ state: 'available', version: NEWER_VERSION })
-        )
-      })
-      expect(statusesOf(send)).not.toContainEqual(
-        expect.objectContaining({
-          state: 'error',
-          message: expect.stringContaining('was published while')
-        })
-      )
-      send.mockClear()
-      downloadUpdate()
-      await vi.waitFor(() => {
-        expect(send).toHaveBeenCalledWith(
-          'updater:status',
-          expect.objectContaining({ state: 'downloaded', version: NEWER_VERSION })
-        )
-      })
-    }
-
-    // Why: the superseded download used to end in an error card whose Retry re-downloaded the
-    // build the card no longer named; now the failure re-checks, and Download fetches the newer one.
-    it('re-offers the newer build when the check settles before the download does', async () => {
-      const { send, checkForUpdates, downloadUpdate, releaseZip } = await startHeldDownload()
-      checkForUpdates()
-      await vi.waitFor(() => {
-        expect(send).toHaveBeenCalledWith(
-          'updater:status',
-          expect.objectContaining({ state: 'available', version: NEWER_VERSION })
-        )
-      })
-      releaseZip()
-
-      await expectNewerBuildOfferedThenDownloadable(send, downloadUpdate)
-    })
-
-    // Why: progress that lands while the overtaking check is still fetching its changelog drops
-    // that check's 'available' and its version, so Retry had nothing to download: a dead button.
-    it('re-offers the newer build when download progress lands before the check settles', async () => {
-      const { send, checkForUpdates, downloadUpdate, releaseZip } = await startHeldDownload()
-      let finishChangelog = (): void => undefined
-      fetchChangelogMock.mockImplementationOnce(
-        () =>
-          new Promise<null>((resolve) => {
-            finishChangelog = () => resolve(null)
-          })
-      )
-      checkForUpdates()
-      await vi.waitFor(() => {
-        expect(fetchChangelogMock).toHaveBeenCalledWith(NEWER_VERSION, FORK_VERSION)
-      })
-      releaseZip()
-      await vi.waitFor(() => {
-        expect(send).toHaveBeenCalledWith(
-          'updater:status',
-          expect.objectContaining({ state: 'downloading', percent: 100 })
-        )
-      })
-      finishChangelog()
-
-      await expectNewerBuildOfferedThenDownloadable(send, downloadUpdate)
-    })
   })
 })

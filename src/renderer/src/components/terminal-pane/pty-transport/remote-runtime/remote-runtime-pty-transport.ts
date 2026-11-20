@@ -3158,6 +3158,11 @@ export function createRemoteRuntimePtyTransport(
             storedCallbacks.onPausedOutputDropped?.()
           }
         },
+        onOutputGapRecovered: () => {
+          if (isCurrentSubscription()) {
+            storedCallbacks.onOutputGapRecovered?.()
+          }
+        },
         onSubscribeAcknowledged: (result) => {
           if (isCurrentSubscription()) {
             if (

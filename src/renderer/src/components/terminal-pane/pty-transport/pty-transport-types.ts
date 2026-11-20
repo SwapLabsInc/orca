@@ -152,6 +152,7 @@ type PtyCallbacks = {
   /** `dropsReported`: the host sends onPausedOutputDropped, so a pause without one lost nothing. */
   onOutputPauseChanged?: (paused: boolean, supported: boolean, dropsReported?: boolean) => void
   onPausedOutputDropped?: () => void
+  onOutputGapRecovered?: () => void
   /** The host kept this restore asleep; no process started and the resume handle is intact. */
   onSpawnDeferred?: (reason: SpawnDeferralReason) => void
 }
@@ -228,7 +229,7 @@ export type PtyTransport = {
   abandonPreconnectInput?: () => void
   claimViewport?: (cols: number, rows: number) => boolean
   /** Capability-negotiated paired-runtime delivery gate; false preserves legacy delivery. */
-  setOutputPaused?: (paused: boolean) => boolean
+  setOutputPaused?: (paused: boolean, relayReplayNeeded?: boolean) => boolean
   /** Capability-negotiated: lets the host coalesce a visible-but-unfocused pane's output longer. */
   setOutputCadence?: (cadence: TerminalOutputCadence) => void
   resize: (

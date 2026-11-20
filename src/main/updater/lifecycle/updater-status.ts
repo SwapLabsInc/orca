@@ -23,6 +23,8 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
   protected clearAvailableUpdateContext(): void {
     this.availableVersion = null
     this.availableReleaseUrl = null
+    this.automaticDownloadOfferVersion = null
+    this.automaticDownloadVersion = null
   }
 
   protected closeLocalBuildFeed(): void {
@@ -190,7 +192,13 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
         : { ...status, source: this.activeUpdateSource }),
       ...(releaseSource ? { releaseSource } : {})
     }
-    const decoratedStatus = this.decorateStatusWithActiveNudge(sourcedStatus)
+    const decoratedStatus = this.decorateStatusWithActiveNudge(
+      this.automaticDownloadVersion !== null &&
+        'version' in sourcedStatus &&
+        sourcedStatus.version === this.automaticDownloadVersion
+        ? { ...sourcedStatus, automaticDownload: true }
+        : sourcedStatus
+    )
 
     if (this.isUpdateCheckResultState(status.state)) {
       this.finishActiveUpdateCheckAttempt()

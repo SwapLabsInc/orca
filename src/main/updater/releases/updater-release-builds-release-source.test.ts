@@ -234,7 +234,7 @@ describe('listReleaseBuilds for another release source', () => {
     const builds = await listReleaseBuilds('stable', 'linux', swaplabs, 'x64')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'https://api.github.com/repos/SwapLabsInc/orca/releases?per_page=100'
+      'https://api.github.com/repos/SwapLabsInc/orca/releases?per_page=100&page=1'
     )
     expect(builds.map((build) => [build.tag, build.version, build.channel])).toEqual([
       ['swaplabs-v1.4.198-rc.1+resume.2', '1.4.198-rc.1.swaplabs.202609251200.resume.2', 'stable'],

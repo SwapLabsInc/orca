@@ -32,7 +32,10 @@ import {
   type HostSessionSlices,
   type HostIdByWorktreeId
 } from './workspace-session-host-split'
-import type { SleepingRecordOriginHosts } from './sleeping-record-origin-host'
+import {
+  buildSleepingRecordOriginHosts,
+  type SleepingRecordOriginHosts
+} from './sleeping-record-origin-host'
 import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
@@ -42,6 +45,15 @@ import {
   extendWorktreeIdByTabId,
   type WorkspaceTabOwnerCatalog
 } from '../../../../../shared/workspace-session/workspace-session-host-records'
+import type {
+  WorkspaceSessionEntriesPatch,
+  WorkspaceSessionEntriesPatchResult
+} from '../../../../../shared/workspace-session/workspace-session-entries-patch'
+import {
+  windowAcknowledgedSessionEntries,
+  type AcknowledgedWorkspaceSessionEntries
+} from './workspace-session-acknowledged-entries'
+import { patchHostSlice, routedSessionHostIds } from './workspace-session-host-entries-write'
 
 export type HostPersistenceState = WorkspaceTabOwnerCatalog & {
   repos: readonly Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>[]
@@ -68,9 +80,14 @@ export type HostPersistenceState = WorkspaceTabOwnerCatalog & {
   sshTargetsHydrated?: boolean
 }
 
-type SessionApi = {
+export type SessionApi = {
   get: (hostId?: ExecutionHostId) => Promise<WorkspaceSessionState>
   patch: (args: WorkspaceSessionPatch, hostId?: ExecutionHostId) => Promise<void>
+  /** Absent on clients whose session store takes whole fields only (the paired web client). */
+  patchEntries?: (
+    args: WorkspaceSessionEntriesPatch,
+    hostId?: ExecutionHostId
+  ) => Promise<WorkspaceSessionEntriesPatchResult>
 }
 
 type DurableSessionApi = SessionApi & {
@@ -149,47 +166,6 @@ function catalogReattributedAwayFrom(
   return Boolean(claimed) && !contestedPartitionHosts(claimed ?? []).includes(hostId)
 }
 
-/** Every runtime environment id this client can name, read through the host ids the catalogs
- *  already carry rather than a second parser for the same value. Used only to tell a runtime stamp
- *  on a sleeping record apart from an ssh target id. */
-function collectRuntimeEnvironmentIds(
-  state: HostPersistenceState,
-  runtimeHostIdByWorktreeId: ReadonlyMap<string, ExecutionHostId | null>
-): Set<string> {
-  const environmentIds = new Set<string>()
-  const addHost = (hostId: string | null | undefined): void => {
-    const parsed = parseExecutionHostId(hostId)
-    if (parsed?.kind === 'runtime') {
-      environmentIds.add(parsed.environmentId)
-    }
-  }
-  for (const environment of state.runtimeEnvironments ?? []) {
-    const id = environment.id.trim()
-    if (id) {
-      environmentIds.add(id)
-    }
-  }
-  for (const hostId of runtimeHostIdByWorktreeId.values()) {
-    addHost(hostId)
-  }
-  for (const hostId of Object.values(state.restoredRuntimeHostIdByWorkspaceSessionKey ?? {})) {
-    addHost(hostId)
-  }
-  for (const hostId of Object.values(state.contestedPrimaryHostBySessionKey ?? {})) {
-    addHost(hostId)
-  }
-  for (const workspace of state.folderWorkspaces ?? []) {
-    addHost(workspace.executionHostId)
-  }
-  for (const group of state.projectGroups ?? []) {
-    addHost(group.executionHostId)
-  }
-  for (const repo of state.repos) {
-    addHost(getRepoExecutionHostId(repo))
-  }
-  return environmentIds
-}
-
 /** Route all nonlocal hosts to their own partitions, matching main; local-only SSH writes created split ownership/read-as-absence (#12721/#12723). Contested IDs retain one primary plus parked co-claimants. */
 export function buildHostSessionRouting(state: HostPersistenceState): HostSessionRouting {
   const repoHostById = buildRepoHostById(state.repos)
@@ -202,7 +178,7 @@ export function buildHostSessionRouting(state: HostPersistenceState): HostSessio
     state.worktreesByRepo
   )
 
-  const hostIdByWorktreeId = (worktreeId: string): ExecutionHostId => {
+  const resolveHostId = (worktreeId: string): ExecutionHostId => {
     const workspaceScope = parseWorkspaceKey(worktreeId)
     if (workspaceScope?.type === 'folder') {
       return getFolderWorkspacePartitionHostId(state, worktreeId)
@@ -239,15 +215,20 @@ export function buildHostSessionRouting(state: HostPersistenceState): HostSessio
     }
     return workspaceSessionPartitionHostId(repoHostId)
   }
+  // Routing reads only the captured state, and many tab and pane keys share a workspace: resolve each once.
+  const hostByWorktreeId = new Map<string, ExecutionHostId>()
+  const hostIdByWorktreeId = (worktreeId: string): ExecutionHostId => {
+    let hostId = hostByWorktreeId.get(worktreeId)
+    if (hostId === undefined) {
+      hostId = resolveHostId(worktreeId)
+      hostByWorktreeId.set(worktreeId, hostId)
+    }
+    return hostId
+  }
   return {
     hostIdByWorktreeId,
     claims,
-    sleepingRecordOrigins: {
-      runtimeEnvironmentIds: collectRuntimeEnvironmentIds(state, runtimeHostIdByWorktreeId),
-      // Why the hydration gate: an unloaded target list says nothing about an id, so `null` keeps it
-      // distinguishable from a loaded list that genuinely does not hold the id.
-      sshTargetIds: state.sshTargetsHydrated ? new Set(state.sshTargetLabels?.keys() ?? []) : null
-    }
+    sleepingRecordOrigins: buildSleepingRecordOriginHosts(state, runtimeHostIdByWorktreeId)
   }
 }
 
@@ -300,13 +281,15 @@ function splitWorkspaceSessionForWrite(
 export function patchWorkspaceSessionByHost(
   api: SessionApi,
   patch: WorkspaceSessionPatch,
-  state: HostPersistenceState
+  state: HostPersistenceState,
+  acknowledged?: AcknowledgedWorkspaceSessionEntries
 ): { localWrite: Promise<void>; written: Promise<void> } {
   const slices = splitWorkspaceSessionForWrite(patch as WorkspaceSessionState, state, 'patch')
+  acknowledged?.retainHosts(routedSessionHostIds(state, slices))
   const local = (slices[LOCAL_EXECUTION_HOST_ID] ?? patch) as WorkspaceSessionPatch
-  const localWrite = api.patch(local)
+  const localWrite = patchHostSlice(api, local, LOCAL_EXECUTION_HOST_ID, acknowledged)
   const hostWrites = nonLocalHostSessionEntries(slices).map(([hostId, slice]) =>
-    api.patch(slice, hostId).catch((err: unknown) => {
+    patchHostSlice(api, slice, hostId, acknowledged).catch((err: unknown) => {
       console.warn(`[session] host partition patch failed for ${hostId}:`, err)
       throw err
     })
@@ -342,6 +325,8 @@ export function buildWorkspaceSessionHostSnapshots(
 ): WorkspaceSessionHostSnapshot[] {
   // Why 'replace': quit snapshots are applied as full partition sets.
   const slices = splitWorkspaceSessionForWrite(payload, state, 'replace')
+  // They replace main's copy, including when the unload is vetoed and the window stays.
+  windowAcknowledgedSessionEntries.forget()
   return [
     { state: slices[LOCAL_EXECUTION_HOST_ID] ?? payload },
     ...nonLocalHostSessionEntries(slices).map(([hostId, hostState]) => ({

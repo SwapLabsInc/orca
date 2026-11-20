@@ -20,6 +20,7 @@ import {
 import type { RuntimeMobileSessionCreateTerminalResult } from '../../../../shared/remote-runtime/session-graph/runtime-session-contracts'
 import type { RuntimeMobileSessionTerminalTab } from '../../../../shared/remote-runtime/session-graph/runtime-mobile-session-tab-contracts'
 import type { RuntimeConstructionBindings } from '../../construction/runtime-construction-dependencies'
+import type { TerminalLossAgentResume } from '../../../agent-hooks/server/server-retained-identity'
 
 function hostPaneId(worktreeId: string, tab: RuntimeMobileSessionTerminalTab): string {
   return `${worktreeId}\0${tab.parentTabId}\0${tab.leafId}`
@@ -89,6 +90,25 @@ export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntim
     )
   }
 
+  /** The session the host's terminal-loss rules let this pane resume; null when none or unwired. */
+  private selectTerminalLossResume(
+    tab: RuntimeMobileSessionTerminalTab
+  ): TerminalLossAgentResume | null {
+    const isPaneTerminalLive = (paneKey: string): boolean =>
+      [...this.ptysById.values()].some((pty) => pty.connected && pty.paneKey === paneKey)
+    return (
+      this.selectTerminalLossAgentResumeFn?.(
+        makePaneKey(tab.parentTabId, tab.leafId),
+        isPaneTerminalLive
+      ) ?? null
+    )
+  }
+
+  /** Whether the host's terminal-loss rules name a session this pane may resume. */
+  protected selectsTerminalLossResume(tab: RuntimeMobileSessionTerminalTab): boolean {
+    return this.selectTerminalLossResume(tab) !== null
+  }
+
   /**
    * The hook-row record a re-created pane may resume, relaunched with the host's settings-default
    * flags; null when the host store keeps that session for a manual resume only, such as one the
@@ -98,11 +118,8 @@ export abstract class OrcaRuntimeWithHostPaneAgentResumeStart extends OrcaRuntim
     tab: RuntimeMobileSessionTerminalTab,
     record: SleepingAgentSessionRecord
   ): SleepingAgentSessionRecord | null {
-    const select = this.selectTerminalLossAgentResumeFn
-    if (select) {
-      const isPaneTerminalLive = (paneKey: string): boolean =>
-        [...this.ptysById.values()].some((pty) => pty.connected && pty.paneKey === paneKey)
-      const resume = select(makePaneKey(tab.parentTabId, tab.leafId), isPaneTerminalLive)
+    if (this.selectTerminalLossAgentResumeFn) {
+      const resume = this.selectTerminalLossResume(tab)
       if (
         resume?.agent !== record.agent ||
         !agentProviderSessionsEqual(record.agent, resume.providerSession, record.providerSession)

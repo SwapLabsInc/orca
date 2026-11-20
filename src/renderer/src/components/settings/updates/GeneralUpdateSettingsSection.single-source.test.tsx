@@ -9,6 +9,7 @@ vi.mock('./GeneralRemoteServerUpdates', () => ({
 }))
 vi.mock('./ReleaseChannelSection', () => ({ ReleaseChannelSection: () => null }))
 vi.mock('./UpdateDelaySetting', () => ({ UpdateDelaySetting: () => null }))
+vi.mock('./AutomaticUpdatesSetting', () => ({ AutomaticUpdatesSetting: () => null }))
 
 const listSources = vi.fn()
 

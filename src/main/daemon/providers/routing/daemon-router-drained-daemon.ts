@@ -5,13 +5,24 @@ import type { DaemonPtyAdapter } from '../adapter/daemon-pty-adapter'
 import { routeSpawnOrHold } from './daemon-router-newer-daemon-hold'
 import type { DaemonSessionOwnerResolver } from './daemon-session-owner-resolution'
 
+/** Routes a spawn to its adapter, holding for a newer daemon as upstream does, then spawns it. */
+export async function routeSpawn(
+  opts: PtySpawnOptions,
+  routed: DaemonPtyAdapter | undefined,
+  current: DaemonPtyAdapter,
+  ownerResolver: DaemonSessionOwnerResolver<DaemonPtyAdapter>
+): Promise<{ result: PtySpawnResult; owner: DaemonPtyAdapter | null }> {
+  const target = await routeSpawnOrHold(opts, routed, current, ownerResolver)
+  return spawnDrainSafe(opts, target, current, ownerResolver)
+}
+
 /**
  * Spawns on the adapter the router chose. A drained daemon (daemon-drain.ts) refuses to create, so
  * a create-or-attach routed to it is sent attach-only; once the session is proven absent, the
  * create is routed like any unrouted id. An owner that cannot be established still throws, so the
  * session is never started twice. A null owner means the attach already recorded its route.
  */
-export async function spawnDrainSafe(
+async function spawnDrainSafe(
   opts: PtySpawnOptions,
   target: DaemonPtyAdapter,
   current: DaemonPtyAdapter,

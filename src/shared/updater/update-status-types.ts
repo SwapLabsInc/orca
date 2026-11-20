@@ -143,6 +143,7 @@ export type UpdateStatus = (
     }
 ) & {
   source?: UpdateSource
+  automaticDownload?: boolean
   /**
    * The release source the status refers to. Only multi-source builds set it, and
    * only for actionable states or a check against another source; absent means the
