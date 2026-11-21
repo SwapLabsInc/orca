@@ -237,10 +237,10 @@ export function getSwaplabsBuildIdentity(
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const publishedVersions = readPublishedVersionsFromEnv()
-  // Why refuse: without the tags the base silently falls back to the stale package.json version.
-  if (publishedVersions.length === 0) {
+  // Why refuse: without a release tag the base silently falls back to the stale package.json version.
+  if (!publishedVersions.some((tag) => SEMVER.test(tag.replace(/^v/, '')))) {
     throw new Error(
-      'ORCA_PUBLISHED_VERSIONS is empty; pass the release tags (v1.4.247 ...) the base is resolved from.'
+      'ORCA_PUBLISHED_VERSIONS names no release version; pass the release tags (v1.4.247 ...) the base is resolved from.'
     )
   }
   const identity = getSwaplabsBuildIdentity(new Date(), {
