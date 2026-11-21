@@ -8,7 +8,7 @@ import type {
 import { RELEASE_CHANNELS, type ReleaseChannel } from '../../../shared/updater/release-channel'
 import { getReleaseSource } from '../../../shared/updater/release-sources'
 import { getTrustedUIRendererWindow, isTrustedUIRenderer } from '../../ipc/ui'
-import type { Store } from '../../persistence/loading-store/store'
+import type { NativeSettingsProjection } from '../../core-desktop/native-settings-projection'
 import { logStartupMilestone } from '../../startup/diagnostics/startup-diagnostics'
 import { applyProxyToElectronUpdaterSession } from './electron-updater-proxy-session'
 import { updaterErrorMessage } from './updater-coded-error'
@@ -45,36 +45,49 @@ type UpdaterSetupHooks = {
   updateInstallMode?: UpdateInstallMode
 }
 
-function buildUpdaterSetupOptions(store: Store, options?: UpdaterSetupHooks): UpdaterSetupOptions {
+function buildUpdaterSetupOptions(
+  nativeSettings: NativeSettingsProjection,
+  options?: UpdaterSetupHooks
+): UpdaterSetupOptions {
   return {
     getMainWindow: getTrustedUIRendererWindow,
-    getLastUpdateCheckAt: () => store.getUI().lastUpdateCheckAt,
+    getLastUpdateCheckAt: () => nativeSettings.getUI().lastUpdateCheckAt,
     onBeforeQuit: async () => {
       try {
         await options?.onBeforeUpdateQuit?.()
       } finally {
-        await store.flushPendingAsync()
+        await nativeSettings.requestCoreWrite({ kind: 'flush-pending' })
       }
     },
     setLastUpdateCheckAt: (timestamp) => {
-      store.updateUI({ lastUpdateCheckAt: timestamp })
+      void nativeSettings.requestCoreWrite({
+        kind: 'ui',
+        updates: { lastUpdateCheckAt: timestamp }
+      })
     },
-    getPendingUpdateNudgeId: () => store.getUI().pendingUpdateNudgeId ?? null,
-    getDismissedUpdateNudgeId: () => store.getUI().dismissedUpdateNudgeId ?? null,
+    getPendingUpdateNudgeId: () => nativeSettings.getUI().pendingUpdateNudgeId ?? null,
+    getDismissedUpdateNudgeId: () => nativeSettings.getUI().dismissedUpdateNudgeId ?? null,
     setPendingUpdateNudgeId: (id) => {
       // Applying a new campaign clears the hidden card; clearing a campaign must preserve dismissal.
       if (id) {
-        store.updateUI({ pendingUpdateNudgeId: id, dismissedUpdateVersion: null })
+        void nativeSettings.requestCoreWrite({
+          kind: 'ui',
+          updates: { pendingUpdateNudgeId: id, dismissedUpdateVersion: null }
+        })
       } else {
-        store.updateUI({ pendingUpdateNudgeId: null })
+        void nativeSettings.requestCoreWrite({
+          kind: 'ui',
+          updates: { pendingUpdateNudgeId: null }
+        })
       }
     },
     setDismissedUpdateNudgeId: (id) => {
-      store.updateUI({ dismissedUpdateNudgeId: id })
+      void nativeSettings.requestCoreWrite({ kind: 'ui', updates: { dismissedUpdateNudgeId: id } })
     },
-    getReleaseChannelOverride: () => store.getUI().releaseChannelOverride ?? null,
-    getUpdateDelayDays: () => normalizeUpdateDelayDays(store.getSettings().updateDelayDays),
-    getAutomaticUpdates: () => store.getSettings().automaticUpdates === true,
+    getReleaseChannelOverride: () => nativeSettings.getUI().releaseChannelOverride ?? null,
+    getUpdateDelayDays: () =>
+      normalizeUpdateDelayDays(nativeSettings.getSettings().updateDelayDays),
+    getAutomaticUpdates: () => nativeSettings.getSettings().automaticUpdates === true,
     onBeforeQuitFailure: options?.onBeforeUpdateQuitFailure,
     installMode: options?.updateInstallMode
   }
@@ -82,19 +95,22 @@ function buildUpdaterSetupOptions(store: Store, options?: UpdaterSetupHooks): Up
 
 function setupAutoUpdaterWithAppProxy(
   mainWindow: BrowserWindow | null,
-  store: Store,
+  nativeSettings: NativeSettingsProjection,
   options?: UpdaterSetupHooks
 ): void {
   // Starts synchronously, so the session request guard holds the first update check until it settles.
-  void applyProxyToElectronUpdaterSession(store.getSettings())
-  setupAutoUpdater(mainWindow, buildUpdaterSetupOptions(store, options))
+  void applyProxyToElectronUpdaterSession(nativeSettings.getSettings())
+  setupAutoUpdater(mainWindow, buildUpdaterSetupOptions(nativeSettings, options))
 }
 
 /** Headless serve has no window-driven setup; defer the slow require past readiness so remote updater support becomes available (#22261). */
-export function setupHeadlessServeAutoUpdater(store: Store, options: UpdaterSetupHooks): void {
+export function setupHeadlessServeAutoUpdater(
+  nativeSettings: NativeSettingsProjection,
+  options: UpdaterSetupHooks
+): void {
   setImmediate(() => {
     try {
-      setupAutoUpdaterWithAppProxy(null, store, options)
+      setupAutoUpdaterWithAppProxy(null, nativeSettings, options)
       logStartupMilestone('updater-setup-done')
     } catch (error) {
       console.warn(
@@ -107,7 +123,7 @@ export function setupHeadlessServeAutoUpdater(store: Store, options: UpdaterSetu
 
 export function scheduleMainWindowAutoUpdaterSetup(
   mainWindow: BrowserWindow,
-  store: Store,
+  nativeSettings: NativeSettingsProjection,
   options?: UpdaterSetupHooks
 ): void {
   // Cold Windows/Defender makes electron-updater require slow (#7225); defer past paint, with a timer for crash-looping renderers.
@@ -128,7 +144,7 @@ export function scheduleMainWindowAutoUpdaterSetup(
     }
     updaterSetupDone = true
     try {
-      setupAutoUpdaterWithAppProxy(mainWindow, store, options)
+      setupAutoUpdaterWithAppProxy(mainWindow, nativeSettings, options)
       logStartupMilestone('updater-setup-done')
     } finally {
       clearDeferredSetup()
@@ -146,7 +162,7 @@ export function scheduleMainWindowAutoUpdaterSetup(
   }
 }
 
-export function registerUpdaterHandlers(_store: Store): void {
+export function registerUpdaterHandlers(): void {
   ipcMain.removeHandler('updater:getStatus')
   ipcMain.removeHandler('updater:getVersion')
   ipcMain.removeHandler('updater:check')

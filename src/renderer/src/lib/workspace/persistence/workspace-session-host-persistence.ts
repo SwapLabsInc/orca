@@ -21,7 +21,6 @@ import {
   type HostSessionWriteMode,
   type WorktreeHostClaims
 } from './workspace-session-host-contention'
-
 import {
   contestedPartitionHosts,
   pickPrimaryHostForClaims
@@ -32,10 +31,7 @@ import {
   type HostSessionSlices,
   type HostIdByWorktreeId
 } from './workspace-session-host-split'
-import {
-  buildSleepingRecordOriginHosts,
-  type SleepingRecordOriginHosts
-} from './sleeping-record-origin-host'
+import * as sleepingOrigin from './sleeping-record-origin-host'
 import {
   indexWorkspaceRuntimeHostOwnership,
   type WorkspaceRuntimeOwnerProjection
@@ -54,6 +50,22 @@ import {
   type AcknowledgedWorkspaceSessionEntries
 } from './workspace-session-acknowledged-entries'
 import { patchHostSlice, routedSessionHostIds } from './workspace-session-host-entries-write'
+import {
+  afterDesktopRelayProbe,
+  probeDesktopRelays,
+  desktopRelayWriteFor,
+  replaceDesktopRelays,
+  type DesktopRelayApi
+} from './desktop-relay-writes'
+import {
+  planDesktopRelayWrite,
+  slicedHostIds,
+  setSnapshotsWithRelays,
+  settleSessionWrites,
+  type SessionWriteOutcome,
+  type SnapshotSetApi
+} from './desktop-relay-write-plan'
+import type { DesktopRelayWrite } from '../../../../../shared/workspace-session/desktop-relay-write'
 
 export type HostPersistenceState = WorkspaceTabOwnerCatalog & {
   repos: readonly Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>[]
@@ -72,28 +84,20 @@ export type HostPersistenceState = WorkspaceTabOwnerCatalog & {
   /** Partition each restored session key was read from. Routing honours it so a write returns rows
    *  to their own partition instead of re-deriving an owner the read never agreed to. */
   contestedPrimaryHostBySessionKey?: Record<string, ExecutionHostId>
-  /** Paired runtime environments this client knows. A sleeping record stamped with one of these ids
-   *  is a runtime capture, not an ssh target — see `sleepingRecordOriginHostId`. */
-  runtimeEnvironments?: readonly { id: string }[]
-  /** Configured ssh targets, keyed by target id. Only meaningful once `sshTargetsHydrated`. */
-  sshTargetLabels?: ReadonlyMap<string, string>
-  sshTargetsHydrated?: boolean
-}
+} & sleepingOrigin.OriginCatalogState
 
-export type SessionApi = {
+export type SessionApi = DesktopRelayApi & {
   get: (hostId?: ExecutionHostId) => Promise<WorkspaceSessionState>
   patch: (args: WorkspaceSessionPatch, hostId?: ExecutionHostId) => Promise<void>
   /** Absent on clients whose session store takes whole fields only (the paired web client). */
   patchEntries?: (
     args: WorkspaceSessionEntriesPatch,
-    hostId?: ExecutionHostId
+    hostId?: ExecutionHostId,
+    relays?: DesktopRelayWrite['hosts'][number]
   ) => Promise<WorkspaceSessionEntriesPatchResult>
 }
 
-type DurableSessionApi = SessionApi & {
-  set: (args: WorkspaceSessionState, hostId?: ExecutionHostId) => Promise<void>
-  flush: () => Promise<void>
-}
+type DurableSessionApi = SessionApi & SnapshotSetApi & { flush: () => Promise<void> }
 
 export type WorkspaceSessionHostSnapshot = {
   state: WorkspaceSessionState
@@ -136,10 +140,9 @@ function getFolderWorkspacePartitionHostId(
   return restoredHostId ?? LOCAL_EXECUTION_HOST_ID
 }
 
-export type HostSessionRouting = {
+export type HostSessionRouting = sleepingOrigin.OriginRouting & {
   hostIdByWorktreeId: HostIdByWorktreeId
   claims: WorktreeHostClaims
-  sleepingRecordOrigins: SleepingRecordOriginHosts
 }
 
 function buildRepoHostById(
@@ -225,11 +228,8 @@ export function buildHostSessionRouting(state: HostPersistenceState): HostSessio
     }
     return hostId
   }
-  return {
-    hostIdByWorktreeId,
-    claims,
-    sleepingRecordOrigins: buildSleepingRecordOriginHosts(state, runtimeHostIdByWorktreeId)
-  }
+  const routing = { hostIdByWorktreeId, claims }
+  return sleepingOrigin.withOriginHosts(routing, state, runtimeHostIdByWorktreeId)
 }
 
 export function buildHostIdByWorktreeId(state: HostPersistenceState): HostIdByWorktreeId {
@@ -283,24 +283,38 @@ export function patchWorkspaceSessionByHost(
   patch: WorkspaceSessionPatch,
   state: HostPersistenceState,
   acknowledged?: AcknowledgedWorkspaceSessionEntries
-): { localWrite: Promise<void>; written: Promise<void> } {
+): { localWrite: Promise<void>; written: Promise<SessionWriteOutcome | void> } {
+  const retry = () => patchWorkspaceSessionByHost(api, patch, state, acknowledged)
+  const afterProbe = afterDesktopRelayProbe(api, patch, retry)
+  if (afterProbe) {
+    return afterProbe
+  }
   const slices = splitWorkspaceSessionForWrite(patch as WorkspaceSessionState, state, 'patch')
+  const relays = desktopRelayWriteFor(api, patch, slices, state)
   acknowledged?.retainHosts(routedSessionHostIds(state, slices))
+  // A host's relay ids ride with its entries patch, so main publishes them together once.
+  const relayPlan =
+    relays &&
+    planDesktopRelayWrite(
+      api,
+      relays,
+      acknowledged && api.patchEntries ? slicedHostIds(slices) : new Set()
+    )
   const local = (slices[LOCAL_EXECUTION_HOST_ID] ?? patch) as WorkspaceSessionPatch
-  const localWrite = patchHostSlice(api, local, LOCAL_EXECUTION_HOST_ID, acknowledged)
+  const carriedLocal = relayPlan?.carried.get(LOCAL_EXECUTION_HOST_ID)
+  const localSlice = patchHostSlice(api, local, LOCAL_EXECUTION_HOST_ID, acknowledged, carriedLocal)
+  const localWrite = localSlice.then(() => {})
   const hostWrites = nonLocalHostSessionEntries(slices).map(([hostId, slice]) =>
-    patchHostSlice(api, slice, hostId, acknowledged).catch((err: unknown) => {
-      console.warn(`[session] host partition patch failed for ${hostId}:`, err)
-      throw err
-    })
+    patchHostSlice(api, slice, hostId, acknowledged, relayPlan?.carried.get(hostId)).catch(
+      (err: unknown) => {
+        console.warn(`[session] host partition patch failed for ${hostId}:`, err)
+        throw err
+      }
+    )
   )
-  // Why allSettled: every partition finishes before a retry rewrites the same fields.
-  const written = Promise.allSettled([localWrite, ...hostWrites]).then((results) => {
-    const failure = results.find((result) => result.status === 'rejected')
-    if (failure) {
-      throw failure.reason
-    }
-  })
+  // After the partition patches, so main applies relay ids to the rows they just wrote.
+  const separate = relayPlan?.sendRest()
+  const written = settleSessionWrites([localSlice, ...hostWrites, separate], relayPlan)
   // Why: a host failure must not surface as an unhandled rejection on the upload chain's promise.
   localWrite.catch(() => {})
   return { localWrite, written }
@@ -312,26 +326,32 @@ export async function persistWorkspaceSessionByHost(
   payload: WorkspaceSessionState,
   state: HostPersistenceState
 ): Promise<void> {
-  await Promise.all(
-    buildWorkspaceSessionHostSnapshots(payload, state).map((s) => api.set(s.state, s.hostId))
-  )
+  const separate = await probeDesktopRelays(api)
+  const { snapshots, desktopRelays } = buildWorkspaceSessionHostSnapshots(payload, state, separate)
+  await setSnapshotsWithRelays(api, snapshots, desktopRelays)
   await api.flush()
 }
 
-/** Build local-first full-session snapshots for the beforeunload / quit paths. */
+/** Build local-first full-session snapshots for the beforeunload / quit paths. With
+ *  `relaysSeparate`, the relay ids leave them for one write main applies by ownership. */
 export function buildWorkspaceSessionHostSnapshots(
   payload: WorkspaceSessionState,
-  state: HostPersistenceState
-): WorkspaceSessionHostSnapshot[] {
+  state: HostPersistenceState,
+  relaysSeparate = false
+): { snapshots: WorkspaceSessionHostSnapshot[]; desktopRelays: DesktopRelayWrite | null } {
   // Why 'replace': quit snapshots are applied as full partition sets.
   const slices = splitWorkspaceSessionForWrite(payload, state, 'replace')
+  const desktopRelays = relaysSeparate ? replaceDesktopRelays(slices, state) : null
   // They replace main's copy, including when the unload is vetoed and the window stays.
   windowAcknowledgedSessionEntries.forget()
-  return [
-    { state: slices[LOCAL_EXECUTION_HOST_ID] ?? payload },
-    ...nonLocalHostSessionEntries(slices).map(([hostId, hostState]) => ({
-      state: hostState,
-      hostId
-    }))
-  ]
+  return {
+    desktopRelays,
+    snapshots: [
+      { state: slices[LOCAL_EXECUTION_HOST_ID] ?? payload },
+      ...nonLocalHostSessionEntries(slices).map(([hostId, hostState]) => ({
+        state: hostState,
+        hostId
+      }))
+    ]
+  }
 }

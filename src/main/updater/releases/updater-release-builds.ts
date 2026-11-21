@@ -3,7 +3,6 @@ import {
   findInstallerAssetName,
   getReleaseRepoForChannel,
   getVersionChannel,
-  hasInstallableArtifactForPlatform,
   normalizeTagToVersion,
   sortReleaseBuildsNewestFirst,
   type ReleaseBuild,
@@ -23,7 +22,7 @@ import { isValidVersion } from './updater-fallback'
 import { rejectReleaseApiToken, resolveReleaseApiToken } from './updater-release-api-token'
 import { UpdaterCodedError } from '../lifecycle/updater-coded-error'
 import { getReleaseDownloadUrlForRepo } from '../../updater-release-urls'
-import { getMacSelfUpdateAssetNames } from '../../../shared/updater/mac-self-update-assets'
+import { hasInstallableArtifact } from './updater-release-installable-artifact'
 import { getMacSelfUpdateInstallerSourceFor } from '../mac-self-update/mac-self-update-activation'
 
 export { getReleaseDownloadUrlForRepo }
@@ -32,6 +31,8 @@ const FETCH_TIMEOUT_MS = 8000
 const MAX_LISTED_BUILDS = 100
 // Each release carries full notes and ~30 assets (~65 KB), so delay lookups page small and stop early.
 const DELAY_LOOKUP_PAGE_SIZE = 20
+// Atom, these pages and manifest probes share the 45 s update-check stall budget.
+const DELAY_LOOKUP_BUDGET_MS = 15_000
 const RETRY_AFTER_MAX_MS = 60 * 60_000
 
 type ReleasePage = { perPage: number; page: number }
@@ -40,14 +41,21 @@ function getReleasesApiUrl(repo: string, { perPage, page }: ReleasePage): string
   return `https://api.github.com/repos/${repo}/releases?per_page=${perPage}&page=${page}`
 }
 
-function fetchReleases(repo: string, token: string | null, page: ReleasePage): Promise<Response> {
+function fetchReleases(
+  repo: string,
+  token: string | null,
+  page: ReleasePage,
+  budget?: AbortSignal
+): Promise<Response> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
   return net.fetch(getReleasesApiUrl(repo, page), {
     headers,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    signal: budget
+      ? AbortSignal.any([AbortSignal.timeout(FETCH_TIMEOUT_MS), budget])
+      : AbortSignal.timeout(FETCH_TIMEOUT_MS)
   })
 }
 
@@ -149,33 +157,6 @@ function resolveReleaseVersion(tag: string, name: string, source: ReleaseSource)
   )
 }
 
-/**
- * LOCAL: on a build Orca's own installer updates, a release is installable once this slice's zip,
- * signed manifest and signature are all attached: the installer fetches each and nothing else, so
- * a release caught between uploads (or carrying only a DMG or a stray `latest-mac.yml`) would
- * fail on selection. A non-primary source's macOS release the installer does not apply to (a
- * build that can only install by hand, or another source's release) is installed by hand from
- * its DMG, and it publishes no `latest-mac.yml` that the platform rule could read. Everywhere
- * else the platform's electron-updater manifest decides.
- */
-function hasInstallableArtifact(
-  assetNames: readonly string[],
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-  source: ReleaseSource,
-  macSelfUpdateSource: ReleaseSource | null
-): boolean {
-  if (macSelfUpdateSource !== null) {
-    return getMacSelfUpdateAssetNames(macSelfUpdateSource, arch).every((name) =>
-      assetNames.includes(name)
-    )
-  }
-  if (platform === 'darwin' && source.prereleaseIdentifier !== null) {
-    return findInstallerAssetName(platform, assetNames, arch) !== null
-  }
-  return hasInstallableArtifactForPlatform(platform, assetNames)
-}
-
 function parseReleaseEntry(
   entry: GitHubReleaseEntry,
   repo: string,
@@ -241,7 +222,8 @@ async function fetchReleaseBuildsPage(
   channel: ReleaseChannel,
   platform: NodeJS.Platform,
   page: ReleasePage,
-  { source, arch, installerSource }: ReleaseListingScope
+  { source, arch, installerSource }: ReleaseListingScope,
+  budget?: AbortSignal
 ): Promise<{ builds: ReleaseBuild[]; isLastPage: boolean }> {
   const repo = getReleaseRepoForChannel(channel, source.id)
   // Skip a known-exhausted token bucket and try the separate per-IP quota.
@@ -251,19 +233,19 @@ async function fetchReleaseBuildsPage(
     getGhRateLimitBlockedUntilMs('core', Date.now(), credential.rateLimitScope) !== null
   const token = tokenBucketBlocked ? null : (credential?.token ?? null)
   let signedIn = credential !== null
-  let res = await fetchReleases(repo, token, page)
+  let res = await fetchReleases(repo, token, page, budget)
   if (token && res.status === 401) {
     // A rejected token must not prevent listing a public repo unauthenticated.
     rejectReleaseApiToken()
     signedIn = false
-    res = await fetchReleases(repo, null, page)
+    res = await fetchReleases(repo, null, page, budget)
   } else if (token && isRateLimited(res) && isPrimaryRateLimited(res)) {
     // The per-IP quota may still be available; mark the token bucket spent before retrying.
     const resetAtMs = rateLimitResetAtMs(res.headers, Date.now())
     if (resetAtMs !== null && credential) {
       recordGhPrimaryRateLimit('core', resetAtMs, credential.rateLimitScope)
     }
-    res = await fetchReleases(repo, null, page)
+    res = await fetchReleases(repo, null, page, budget)
   }
   if (!res.ok) {
     throw releaseListError(res, repo, channel, signedIn)
@@ -304,12 +286,14 @@ export async function listMainRepoReleaseBuildsUntil(
 ): Promise<ReleaseBuild[]> {
   const scope = await resolveReleaseListingScope(PRIMARY_RELEASE_SOURCE, process.arch)
   const builds: ReleaseBuild[] = []
+  const budget = AbortSignal.timeout(DELAY_LOOKUP_BUDGET_MS)
   for (let page = 1; page * DELAY_LOOKUP_PAGE_SIZE <= MAX_LISTED_BUILDS; page++) {
     const result = await fetchReleaseBuildsPage(
       'stable',
       platform,
       { perPage: DELAY_LOOKUP_PAGE_SIZE, page },
-      scope
+      scope,
+      budget
     )
     builds.push(...result.builds)
     if (result.isLastPage || hasEnough(builds)) {
