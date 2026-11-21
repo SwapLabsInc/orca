@@ -8,6 +8,16 @@ import {
 import type { HostPersistenceState } from './workspace-session-host-persistence'
 import { isWorkspaceSessionRecord } from '../../../../../shared/workspace-session/workspace-session-host-records'
 
+/** Catalog fields the origin id spaces are read from, carried on the persistence state. */
+export type OriginCatalogState = {
+  /** Paired runtime environments this client knows. A sleeping record stamped with one of these ids
+   *  is a runtime capture, not an ssh target — see `sleepingRecordOriginHostId`. */
+  runtimeEnvironments?: readonly { id: string }[]
+  /** Configured ssh targets, keyed by target id. Only meaningful once `sshTargetsHydrated`. */
+  sshTargetLabels?: ReadonlyMap<string, string>
+  sshTargetsHydrated?: boolean
+}
+
 /** The id spaces a sleeping record's own `connectionId` can be drawn from, so a reader can tell
  *  which one a given value came out of instead of assuming.
  *
@@ -18,6 +28,9 @@ export type SleepingRecordOriginHosts = {
   runtimeEnvironmentIds: ReadonlySet<string>
   sshTargetIds: ReadonlySet<string> | null
 }
+
+/** What a session routing carries so a write can route a sleeping record by its own capture. */
+export type OriginRouting = { sleepingRecordOrigins: SleepingRecordOriginHosts }
 
 /**
  * The host a sleeping record's own capture names, or null when this client cannot prove one.
@@ -104,5 +117,17 @@ export function buildSleepingRecordOriginHosts(
     // Why the hydration gate: an unloaded target list says nothing about an id, so `null` keeps it
     // distinguishable from a loaded list that genuinely does not hold the id.
     sshTargetIds: state.sshTargetsHydrated ? new Set(state.sshTargetLabels?.keys() ?? []) : null
+  }
+}
+
+/** `routing` plus the origin id spaces; keeps the routing builder within its line budget. */
+export function withOriginHosts<Routing extends object>(
+  routing: Routing,
+  state: HostPersistenceState,
+  runtimeHostIdByWorktreeId: ReadonlyMap<string, ExecutionHostId | null>
+): Routing & OriginRouting {
+  return {
+    ...routing,
+    sleepingRecordOrigins: buildSleepingRecordOriginHosts(state, runtimeHostIdByWorktreeId)
   }
 }

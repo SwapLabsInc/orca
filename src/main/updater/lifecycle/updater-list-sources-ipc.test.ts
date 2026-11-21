@@ -1,7 +1,6 @@
 // @orca-isolated-worker: this file's Electron mock omits BrowserWindow, which later shared files read.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent } from 'electron'
-import type { Store } from '../../persistence/loading-store/store'
 import type { ReleaseSourceStatus } from '../../../shared/updater/update-status-types'
 
 type InvokeHandler = (event: Partial<IpcMainInvokeEvent>, ...args: unknown[]) => unknown
@@ -92,8 +91,7 @@ function getHandler(): InvokeHandler {
 
 describe('updater:listSources IPC', () => {
   beforeAll(() => {
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the updater handlers never read the store argument.
-    registerUpdaterHandlers({} as Store)
+    registerUpdaterHandlers()
   })
 
   beforeEach(() => {
