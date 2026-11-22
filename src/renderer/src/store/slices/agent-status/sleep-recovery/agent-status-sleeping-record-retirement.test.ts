@@ -157,6 +157,53 @@ describe('sleeping record retirement on live status updates', () => {
     expect(store.getState().agentLaunchConfigByPaneKey).not.toHaveProperty('tab-1:leaf-1')
   })
 
+  // The same agent's new turn has no id yet, so the finished session is still the pane's handle.
+  it('keeps the launch config of a finished session while its launch starts a new turn', () => {
+    const store = createTestStore()
+    seedTab(store)
+    const launchToken = 'launch-token-1'
+    store.getState().setAgentStatus(
+      'tab-1:leaf-1',
+      { state: 'working', prompt: 'first task', agentType: 'codex' },
+      'Codex',
+      { updatedAt: 10, stateStartedAt: 10 },
+      { tabId: 'tab-1', worktreeId: 'wt-1' },
+      {
+        providerSession: { key: 'session_id', id: 'codex-session-1' },
+        launchToken,
+        launchConfig: { agentArgs: '--model gpt-5', agentEnv: { CODEX_PROFILE: 'captured' } }
+      }
+    )
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'done', prompt: 'first task', agentType: 'codex' },
+        'Codex',
+        { updatedAt: 20, stateStartedAt: 10 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { providerSession: { key: 'session_id', id: 'codex-session-1' }, launchToken }
+      )
+
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-1:leaf-1',
+        { state: 'working', prompt: 'manual task', agentType: 'codex' },
+        'Codex',
+        { updatedAt: 30, stateStartedAt: 30 },
+        { tabId: 'tab-1', worktreeId: 'wt-1' },
+        { launchToken }
+      )
+
+    expect(store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']).toMatchObject({
+      agent: 'codex',
+      providerSession: { key: 'session_id', id: 'codex-session-1' },
+      state: 'working',
+      launchConfig: { agentArgs: '--model gpt-5', agentEnv: { CODEX_PROFILE: 'captured' } }
+    })
+  })
+
   it('retires the record when the host states the pane is not resumable', () => {
     const store = createTestStore()
     seedTab(store)

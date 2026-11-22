@@ -10,6 +10,7 @@ type NetFetchResponse = {
 export function installNetRequestFetchAdapter(netRequestMock: Mock, netFetchMock: Mock): void {
   netRequestMock.mockImplementation(
     (options: { method?: string; redirect?: string; url: string }) => {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: abort and end are assigned on the lines that follow.
       const request = new EventEmitter() as EventEmitter & {
         abort: Mock
         end: Mock

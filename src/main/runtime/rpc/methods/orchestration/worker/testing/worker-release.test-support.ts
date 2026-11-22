@@ -147,11 +147,7 @@ export function createOrchestrationWorkerReleaseHarness(): OrchestrationWorkerRe
 
   function configureRuntime(): void {
     inspectProcessLiveness = vi.fn().mockResolvedValue('live')
-    ;(
-      runtime as unknown as {
-        inspectTerminalProcessIncarnationLiveness: typeof inspectProcessLiveness
-      }
-    ).inspectTerminalProcessIncarnationLiveness = inspectProcessLiveness
+    Reflect.set(runtime, 'inspectTerminalProcessIncarnationLiveness', inspectProcessLiveness)
     vi.spyOn(runtime, 'getTerminalPaneKey').mockImplementation((handle) =>
       handle === 'term_coord'
         ? coordinatorPaneKey
@@ -164,7 +160,8 @@ export function createOrchestrationWorkerReleaseHarness(): OrchestrationWorkerRe
     )
     vi.spyOn(runtime, 'getOrchestrationDispatchAuthority').mockImplementation((handle) =>
       handle === 'term_worker' || handle === 'term_reminted'
-        ? ({
+        ? // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: partial dispatch authority: the release path reads only these fields.
+          ({
             terminalHandle: handle,
             paneKey: workerPaneKey,
             processIncarnation: 'runtime_test:term_worker:1',
@@ -174,8 +171,10 @@ export function createOrchestrationWorkerReleaseHarness(): OrchestrationWorkerRe
     )
     vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
     vi.spyOn(runtime, 'showTerminal').mockImplementation(
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: partial terminal summary: the release path reads only these fields.
       async (handle) => ({ handle, worktreeId: 'repo::worktree', status: 'running' }) as never
     )
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: partial workspace result: the release path reads only its id.
     vi.spyOn(runtime, 'showManagedTerminalWorkspace').mockResolvedValue({
       id: 'repo::worktree'
     } as never)
@@ -206,6 +205,7 @@ export function createOrchestrationWorkerReleaseHarness(): OrchestrationWorkerRe
       truncated: false,
       nextCursor: '2'
     })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: partial close result: the release path reads only these fields.
     vi.spyOn(runtime, 'closeTerminal').mockResolvedValue({
       handle: 'term_worker',
       tabId: 'tab-worker',

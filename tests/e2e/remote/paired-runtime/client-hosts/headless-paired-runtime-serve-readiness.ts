@@ -70,13 +70,14 @@ export function parseHeadlessPairedRuntimePairingOffer(
 ): RuntimeDesktopPairingOffer | null {
   let parsed: unknown
   try {
-    parsed = JSON.parse(line) as unknown
+    parsed = JSON.parse(line)
   } catch {
     return null
   }
   if (parsed === null || typeof parsed !== 'object') {
     return null
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: narrowed to a non-null object above, and every field is checked before use.
   const readiness = parsed as ServeReady
   const pairing = readiness.pairing
   if (
@@ -95,6 +96,7 @@ export function parseHeadlessPairedRuntimePairingOffer(
 /** True for the `orca_server_ready` line, whether or not it carries a pairing offer. */
 export function isHeadlessPairedRuntimeServeReadyLine(line: string): boolean {
   try {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a JSON line of the serve process: only its type tag is read.
     return (JSON.parse(line) as ServeReady | null)?.type === 'orca_server_ready'
   } catch {
     return false

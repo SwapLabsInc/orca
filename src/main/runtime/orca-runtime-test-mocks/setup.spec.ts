@@ -1,7 +1,7 @@
 export * from './github-hosted-review-test-harness'
 export * from './gitlab-test-harness'
 import type * as WorktreeScanCacheModule from '../../git/worktrees/catalog/worktree-scan-cache'
-import { beforeEach, vi, type Mock } from 'vitest'
+import { vi, type Mock } from 'vitest'
 
 import type * as GitUsernameModule from '../../git/repositories/git-username'
 import './repo-creation.spec'
@@ -13,12 +13,6 @@ export const ORIGIN_REMOTE_URL = 'git@example.com:group/repo.git'
 export const ORIGIN_HEAD_COMPONENT = reviewHeadRemoteRefComponent('origin', ORIGIN_REMOTE_URL)
 import type { OrcaRuntimeService as OrcaRuntimeServiceConstructor } from '../orca-runtime'
 import { setWorktreeWatcherRemoval } from '../../workspaces/removal/worktree-watcher-removal'
-import { _resetWorktreeCatalogOwnerForTests } from '../../workspaces/catalog/repo-worktree-catalog-owner'
-
-// Each runtime case once had private scan caches; the process-wide catalog owner starts unobserved instead.
-beforeEach(() => {
-  _resetWorktreeCatalogOwnerForTests()
-})
 
 type TestMock = Mock
 
@@ -156,20 +150,34 @@ const {
         isMainWorktree: false
       }
     ],
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addSparseWorktreeMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addWorktreeMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     removeWorktreeMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     forceDeleteLocalBranchMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     computeWorktreePathMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     ensurePathWithinWorkspaceMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     invalidateAuthorizedRootsCacheMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     prepareLocalWorktreeRootForRepoMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     applyAgentStatusHooksEnabledMock: vi.fn() as TestMock,
     detectAgentCommandsOnHostMock: vi.fn(async () => new Set(['qodercli'])),
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     detectInstalledAgentsWithShellPathHydrationMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     markCodexProjectTrustedMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     markCopilotFolderTrustedMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     markCursorWorkspaceTrustedMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     deleteWorktreeHistoryDirMock: vi.fn() as TestMock
   }
 })
@@ -330,6 +338,7 @@ vi.mock('../../workspace-hooks/effective-hook-config', () => ({
 }))
 
 vi.mock('../../ipc/worktrees/paths/worktree-logic', async (importOriginal) => {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: importOriginal resolves to the module namespace, spread unchanged into the mock.
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
     ...actual,

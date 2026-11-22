@@ -82,7 +82,7 @@ function CheckForUpdatesButton({
   )
 }
 
-function DownloadUpdateButton({ version }: { version: string }): React.JSX.Element {
+function DownloadUpdateButton(): React.JSX.Element {
   const t = useTranslate()
   return (
     <Button
@@ -101,18 +101,15 @@ function DownloadUpdateButton({ version }: { version: string }): React.JSX.Eleme
       }}
     >
       <Download className="size-3.5" />
-      {t('auto.components.settings.GeneralUpdateSettingsSection.857ca887da', 'Download update (')}
-      {version})
+      {t('auto.components.settings.GeneralUpdateSettingsSection.downloadUpdate', 'Download update')}
     </Button>
   )
 }
 
 function RestartToUpdateButton({
-  version,
   installing,
   onRestart
 }: {
-  version: string
   installing?: boolean
   onRestart: () => void
 }): React.JSX.Element {
@@ -120,8 +117,10 @@ function RestartToUpdateButton({
   return (
     <Button variant="default" size="sm" onClick={onRestart} disabled={installing}>
       <Download className="size-3.5" />
-      {t('auto.components.settings.GeneralUpdateSettingsSection.c0a8f827c7', 'Restart to update (')}
-      {version})
+      {t(
+        'auto.components.settings.GeneralUpdateSettingsSection.restartToUpdate',
+        'Restart to update'
+      )}
     </Button>
   )
 }
@@ -242,7 +241,6 @@ export function GeneralUpdateSettingsSection({
               />
               {updateStatus.state === 'downloaded' && !automaticInstall ? (
                 <RestartToUpdateButton
-                  version={updateStatus.version}
                   installing={updateStatus.installing}
                   onRestart={handleRestartToUpdate}
                 />
@@ -251,7 +249,7 @@ export function GeneralUpdateSettingsSection({
               ) : localBuildOffered && updateStatus.state === 'available' ? (
                 // Why: a local build (Option-click on macOS) is no source's release, so it keeps
                 // the generic action instead of wearing a source button's label.
-                <DownloadUpdateButton version={updateStatus.version} />
+                <DownloadUpdateButton />
               ) : null}
               <ReleaseSourceDownloadButtons
                 sources={releaseSources.sources}
@@ -267,12 +265,11 @@ export function GeneralUpdateSettingsSection({
               <CheckForUpdatesButton updateStatus={updateStatus} onCheck={handleCheck} />
 
               {updateStatus.state === 'available' && !updateStatus.externallyManaged ? (
-                <DownloadUpdateButton version={updateStatus.version} />
+                <DownloadUpdateButton />
               ) : installRetryOffered ? (
                 <RetryInstallButton onRetry={handleRestartToUpdate} />
               ) : updateStatus.state === 'downloaded' && !automaticInstall ? (
                 <RestartToUpdateButton
-                  version={updateStatus.version}
                   installing={updateStatus.installing}
                   onRestart={handleRestartToUpdate}
                 />
@@ -333,24 +330,24 @@ function SingleSourceUpdateHint({
         )}
       {updateStatus.state === 'available' && (
         <>
-          {t('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
-          {updateStatus.version}{' '}
           {updateStatus.externallyManaged
             ? t(
-                'auto.components.settings.GeneralUpdateSettingsSection.e3b9d21c07',
-                'is available. Update Orca through your system package manager — Orca cannot install this release itself.'
+                'auto.components.settings.GeneralUpdateSettingsSection.externallyManagedVersionAvailable',
+                'Version {{version}} is available. Update Orca through your system package manager — Orca cannot install this release itself.',
+                { version: updateStatus.version }
               )
             : t(
-                'auto.components.settings.GeneralUpdateSettingsSection.8311da27ba',
-                'is available.'
-              )}{' '}
+                'auto.components.settings.GeneralUpdateSettingsSection.versionAvailable',
+                'Version {{version}} is available.',
+                { version: updateStatus.version }
+              )}
           {updateStatus.source !== 'local' && (
             <a
               href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
               target="_blank"
               onClick={openAppHttpLinkFromAnchor}
               rel="noopener noreferrer"
-              className="underline hover:text-foreground"
+              className="ms-1 whitespace-nowrap underline hover:text-foreground"
             >
               {t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
@@ -373,27 +370,30 @@ function SingleSourceUpdateHint({
         ))}
       {updateStatus.state === 'downloading' &&
         t(
-          'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',
-          'Downloading v{{value0}}... {{value1}}%',
-          { value0: updateStatus.version, value1: updateStatus.percent }
+          'auto.components.settings.GeneralUpdateSettingsSection.downloadingVersion',
+          'Downloading version {{version}} ({{percent}}%)…',
+          { version: updateStatus.version, percent: updateStatus.percent }
         )}
       {updateStatus.state === 'downloaded' && (
         <>
-          {t('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
-          {updateStatus.version}{' '}
           {updateStatus.installing
-            ? t('settings.automaticUpdates.installingStatus', 'is being installed.')
+            ? t(
+                'auto.components.settings.GeneralUpdateSettingsSection.versionInstalling',
+                'Version {{version}} is being installed.',
+                { version: updateStatus.version }
+              )
             : t(
-                'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
-                'is ready to install.'
-              )}{' '}
+                'auto.components.settings.GeneralUpdateSettingsSection.versionReadyToInstall',
+                'Version {{version}} is ready to install.',
+                { version: updateStatus.version }
+              )}
           {updateStatus.source !== 'local' && (
             <a
               href={updateStatus.releaseUrl ?? getReleaseNotesUrlForVersion(updateStatus.version)}
               target="_blank"
               onClick={openAppHttpLinkFromAnchor}
               rel="noopener noreferrer"
-              className="underline hover:text-foreground"
+              className="ms-1 whitespace-nowrap underline hover:text-foreground"
             >
               {t(
                 'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',

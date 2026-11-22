@@ -48,6 +48,7 @@ export async function installTerminalTestGlobals(): Promise<void> {
   const actual = await import('@/hooks/ipc-events/agent-status/agent-status-startup-snapshot')
   resetStatusSnapshot = actual.registerAgentStatusStartupSnapshot()
   resetStatusSnapshot.settle()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: installs the minimal window global the renderer modules under test read.
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
       ssh: {
@@ -148,22 +149,27 @@ export async function restoreTerminalTestGlobals(): Promise<void> {
   if (originalRequestAnimationFrame) {
     globalThis.requestAnimationFrame = originalRequestAnimationFrame
   } else {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: removes a global this fixture installed.
     delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame })
       .requestAnimationFrame
   }
   if (originalCancelAnimationFrame) {
     globalThis.cancelAnimationFrame = originalCancelAnimationFrame
   } else {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: removes a global this fixture installed.
     delete (globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame })
       .cancelAnimationFrame
   }
   if (originalDocument) {
     globalThis.document = originalDocument
   } else {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: removes a global this fixture installed.
     delete (globalThis as { document?: Document }).document
   }
   // Late reattach continuations can outlive teardown; keep an inert window like a real renderer until the next test installs its replacement (orca#14728).
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: installs the minimal window global the renderer modules under test read.
   ;(globalThis as unknown as { window?: unknown }).window = { api: createInertApi() }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: removes a debug global a test may have set.
   delete (globalThis as Record<string, unknown>).__ptyConnectDiag
   if (freshModulesLoaded) {
     // Later tests must not reuse a graph evaluated for this one.
@@ -174,52 +180,18 @@ export async function restoreTerminalTestGlobals(): Promise<void> {
 
 /** Suites that skip resetModules share one module graph; import the live instances and clear what tests leave behind. */
 async function resetSharedTerminalModuleState(): Promise<void> {
-  const [
-    outputQueue,
-    startupDelivery,
-    startupDeliveryGuards,
-    hookCommandDelivery,
-    completionIdentity,
-    commandCodeDoneSettle,
-    processInspection,
-    rendererOwnedStatus,
-    deliveryClaims,
-    sideEffectFacts,
-    hiddenOutputRestore,
-    attentionSubscriptions,
-    paneRecovery
-  ] = await Promise.all([
+  const [outputQueue, hookCommandDelivery, completionIdentity] = await Promise.all([
     import('@/lib/pane-manager/terminal-output/pane-terminal-output-queue-registry'),
-    import('@/lib/agent-session/launch/startup/agent-startup-delayed-delivery'),
-    import('@/lib/agent-session/launch/startup/agent-startup-delivery-guards'),
     import('@/lib/workspace/creation/setup/hook-command-delayed-delivery'),
-    import('../../agent-completion/agent-completion-identity-store'),
-    import('../../agent-completion/command-code/command-code-done-settle'),
-    import('../../agent-completion/process-inspection/agent-process-inspection-queue'),
-    import('../../agent-status/renderer-owned-agent-status-registry'),
-    import('../../pty-transport/delivery/pty-renderer-delivery-claims'),
-    import('../../pty-transport/output/terminal-side-effect-facts-handler'),
-    import('../output-restore/hidden-output-restore-scheduler'),
-    import('../../titles/terminal-pane-attention-subscriptions'),
-    import('../../render-health/recovery/terminal-pane-recovery')
+    import('../../agent-completion/agent-completion-identity-store')
   ])
   for (const terminal of Array.from(outputQueue.queuedByTerminal.keys())) {
     outputQueue.discardTerminalOutput(terminal)
   }
   // A drain armed under abandoned fake timers never fires; any armed delay is >= 0, so this clears it and the empty queue arms nothing new.
   outputQueue.scheduleDrain(-1)
-  startupDelivery.resetAgentStartupDelayedDeliveryForTests()
-  startupDeliveryGuards.clearConsumedAgentStartupDeliveriesForTests()
   hookCommandDelivery.resetHookCommandDelayedDeliveryForTests()
   completionIdentity.resetAgentCompletionIdentityStoreForTest()
-  commandCodeDoneSettle._resetCommandCodeDoneSettlesForTest()
-  processInspection.resetAgentProcessInspectionQueueForTests()
-  rendererOwnedStatus.resetRendererOwnedAgentStatusPanesForTests()
-  deliveryClaims._resetPtyRendererDeliveryClaimsForTest()
-  sideEffectFacts._resetTerminalSideEffectFactConsumersForTest()
-  hiddenOutputRestore.resetHiddenOutputRestoreSchedulerForTests()
-  attentionSubscriptions.resetTerminalPaneAttentionSubscriptionsForTests()
-  paneRecovery._resetTerminalPaneRecoveryForTests()
 }
 
 /** Any property resolves to another inert callable; any call resolves to undefined. */

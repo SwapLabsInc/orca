@@ -5,7 +5,7 @@
 5 src/renderer/src/components/automations/external/use-external-automation-actions.ts
 1 src/renderer/src/components/diff-comments/useDiffCommentDecorator.tsx
 2 src/renderer/src/components/editor/markdown-preview/render-tree/use-markdown-preview-components.tsx
-21 src/renderer/src/components/settings/updates/ReleaseSourceUpdateControls.tsx # fork #14, predates this ratchet
+16 src/renderer/src/components/settings/updates/ReleaseSourceUpdateControls.tsx # fork #14, predates this ratchet
 9 src/renderer/src/components/sidebar/teamclaude-leaderboard/TeamClaudeLeaderboardBoard.tsx # fork leaderboard, predates this ratchet
 2 src/renderer/src/components/sidebar/teamclaude-leaderboard/TeamClaudeLeaderboardMedal.tsx # fork leaderboard, predates this ratchet
 2 src/renderer/src/components/sidebar/teamclaude-leaderboard/TeamClaudeLeaderboardPanel.tsx # fork leaderboard, predates this ratchet

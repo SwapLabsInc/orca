@@ -41,7 +41,7 @@ function ReleaseNotesLink({ version }: { version: string }): React.JSX.Element {
       target="_blank"
       onClick={openAppHttpLinkFromAnchor}
       rel="noopener noreferrer"
-      className="underline hover:text-foreground"
+      className="ms-1 whitespace-nowrap underline hover:text-foreground"
     >
       {translate(
         'auto.components.settings.GeneralUpdateSettingsSection.8a52ca1d02',
@@ -321,17 +321,17 @@ export function ReleaseSourceUpdateHint({
     case 'available':
       return (
         <>
-          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
-          {updateStatus.version} ({label}){' '}
           {updateStatus.externallyManaged
-            ? translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.e3b9d21c07',
-                'is available. Update Orca through your system package manager — Orca cannot install this release itself.'
+            ? t(
+                'auto.components.settings.GeneralUpdateSettingsSection.externallyManagedVersionAvailable',
+                'Version {{version}} is available. Update Orca through your system package manager — Orca cannot install this release itself.',
+                { version: `${updateStatus.version} (${label})` }
               )
-            : translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.isAvailable',
-                'is available.'
-              )}{' '}
+            : t(
+                'auto.components.settings.GeneralUpdateSettingsSection.versionAvailable',
+                'Version {{version}} is available.',
+                { version: `${updateStatus.version} (${label})` }
+              )}
           {updateStatus.source !== 'local' && <ReleaseNotesLink version={updateStatus.version} />}
         </>
       )
@@ -348,14 +348,17 @@ export function ReleaseSourceUpdateHint({
     case 'downloaded':
       return (
         <>
-          {translate('auto.components.settings.GeneralUpdateSettingsSection.a6b37929dc', 'Version')}{' '}
-          {updateStatus.version} ({label}){' '}
           {updateStatus.installing
-            ? t('settings.automaticUpdates.installingStatus', 'is being installed.')
-            : translate(
-                'auto.components.settings.GeneralUpdateSettingsSection.d89806cc89',
-                'is ready to install.'
-              )}{' '}
+            ? t(
+                'auto.components.settings.GeneralUpdateSettingsSection.versionInstalling',
+                'Version {{version}} is being installed.',
+                { version: `${updateStatus.version} (${label})` }
+              )
+            : t(
+                'auto.components.settings.GeneralUpdateSettingsSection.versionReadyToInstall',
+                'Version {{version}} is ready to install.',
+                { version: `${updateStatus.version} (${label})` }
+              )}
           {updateStatus.source !== 'local' && <ReleaseNotesLink version={updateStatus.version} />}
         </>
       )
