@@ -209,7 +209,7 @@ it('disables every source button while checking and downloading', async () => {
 
   setStatus({ state: 'downloaded', version: '1.4.198', releaseSource: 'upstream' })
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Restart to update (1.4.198)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Restart to update' })).toBeTruthy()
   )
   expect(screen.getByText(/1\.4\.198 \(Orca upstream\) is ready to install\./)).toBeTruthy()
   expect(upstreamButton().disabled).toBe(true)
@@ -324,7 +324,7 @@ it('keeps a local-build offer out of the source buttons', async () => {
 
   setStatus({ state: 'available', version: '0.9.0-local.1', changelog: null, source: 'local' })
   const button = await screen.findByRole<HTMLButtonElement>('button', {
-    name: 'Download update (0.9.0-local.1)'
+    name: 'Download update'
   })
   expect(screen.queryByRole('button', { name: /0\.9\.0-local\.1 \(SwapLabs\)/ })).toBeNull()
   expect(forkButton().disabled).toBe(true)
@@ -335,7 +335,9 @@ it('keeps a local-build offer out of the source buttons', async () => {
   expect(check).not.toHaveBeenCalled()
 
   setStatus({ state: 'downloading', percent: 42, version: '0.9.0-local.1', source: 'local' })
-  await waitFor(() => expect(screen.getByText('Downloading v0.9.0-local.1... 42%')).toBeTruthy())
+  await waitFor(() =>
+    expect(screen.getByText('Downloading version 0.9.0-local.1 (42%)…')).toBeTruthy()
+  )
   expect(upstreamButton().disabled).toBe(true)
 })
 

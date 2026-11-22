@@ -1,4 +1,4 @@
-import { AgentHookServerTabCleanup } from './server-tab-cleanup'
+import { AgentHookServerMarkedExitProof } from './server-marked-exit-proof'
 import {
   isResumableIdentityRow,
   readStatusRowsForUpdate,
@@ -24,7 +24,7 @@ import {
 import { parseHookEnvelope } from '../../../shared/agent-hook-listener/hook-envelope'
 import { readClaudeUserEndedSessionId } from '../../../shared/agent-hook-listener/providers/claude/lifecycle/claude-session-end'
 
-export abstract class AgentHookServerTerminalLossResume extends AgentHookServerTabCleanup {
+export abstract class AgentHookServerTerminalLossResume extends AgentHookServerMarkedExitProof {
   /** The agent session the execution host may resume when it re-creates `paneKey`'s terminal. */
   selectTerminalLossResume(
     paneKey: string,

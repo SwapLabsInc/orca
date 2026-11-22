@@ -72,6 +72,6 @@ it('disables the multi-source restart button during preparation', () => {
   })
   render(<GeneralUpdateSettingsSection />)
 
-  const button = screen.getByRole('button', { name: `Restart to update (${STAGED_VERSION})` })
+  const button = screen.getByRole('button', { name: 'Restart to update' })
   expect(button.hasAttribute('disabled')).toBe(true)
 })

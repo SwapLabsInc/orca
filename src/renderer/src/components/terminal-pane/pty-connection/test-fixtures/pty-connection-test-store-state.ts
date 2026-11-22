@@ -146,6 +146,7 @@ export function resolveMockPaneWindowsShiftEnterEncoding(
     {
       paneForegroundAgentByPaneKey: state.paneForegroundAgentByPaneKey,
       agentLaunchConfigByPaneKey:
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the test store holds the same launch-config map under a wider declared type.
         state.agentLaunchConfigByPaneKey as WindowsShiftEnterPaneState['agentLaunchConfigByPaneKey']
     },
     paneKey

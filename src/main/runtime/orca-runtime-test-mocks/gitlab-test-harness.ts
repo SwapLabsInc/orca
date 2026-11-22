@@ -30,33 +30,56 @@ const {
   updateGitLabMRReviewersMock
 } = vi.hoisted(() => {
   return {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitLabMergeRequestsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitLabWorkItemsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitLabIssuesMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitLabLabelsMock: vi.fn() as TestMock,
     listGitLabAssignableUsersMock: vi.fn<TestMock>(),
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitLabTodosMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitLabProjectRefForRemoteMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitLabWorkItemByProjectRefMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     createGitLabIssueMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitLabIssueMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitLabIssueCommentMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitLabMRCommentMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitLabMRInlineCommentMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     resolveGitLabMRDiscussionMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitLabJobTraceMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     retryGitLabJobMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     mergeGitLabMRMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     closeGitLabMRMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     reopenGitLabMRMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitLabMRMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGlabKnownHostsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitLabWorkItemDetailsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitLabMRReviewersMock: vi.fn() as TestMock
   }
 })
 
 vi.mock('../../gitlab/work-items/work-item-details', async (importOriginal) => {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: importOriginal resolves to the module namespace, spread unchanged into the mock.
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
     ...actual,

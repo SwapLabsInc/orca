@@ -157,10 +157,12 @@ function setInMemoryOrchestrationMessages(
   runtime: RuntimeService,
   db: InMemoryOrchestrationMessages
 ): void {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the in-memory message store stands in for the SQLite OrchestrationDb in runtime tests.
   runtime.setOrchestrationDb(db as unknown as OrchestrationDb)
 }
 
 function pendingMailPointerRepoints(runtime: RuntimeService): number {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: test access to the private runtime fields this harness seeds.
   const internals = runtime as unknown as {
     mailPointerRepointScheduler: { pendingCount: number }
   }
@@ -338,6 +340,7 @@ const store = {
   mergeRetiredWorktreeNames: () => false,
   addRepo: () => {},
   updateRepo: ({ id }: { id: string }, updates: Record<string, unknown>) =>
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: store test double: returns the merged repo record without the full Repo shape.
     ({
       ...store.getRepo(id),
       ...updates
@@ -360,13 +363,16 @@ const store = {
   }),
   getWorktreeMeta: (worktreeId: string) => store.getAllWorktreeMeta()[worktreeId],
   setWorktreeMeta: (_target: HostWorktreeTarget, meta: Record<string, unknown>) =>
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: store test double: returns the merged worktree meta without the full shape.
     ({
       ...store.getAllWorktreeMeta()[TEST_WORKTREE_ID],
       ...meta
     }) as never,
   removeWorktreeMeta: () => {},
   getSparsePresets: () => [],
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: store test double: runtime tests never read this result.
   saveSparsePreset: (preset: unknown) => preset as never,
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: store test double: runtime tests never read this result.
   getGitHubCache: () => undefined as never,
   getSettings: () => ({
     workspaceDir: '/tmp/workspaces',

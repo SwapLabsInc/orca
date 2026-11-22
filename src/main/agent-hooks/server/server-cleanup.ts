@@ -21,8 +21,9 @@ import { endedPresenceOf } from './agent-exit-evidence'
 export type EndedProcessReconciliationOptions = {
   /** The owner's process, marked ended: its own exit hook, or a probe that found it gone. */
   endedPresence?: AgentProcessPresence
-  /** The pane's shell is back: a process-less owner ended. */
-  confirmedExit?: boolean
+  /** The pane's shell is back: a process-less owner ended. 'proven' when the host's process
+   *  table found the shell alone, not only a command mark standing. */
+  confirmedExit?: boolean | 'proven'
   /** The pane's PTY outlived its agent (a confirmed shell foreground): keep the identity for a
    *  manual resume, never an automatic one. Without it the PTY itself ended, which a paired
    *  host re-creates, so the identity stays resumable. */
@@ -111,7 +112,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerRetainedPane
   protected reconcileEndedProcess(
     paneKeys: Iterable<string>,
     options: EndedProcessReconciliationOptions | undefined,
-    clearPane: (paneKey: string, endedPresence: AgentProcessPresence | undefined) => true | void
+    clearPane: (paneKey: string, endedPresence?: AgentProcessPresence) => true | void
   ): { cleared: number; untouched: string[] } {
     const untouched: string[] = []
     let cleared = 0

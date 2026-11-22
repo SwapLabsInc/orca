@@ -92,8 +92,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, vi, type MockInstance } fro
 import { initOrcaProfilePaths } from '../../../orca-profiles/profile-storage-paths'
 import { stopStructuredAgentSessionRuntime } from '../../agent-session/installation/structured-agent-session-runtime'
 import { assertWorktreeCleanForRemoval } from '../../../git/worktrees/removal/worktree-removal-preflight'
-import { __cancelLegacyWorkerTerminalRecoveryRetriesForTests as cancelLegacyWorkerTerminalRecoveryRetriesForTests } from '../../orchestration/terminal-authority/runtime-legacy-worker-terminal-recovery-controller'
-import { clearConfiguredWorktreeSharedDirectoriesCacheForTests } from '../../../git/worktrees/content-paths/worktree-shared-directories'
 import {
   createSetupRunnerScript,
   resolveSetupRunnerShell
@@ -127,19 +125,12 @@ import { OrcaRuntimeService as runtimeMockOrcaRuntimeService } from '../../orca-
 import * as worktreeChangeInvalidators from '../../../ipc/worktrees/listing/worktree-change-invalidators'
 import { awaitBackgroundRemovalsInRuntimeTests } from '../../workspaces/removal/orca-runtime-background-removal-test-support'
 import { commitFakeSpawnsInRuntimeTests } from '../../terminal/layout/bind-first-pane.test-fixture'
-import {
-  _resetPendingWorktreeRemovalsForTests,
-  _settlePendingWorktreeRemovalsForTests
-} from '../../../workspaces/removal/worktree-background-removal'
-import { _resetCanonicalRepoKeyCacheForTests } from '../../../git/repositories/canonical-repo-key'
 import { setWorktreeRemovalRecordsDirectory } from '../../../workspaces/removal/worktree-removal-table'
 
 awaitBackgroundRemovalsInRuntimeTests(runtimeMockOrcaRuntimeService.prototype)
 commitFakeSpawnsInRuntimeTests(runtimeMockOrcaRuntimeService.prototype)
 
 function resetRuntimeTestMocks(): void {
-  _resetCanonicalRepoKeyCacheForTests()
-  _resetPendingWorktreeRemovalsForTests()
   setWorktreeRemovalRecordsDirectory(removalRecordsDirectory)
   // Chromium commands install only at Electron entry; Node hosts must refuse browser RPCs without them.
   setRuntimeBrowserCommandsFactory((host) => new RuntimeBrowserCommands(host), {
@@ -165,8 +156,6 @@ function resetRuntimeTestMocks(): void {
   })
   initOrcaProfilePaths()
   // Deferred worker recovery re-arms forever; cancel it before shared git stubs leak across cases.
-  cancelLegacyWorkerTerminalRecoveryRetriesForTests()
-  clearConfiguredWorktreeSharedDirectoriesCacheForTests()
   _resetTerminalViewAttributesForTest()
   advertisedUrlWatcher.clear()
   electronMocks.BrowserWindow.fromId.mockReset()
@@ -395,21 +384,17 @@ beforeEach(() => {
   resetRuntimeTestMocks()
   registrationSpy = vi.spyOn(worktreeChangeInvalidators, 'registerWorktreeChangeInvalidator')
 })
-afterEach(async () => {
+afterEach(() => {
   try {
-    await _settlePendingWorktreeRemovalsForTests()
-  } finally {
-    try {
-      for (const result of registrationSpy?.mock.results ?? []) {
-        if (result.type === 'return') {
-          result.value()
-        }
+    for (const result of registrationSpy?.mock.results ?? []) {
+      if (result.type === 'return') {
+        result.value()
       }
-    } finally {
-      registrationSpy?.mockRestore()
-      registrationSpy = undefined
-      resetRuntimeTestMocks()
     }
+  } finally {
+    registrationSpy?.mockRestore()
+    registrationSpy = undefined
+    resetRuntimeTestMocks()
   }
 })
 

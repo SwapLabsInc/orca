@@ -70,44 +70,81 @@ const {
   getIssueMock
 } = vi.hoisted(() => {
   return {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     createHostedReviewMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     createStackedHostedReviewMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getHostedReviewCreationEligibilityMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getHostedReviewForBranchMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getPRForBranchMock: vi.fn().mockResolvedValue(null) as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getPRForBranchOutcomeMock: vi
       .fn()
       .mockResolvedValue({ kind: 'no-pr', fetchedAt: 0 }) as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getRepoSlugMock: vi.fn().mockResolvedValue(null) as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getRepoUpstreamMock: vi.fn().mockResolvedValue(null) as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubWorkItemMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getPullRequestPushTargetMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubWorkItemByOwnerRepoMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubWorkItemDetailsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubPRFileContentsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubPRChecksMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     rerunGitHubPRChecksMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubPRCheckDetailsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getGitHubPRCommentsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     resolveGitHubReviewThreadMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     setGitHubPRFileViewedMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitHubPRTitleMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitHubPRDetailsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     mergeGitHubPRMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     setGitHubPRAutoMergeMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitHubPRStateMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     requestGitHubPRReviewersMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     removeGitHubPRReviewersMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitHubPRReviewCommentMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitHubPRReviewCommentReplyMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitHubIssuesMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitHubWorkItemsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     countGitHubWorkItemsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     createGitHubIssueMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     updateGitHubIssueMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     addGitHubIssueCommentMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitHubLabelsMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     listGitHubAssignableUsersMock: vi.fn() as TestMock,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: names the hoisted mock's type; the inferred one is not portable (TS2883).
     getIssueMock: vi.fn() as TestMock
   }
 })

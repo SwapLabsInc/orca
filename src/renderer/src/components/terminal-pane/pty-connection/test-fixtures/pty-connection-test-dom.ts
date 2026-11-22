@@ -41,6 +41,7 @@ export function createKeyboardEventTarget() {
           _options?: AddEventListenerOptions | boolean
         ) => {
           if (type === 'keydown' && typeof handler === 'function') {
+            // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: guarded to a function registered for 'keydown'.
             handlers.add(handler as (event: KeyboardEvent) => void)
           }
         }
@@ -52,6 +53,7 @@ export function createKeyboardEventTarget() {
           _options?: EventListenerOptions | boolean
         ) => {
           if (type === 'keydown' && typeof handler === 'function') {
+            // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: guarded to a function registered for 'keydown'.
             handlers.delete(handler as (event: KeyboardEvent) => void)
           }
         }
@@ -66,6 +68,7 @@ export function createKeyboardEventTarget() {
 }
 
 export function keyEvent(overrides: Partial<KeyboardEvent>): KeyboardEvent {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: partial KeyboardEvent: the handlers under test read only these fields.
   return {
     key: '',
     ctrlKey: false,
@@ -78,6 +81,7 @@ export function keyEvent(overrides: Partial<KeyboardEvent>): KeyboardEvent {
 }
 
 export function createRect(width: number, height: number, left = 0, top = 0): DOMRect {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: DOMRect test double without toJSON.
   return {
     x: left,
     y: top,
@@ -103,6 +107,7 @@ export function createMeasuredElement(args: {
   parentElement?: () => HTMLElement | null
   rect: () => DOMRect
 }): HTMLElement {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: an EventTarget stands in for the pane's element; only its events are used.
   const element = new EventTarget() as HTMLElement
   Object.defineProperty(element, 'dataset', {
     configurable: true,
@@ -138,12 +143,14 @@ export function temporarilySetNavigatorUserAgent(userAgent: string): () => void 
     if (originalDescriptor) {
       Object.defineProperty(globalThis, 'navigator', originalDescriptor)
     } else {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: removes the navigator global this fixture installed.
       delete (globalThis as { navigator?: Navigator }).navigator
     }
   }
 }
 
 export function sendTerminalInputThroughPane(pane: MockPane, data: string): void {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: onData is a vi.fn in MockPane; this reads the handler it recorded.
   const onDataMock = pane.terminal.onData as unknown as {
     mock: { calls: [[(data: string) => void] | []] }
   }

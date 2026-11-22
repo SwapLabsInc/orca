@@ -57,6 +57,7 @@ export async function startPlacementFixtureServer(): Promise<{
   })
   return {
     close: () => closeServer(server),
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a listening TCP server's address() is an AddressInfo.
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/placement`
   }
 }
@@ -99,11 +100,13 @@ export async function readPanes(page: Page, worktreeId: string): Promise<PaneSna
       if (!node || typeof node !== 'object') {
         return
       }
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: untyped layout JSON from the renderer: every field read is optional.
       const leaf = node as { groupId?: string; type?: string }
       if (leaf.type === 'leaf' && leaf.groupId) {
         layoutGroupIds.push(leaf.groupId)
         return
       }
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: untyped layout JSON from the renderer: every field read is optional.
       const split = node as { first?: unknown; second?: unknown }
       visitLayout(split.first)
       visitLayout(split.second)
