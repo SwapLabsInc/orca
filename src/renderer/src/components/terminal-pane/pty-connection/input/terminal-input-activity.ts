@@ -64,6 +64,7 @@ export function installTerminalInputActivity(session: ConnectPanePtySession): vo
 export function bindAcceptedTerminalInputActivity(session: ConnectPanePtySession): void {
   session.markAcceptedTerminalInputSent = (): void => {
     session.markTerminalInputSent()
+    session.agentCompletionCoordinator.observeInputActivity()
     session.recordTerminalInputForHibernationFallback()
   }
 }

@@ -27,8 +27,9 @@ function writeExpanded(expanded: boolean): void {
 export const TeamClaudeLeaderboardSection = React.memo(
   function TeamClaudeLeaderboardSection(): React.JSX.Element | null {
     // Why: same owner the status bar reads Claude usage from; any host serves the whole fleet.
-    const { target } = useActiveAccountOwner(LOCAL_TARGET)
-    const view = useTeamClaudeLeaderboard(target)
+    // An unproven owner reads this device, as every unresolved owner did before.
+    const owner = useActiveAccountOwner(LOCAL_TARGET)
+    const view = useTeamClaudeLeaderboard(owner?.target ?? LOCAL_TARGET)
     const [expanded, setExpanded] = React.useState(readExpanded)
     const handleExpandedChange = React.useCallback((next: boolean) => {
       setExpanded(next)

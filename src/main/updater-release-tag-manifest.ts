@@ -4,6 +4,7 @@ import { getVersionReleaseSource, type ReleaseSource } from '../shared/updater/r
 import { compareVersions, isValidVersion } from './updater/releases/updater-fallback'
 import {
   probeReleaseManifest,
+  type AssetProbeBudget,
   type ReleaseManifestProbe
 } from './updater/releases/updater-release-readiness'
 import { getMacSelfUpdateSourceFor } from './updater/mac-self-update/mac-self-update-activation'
@@ -68,4 +69,45 @@ export async function verifyReleaseTagManifest(
     target.version,
     source
   )
+}
+
+/** What the readiness pass probes with: the source's repo, and the probes the version pass already made. */
+export type ReleaseProbeScope = {
+  source: ReleaseSource
+  probes: Map<string, ReleaseManifestProbe>
+  assetProbes: AssetProbeBudget
+}
+
+type JudgedCandidate = {
+  tag: string
+  version: string
+  readiness: Exclude<ReleaseTagManifestVerdict['kind'], 'mismatch'>
+}
+
+/** Probes each candidate's manifest in its source; a candidate whose manifest names another build is dropped. */
+export async function judgeCandidateManifests(
+  candidates: readonly { tag: string; version: string }[],
+  { source, probes, assetProbes }: ReleaseProbeScope
+): Promise<JudgedCandidate[]> {
+  const macSelfUpdateSource = getMacSelfUpdateSourceFor(source)
+  const probed = await Promise.all(
+    candidates.map(async ({ tag, version }) => ({
+      tag,
+      version,
+      probe:
+        probes.get(tag) ??
+        (await probeReleaseManifest(tag, source.repo, assetProbes, macSelfUpdateSource))
+    }))
+  )
+  return probed.flatMap(({ tag, version, probe }) => {
+    const verdict = judgeManifestProbe(probe, version, source)
+    if (verdict.kind === 'mismatch') {
+      // Why skipped rather than not-ready: the mismatch is a publishing error, not a window that closes.
+      console.warn(
+        `[updater] ${source.id} release ${tag} advertises ${version} but its manifest names ${verdict.manifestVersion}; skipped`
+      )
+      return []
+    }
+    return [{ tag, version, readiness: verdict.kind }]
+  })
 }

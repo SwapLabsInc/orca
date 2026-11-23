@@ -23,6 +23,7 @@ import { BrowserClientPageNavigationFence } from '../lifecycle/browser-client-pa
 import { executeBrowserClientPageReconciliationCommand } from '../lifecycle/browser-client-page-reconciliation'
 import {
   findBrowserClientPageByWebContentsId,
+  retainedBrowserClientPageCookieJar,
   retireBrowserClientRetainedPage,
   type BrowserClientRetainedPage
 } from '../lifecycle/browser-client-page-retained-state'
@@ -132,10 +133,7 @@ export class BrowserClientPageCommandExecutor {
           this.dependencies.executeAutomation,
           event,
           signal,
-          {
-            transport: this.dependencies.fileChannel,
-            staging: this.dependencies.uploadStaging
-          }
+          this.dependencies
         )
       case 'reclaimPage':
         return this.reconcilePage(event, signal)
@@ -179,6 +177,10 @@ export class BrowserClientPageCommandExecutor {
 
   hostsPage(browserPageId: string): boolean {
     return !this.closed && this.pages.has(browserPageId)
+  }
+
+  pageCookieJar(browserPageId: string) {
+    return this.closed ? null : retainedBrowserClientPageCookieJar(this.pages.get(browserPageId))
   }
 
   hasUnresolvedPage(browserPageId: string, pageHostGeneration: number): boolean {

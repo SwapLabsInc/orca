@@ -121,7 +121,7 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
   }
 
   /** Every configured source with its newest stable build, read through the shared list cache. */
-  protected async listReleaseSources(
+  async listReleaseSources(
     options?: Pick<ReleaseBuildListOptions, 'force'>
   ): Promise<ReleaseSourceStatus[]> {
     return listReleaseSourceStatuses(

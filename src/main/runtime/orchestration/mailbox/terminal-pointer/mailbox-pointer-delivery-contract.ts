@@ -33,5 +33,11 @@ export type PointerDeliveryDependencies<TWaiter extends OrchestrationMessageWait
   /** Serial of the last keys a client typed into the PTY (TerminalTypedInput); null if none. */
   readTypedInputSerial: (ptyId: string) => number | null
   redriveMailbox: (mailboxHandle: string, reservedTypes?: ReadonlySet<string>) => void
+} & OrchestrationPointerPty
+
+/** How delivery writes a pointer into its PTY and times the Enter after it. */
+export type OrchestrationPointerPty = {
   writePty: (ptyId: string, data: string) => WriteSettlement | Promise<WriteSettlement>
+  /** Enter's delay after `pointer` when the PTY's host is Windows; null keeps the default. */
+  getWindowsPointerEnterDelayMs: (ptyId: string, pointer: string) => number | null
 }

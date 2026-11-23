@@ -16,7 +16,9 @@ export function registerMacUpdaterEvents({
   getKnownReleaseUrl,
   performQuitAndInstall,
   commitStagedMacInstall,
+  finishMacStaging,
   failMacStaging,
+  isAwaitingMacStaging,
   shouldDeferMacQuitForInstall,
   sendStatus
 }: {
@@ -28,7 +30,9 @@ export function registerMacUpdaterEvents({
   getKnownReleaseUrl: () => string | undefined
   performQuitAndInstall: () => void | Promise<void>
   commitStagedMacInstall: () => void
+  finishMacStaging: () => string | null
   failMacStaging: (error: unknown) => void
+  isAwaitingMacStaging: () => boolean
   shouldDeferMacQuitForInstall: () => boolean
   sendStatus: (status: UpdateStatus) => void
 }): void {
@@ -37,13 +41,21 @@ export function registerMacUpdaterEvents({
     const readySource =
       updateEngine?.installerReadinessSource === 'staged-bundle' ? updateEngine : nativeUpdater
     readySource.on('update-downloaded', () => {
+      // Interactive staging owns the feed until a native result, even after the UI times out.
+      const stagingVersion =
+        finishMacStaging() ?? (isAwaitingMacStaging() ? getPendingInstallVersion() : null)
+      // LOCAL: a staged-bundle engine reports only its own staged bundle, so its event is never stray.
+      const strayNativeEvent = readySource === nativeUpdater && stagingVersion === null
+      if (shouldDeferMacQuitForInstall() && strayNativeEvent) {
+        return
+      }
       // Commit before MacUpdater's later listener calls app.quit.
       commitStagedMacInstall()
       const hasInstallableVersion = hasInstallableDownloadedVersion()
-      handleMacInstallerReady(hasInstallableVersion, performQuitAndInstall, () => {
+      handleMacInstallerReady(stagingVersion, hasInstallableVersion, performQuitAndInstall, () => {
         sendStatus({
           state: 'downloaded',
-          version: getPendingInstallVersion(),
+          version: stagingVersion ?? getPendingInstallVersion(),
           releaseUrl: getKnownReleaseUrl()
         })
       })
@@ -51,7 +63,7 @@ export function registerMacUpdaterEvents({
     // will-quit is past every quit veto; prepend so quit teardown sees the commit it must wait for.
     // Squirrel installs whatever it staged once this process exits.
     app.prependListener('will-quit', () => {
-      if (shouldDeferMacQuitForInstall() && squirrelReady) {
+      if (shouldDeferMacQuitForInstall() && isMacInstallerReady()) {
         void commitServeSupervisorParkOnQuit(process.execPath, macCoordinationRoot(homedir()))
       }
     })
@@ -91,7 +103,7 @@ export function registerMacUpdaterEvents({
   })
 }
 
-let squirrelReady = false
+let macInstallerReady: { version: string | null } | null = null
 let macInstallPreflightInProgress = false
 
 export function setMacInstallPreflightInProgress(value: boolean): void {
@@ -125,7 +137,7 @@ export function resetMacInstallState(): void {
 
 export function beginMacUpdateDownload(): void {
   resetMacInstallState()
-  squirrelReady = false
+  macInstallerReady = null
 }
 
 export function markMacQuitAndInstallInFlight(): void {
@@ -147,15 +159,17 @@ export function isMacQuitAndInstallInFlight(): boolean {
   return quitAndInstallInFlight
 }
 
-export function isMacInstallerReady(): boolean {
-  return squirrelReady
+export function isMacInstallerReady(version?: string): boolean {
+  return (
+    macInstallerReady !== null && (version === undefined || version === macInstallerReady.version)
+  )
 }
 
 export function isWaitingForMacInstallerReadiness(
   currentStatus: UpdateStatus,
   hasNewerDownloadedVersion: boolean
 ): boolean {
-  if (process.platform !== 'darwin' || squirrelReady || !hasNewerDownloadedVersion) {
+  if (process.platform !== 'darwin' || isMacInstallerReady() || !hasNewerDownloadedVersion) {
     return false
   }
 
@@ -209,12 +223,13 @@ export function deferMacQuitUntilInstallerReady(
   return true
 }
 
-export function handleMacInstallerReady(
+function handleMacInstallerReady(
+  version: string | null,
   hasNewerDownloadedVersion: boolean,
   onReadyToInstall: () => void | Promise<void>,
   onReadyToReportDownloaded: () => void
 ): void {
-  squirrelReady = true
+  macInstallerReady = { version }
   clearPendingInstallTimeout()
   recordUpdaterLifecycle('macos_installer_ready', {
     deferredInstallRequested: requestedActionAfterSquirrelReady === 'install',

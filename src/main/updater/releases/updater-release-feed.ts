@@ -5,7 +5,7 @@ import {
 import { getReleaseDownloadUrl } from './updater-release-readiness'
 import { toDelayedUpdate } from './updater-release-delay'
 import { updateDelayDaysToMs } from '../../../shared/updater/update-delay'
-import { isMissingUpdateManifestFailure, isPrereleaseVersion } from './updater-fallback'
+import { isMissingUpdateManifestFailure } from './updater-fallback'
 import type { CheckFailureSource, ReleaseFeedPreflightResult } from '../lifecycle/updater-state'
 import type { UpdateCheckVariant } from '../lifecycle/updater-types'
 import { ReleaseFeedPreflightError } from '../lifecycle/updater-state'
@@ -122,17 +122,16 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
     variant: UpdateCheckVariant = 'default',
     attemptId: number | null = this.activeUpdateCheckAttemptId
   ): Promise<ReleaseFeedPreflightResult> {
-    const autoUpdater = this.getAutoUpdater()
     // Pin the concrete tag because latest/download can move between check and download; stable checks exclude prereleases.
     const feed = this.resolveRoutineReleaseFeed(variant)
     if (!feed) {
       return 'not-available'
     }
-    const { currentVersion, source, isPrimarySource, isPerfCheck } = feed
-    const includePrerelease =
-      feed.forcePrerelease || this.includePrereleaseActive || isPrereleaseVersion(currentVersion)
-    // Perf builds are explicit one-off opt-ins; "install now" consumes its bypass on this pin.
-    const delayDays = isPerfCheck || this.ignoreUpdateDelayOnce ? 0 : this.readUpdateDelayDays()
+    const { currentVersion, source, isPrimarySource } = feed
+    const team = this.getTeamUpdatePolicy?.()
+    const { isPerfCheck, includePrerelease, delayDays, minimumVersion } =
+      this.selectRoutineReleases(feed, variant, team)
+    this.configureTeamReleaseChannel(team, includePrerelease)
     this.ignoreUpdateDelayOnce = false
     const now = Date.now()
     const releaseTagsResult = await fetchNewerReleaseTagsWithReadiness(
@@ -141,6 +140,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
       {
         includePrerelease,
         ...(isPerfCheck ? { releaseFilter: 'perf' as const } : isPrimarySource ? {} : { source }),
+        ...(minimumVersion ? { minimumVersion } : {}),
         ...(delayDays > 0 ? { minReleaseAgeMs: updateDelayDaysToMs(delayDays), now } : {})
       }
     )
@@ -176,7 +176,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
       console.info(
         `[updater] release feed pinned: current=${currentVersion} source=${source.id} includePrerelease=${includePrerelease} → ${url}`
       )
-      autoUpdater.setFeedURL({ provider: 'generic', url })
+      this.pinTeamApprovedReleaseFeed(url, team, releaseTagsResult.tags)
       return 'ready'
     }
     if (releaseTagsResult.state === 'not-ready') {
@@ -188,7 +188,7 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
           `[updater] release feed pinned to last-good: current=${currentVersion} source=${source.id} includePrerelease=${includePrerelease} → ${url}`
         )
         this.publishingWindowLastGoodCheck = { lastGoodTag: releaseTagsResult.lastGoodTag }
-        autoUpdater.setFeedURL({ provider: 'generic', url })
+        this.pinTeamApprovedReleaseFeed(url, team, [releaseTagsResult.lastGoodTag])
         return 'ready'
       }
       this.clearPublishingWindowLastGoodCheck()
@@ -202,13 +202,13 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
         'Latest release artifacts are not ready'
       )
     }
+    this.clearPrereleaseFallbackContext()
+    this.clearPublishingWindowLastGoodCheck()
     if (
       releaseTagsResult.state === 'unavailable' &&
       ((releaseTagsResult.unavailableReason === 'manifest' && !includePrerelease) ||
         !isPrimarySource)
     ) {
-      this.clearPrereleaseFallbackContext()
-      this.clearPublishingWindowLastGoodCheck()
       throw new ReleaseFeedPreflightError(
         'manifest-unavailable',
         'default',
@@ -217,19 +217,19 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
     }
     // Why not the stable fallback elsewhere: GitHub's /releases/latest names the newest non-prerelease,
     // which a source that only publishes prereleases never has, so its no-newer answer is final.
-    if (isPerfCheck || !isPrimarySource) {
-      this.clearPrereleaseFallbackContext()
-      this.clearPublishingWindowLastGoodCheck()
+    if (isPerfCheck || minimumVersion || !isPrimarySource) {
       if (releaseTagsResult.state === 'no-newer') {
         console.info(
           `[updater] ${isPerfCheck ? 'perf' : source.id} release not found: current=${currentVersion} includePrerelease=${includePrerelease}`
         )
         return 'not-available'
       }
-      throw new Error('Could not resolve perf update feed')
+      throw new Error(
+        isPerfCheck
+          ? 'Could not resolve perf update feed'
+          : 'Could not resolve the required update feed'
+      )
     }
-    this.clearPrereleaseFallbackContext()
-    this.clearPublishingWindowLastGoodCheck()
     if (releaseDelay?.heldRelease) {
       // Everything newer is still inside the delay; the stable fallback would offer it anyway.
       console.info(
@@ -254,17 +254,8 @@ export abstract class UpdaterReleaseFeed extends UpdaterReleaseSourceFeed {
     }
     const url = getReleaseDownloadUrl(stableTag, source)
     console.info(`[updater] stable fallback feed pinned: current=${currentVersion} → ${url}`)
-    autoUpdater.setFeedURL({ provider: 'generic', url })
+    this.pinTeamApprovedReleaseFeed(url, team, [stableTag])
     return 'ready'
-  }
-
-  private readUpdateDelayDays(): number {
-    try {
-      return this.getUpdateDelayDays?.() ?? 0
-    } catch {
-      // A settings read failure must not block updates entirely.
-      return 0
-    }
   }
 
   protected retryPrereleaseFallbackAfterMissingManifest(

@@ -3,7 +3,6 @@ import { isWindowsSignatureCheckUnavailableFailure } from '../../../shared/updat
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { getRetainedLinuxPackageManualInstallStatus } from '../linux-package/linux-package-downloaded-status'
 import type { UpdateCheckOptions, UpdateStatus } from '../../../shared/updater/update-status-types'
-import { errorStatusFields, repeatsErrorStatusFields } from '../updater-error-status-fields'
 import type { UpdateCheckVariant } from './updater-types'
 import { UpdaterStatus } from './updater-status'
 import type { UpdaterCodedMessage } from '../../../shared/updater/updater-failure-copy'
@@ -27,6 +26,10 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
   }
 
   protected getUpdateCheckVariant(options?: UpdateCheckOptions): UpdateCheckVariant {
+    const teamChannel = this.getTeamUpdatePolicy?.()?.updateChannel
+    if (teamChannel) {
+      return teamChannel === 'rc' ? 'prerelease' : 'default'
+    }
     if (options?.includePerfPrerelease) {
       return 'perf'
     }
@@ -80,10 +83,6 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     this.activeUpdateCheckAttemptId = null
     this.activeUpdateCheckLaunchAttemptId = null
     this.activeUpdateCheckEventAttemptId = null
-    // Why: the launch-pending flag belongs to the attempt. A result status sent mid-preflight (a
-    // pinned jump refused, a same-version pin, a dismiss) ends the attempt; a flag that outlived it
-    // deferred every later check as "already in flight", with no stall timer left to clear it.
-    this.backgroundCheckLaunchPending = false
     this.clearUpdateCheckTimers()
   }
 
@@ -276,20 +275,14 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
     )
   }
 
-  protected sendErrorStatus(
-    failure: string | UpdaterCodedMessage,
-    userInitiated?: boolean,
-    /** The source it refers to, and a manual-install page or retry verdict for the card. */
-    ...[releaseSource, presentation = {}]: Partial<Parameters<typeof errorStatusFields>>
-  ): void {
+  protected sendErrorStatus(failure: string | UpdaterCodedMessage, userInitiated?: boolean): void {
     const coded = typeof failure === 'string' ? { message: failure } : failure
     const { message } = coded
-    const fields = errorStatusFields(releaseSource, presentation)
     if (
       this.currentStatus.state === 'error' &&
       this.currentStatus.message === message &&
       this.currentStatus.userInitiated === userInitiated &&
-      repeatsErrorStatusFields(this.currentStatus, fields)
+      this.repeatsErrorFields(this.currentStatus)
     ) {
       return
     }
@@ -300,7 +293,12 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
         message: 'Windows update signature check could not run'
       })
     }
-    this.sendStatus({ state: 'error', ...coded, userInitiated, ...fields })
+    this.sendStatus({
+      state: 'error',
+      ...coded,
+      userInitiated,
+      ...(this.currentStatus.state === 'downloading' ? { failurePhase: 'download' } : {})
+    })
   }
 
   /** Retain the distro-package manual-install card when settling a check; ordinary status would erase it. */
@@ -310,16 +308,13 @@ export abstract class UpdaterCheckState extends UpdaterStatus {
       this.sendStatus(retainedStatus)
     } else if (status.state === 'error') {
       const { message, messageCode, messageParams } = status
-      // Why the status itself: its manual-install page and retry verdict must reach the card intact.
       this.sendErrorStatus(
         {
           message,
           ...(messageCode === undefined ? {} : { messageCode }),
           ...(messageParams === undefined ? {} : { messageParams })
         },
-        status.userInitiated,
-        status.releaseSource,
-        status
+        status.userInitiated
       )
     } else {
       this.sendStatus(status)
