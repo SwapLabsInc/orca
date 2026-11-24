@@ -3,7 +3,10 @@ import { isMacInstallRequested } from '../mac-install/updater-mac-install'
 import type { UpdateCheckOptions } from '../../../shared/updater/update-status-types'
 import type { ReleaseChannel } from '../../../shared/updater/release-channel'
 import type { ReleaseSourceId } from '../../../shared/updater/release-sources'
+import { updaterCodedMessage } from '../../../shared/updater/updater-failure-copy'
+import { managesUpdates } from '../releases/updater-release-policy'
 import { UpdaterScheduling } from './updater-scheduling'
+import { isPendingTeamRestart } from './updater-state'
 
 /** An exact build to pin: a tag in a channel, and for a cross-source jump the source and its listed version. */
 export type PinnedBuildTarget = {
@@ -23,12 +26,25 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
       this.quitAndInstallInProgress ||
       isMacInstallRequested() ||
       this.macInstallerStagingVersion !== null ||
-      this.currentStatus.state === 'downloading'
+      this.currentStatus.state === 'downloading' ||
+      (isPendingTeamRestart(this.currentStatus) && !this.teamPolicyCheckPending)
     ) {
       return
     }
     if (!app.isPackaged) {
       this.sendStatus({ state: 'not-available', userInitiated: true })
+      return
+    }
+    const team = this.getTeamUpdatePolicy?.()
+    if (
+      managesUpdates(team) &&
+      (options?.localBuild || options?.targetTag || options?.includePerfPrerelease)
+    ) {
+      this.sendStatus({
+        state: 'error',
+        ...updaterCodedMessage('teamUpdatePolicy'),
+        userInitiated: true
+      })
       return
     }
     if (options?.localBuild) {
@@ -61,7 +77,9 @@ export abstract class UpdaterMenuChecks extends UpdaterScheduling {
     const checkVariant = this.getUpdateCheckVariant(options)
     if (checkVariant === 'prerelease') {
       this.clearPrereleaseFallbackContext()
-      this.enableIncludePrerelease()
+      if (team?.updateChannel === undefined) {
+        this.enableIncludePrerelease()
+      }
     } else if (checkVariant === 'perf') {
       this.clearPrereleaseFallbackContext()
       // Perf checks need prerelease manifests without changing future default/background channels.

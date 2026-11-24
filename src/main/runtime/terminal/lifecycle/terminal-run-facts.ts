@@ -2,7 +2,10 @@ import {
   spawnCommitBindingOrigin,
   type PtySpawnCommitOrigin
 } from '../../../persistence/loading-store/terminal-bindings/pty-binding-span'
-import { isUntypedTerminalInput } from '../../../../shared/terminal/input/terminal-untyped-input'
+import {
+  isTerminalPointerReportOnly,
+  isUntypedTerminalInput
+} from '../../../../shared/terminal/input/terminal-untyped-input'
 import {
   isDrivingInputKind,
   type TerminalInputKind
@@ -56,6 +59,7 @@ export class TerminalRunFactsRegister {
   // Why apart from the run record: input must count on a PTY main adopted without a commit.
   private readonly lastInputAtByPtyId = new Map<string, number>()
   private readonly lastDrivingInputAtByPtyId = new Map<string, number>()
+  private readonly lastTypedInputAtByPtyId = new Map<string, number>()
   private readonly userOpenedByPtyId = new Set<string>()
   private readonly typedInputByPtyId = new Map<string, TerminalTypedInput>()
   private typedInputSerial = 0
@@ -107,6 +111,7 @@ export class TerminalRunFactsRegister {
     if (!sameProcess) {
       this.lastInputAtByPtyId.delete(commit.id)
       this.lastDrivingInputAtByPtyId.delete(commit.id)
+      this.lastTypedInputAtByPtyId.delete(commit.id)
       this.userOpenedByPtyId.delete(commit.id)
       this.typedInputByPtyId.delete(commit.id)
       this.unattributedDraftSeenAtByPtyId.delete(commit.id)
@@ -138,6 +143,9 @@ export class TerminalRunFactsRegister {
       if (inputKind === 'driving') {
         this.lastDrivingInputAtByPtyId.set(ptyId, now)
         this.recordTypedInput(ptyId, data, now)
+        if (!isTerminalPointerReportOnly(data)) {
+          this.lastTypedInputAtByPtyId.set(ptyId, now)
+        }
       }
       for (const listener of this.inputListeners) {
         listener(ptyId, now)
@@ -179,6 +187,12 @@ export class TerminalRunFactsRegister {
     return this.typedInputByPtyId.get(ptyId) ?? null
   }
 
+  /** Like readLastDrivingInputAt, but only input that can change what the program reads as text:
+   *  pointer reports (hover, clicks, wheel) don't count. */
+  readLastTypedInputAt(ptyId: string): number | null {
+    return this.lastTypedInputAtByPtyId.get(ptyId) ?? null
+  }
+
   /** When a composer draft no recorded input explains was first seen, e.g. one typed before an Orca
    *  restart into a process main later attached to; null, and forgotten, while there is none. */
   noteUnattributedDraft(ptyId: string, present: boolean, now = Date.now()): number | null {
@@ -218,6 +232,7 @@ export class TerminalRunFactsRegister {
     this.runsByPtyId.delete(ptyId)
     this.lastInputAtByPtyId.delete(ptyId)
     this.lastDrivingInputAtByPtyId.delete(ptyId)
+    this.lastTypedInputAtByPtyId.delete(ptyId)
     this.userOpenedByPtyId.delete(ptyId)
     this.typedInputByPtyId.delete(ptyId)
     this.unattributedDraftSeenAtByPtyId.delete(ptyId)

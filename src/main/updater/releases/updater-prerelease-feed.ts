@@ -7,8 +7,7 @@ import {
   type ReleaseManifestProbe
 } from './updater-release-readiness'
 import { getLatestReleasePageUrl, getReleaseTagPathPattern } from '../../updater-release-urls'
-import { getMacSelfUpdateSourceFor } from '../mac-self-update/mac-self-update-activation'
-import { judgeManifestProbe } from '../../updater-release-tag-manifest'
+import { judgeCandidateManifests, type ReleaseProbeScope } from '../../updater-release-tag-manifest'
 import {
   fetchReleaseFeedEntries,
   resolveVersionsFromManifests
@@ -44,13 +43,6 @@ export function normalizeTagToVersion(tag: string): string {
 }
 
 type ReleaseFeedTag = DatedReleaseTag
-
-/** LOCAL: what the readiness pass probes with: the source's repo, and the probes the version pass already made. */
-type ReleaseProbeScope = {
-  source: ReleaseSource
-  probes: Map<string, ReleaseManifestProbe>
-  assetProbes: AssetProbeBudget
-}
 
 export function isPerfPrereleaseTag(tag: string): boolean {
   const version = normalizeTagToVersion(tag)
@@ -98,6 +90,7 @@ type FetchNewerReleaseTagOptions = {
   source?: ReleaseSource
   /** User update delay: only releases public at least this long are offered. */
   minReleaseAgeMs?: number
+  minimumVersion?: string
   now?: number
 }
 
@@ -155,13 +148,30 @@ export async function fetchNewerReleaseTagsWithReadiness(
 
   // Why: only the primary source publishes perf builds.
   const releaseFilter = isPrimarySource ? options.releaseFilter : undefined
-  const channelCandidates = selectChannelCandidates(tags, includePrerelease, releaseFilter)
+  const scope: ReleaseProbeScope = { source, probes, assetProbes }
+  const minimum = options.minimumVersion
+  const candidates = (list: ReleaseFeedTag[]): ReleaseFeedTag[] => {
+    const channel = selectChannelCandidates(list, includePrerelease, releaseFilter)
+    return minimum
+      ? channel.filter(({ version }) => compareVersions(version, minimum) >= 0)
+      : channel
+  }
+  const channelCandidates = candidates(tags)
   if (!options.minReleaseAgeMs || options.minReleaseAgeMs <= 0) {
-    return resolveNewerReleaseTags(channelCandidates, currentVersion, maxTags, {
-      source,
-      probes,
-      assetProbes
-    })
+    // LOCAL: the REST list is the primary repo's, so only the primary source reads it.
+    if (channelCandidates.length || !minimum || !isPrimarySource) {
+      return resolveNewerReleaseTags(channelCandidates, currentVersion, maxTags, scope)
+    }
+    const older = await fetchOlderReleaseTags(
+      (list) => candidates(list).length > 0,
+      options.now ?? Date.now()
+    )
+    return resolveNewerReleaseTags(
+      candidates(mergeReleaseTags(tags, older ?? [])),
+      currentVersion,
+      maxTags,
+      scope
+    )
   }
   const now = options.now ?? Date.now()
   const cutoff = now - options.minReleaseAgeMs
@@ -169,10 +179,12 @@ export async function fetchNewerReleaseTagsWithReadiness(
   // line's recent maintenance release does not prove that history is complete.
   const settlesDelay = (list: ReleaseFeedTag[]): boolean =>
     list.some(({ version }) => compareVersions(version, currentVersion) === 0) ||
-    selectChannelCandidates(list, includePrerelease, releaseFilter).some(
+    candidates(list).some(
       (entry) =>
         isReleaseOldEnough(entry, cutoff) && compareVersions(entry.version, currentVersion) > 0
-    )
+    ) ||
+    (minimum !== undefined &&
+      candidates(list).some(({ version }) => compareVersions(version, minimum) === 0))
   // Atom keeps only ~10 entries, so an aged-out release may predate it.
   // Judge REST pages through the merge so Atom's later `updated` time wins, as it does below.
   // LOCAL: the REST list is the primary repo's, so only the primary source reads it.
@@ -181,21 +193,22 @@ export async function fetchNewerReleaseTagsWithReadiness(
       ? null
       : await fetchOlderReleaseTags((older) => settlesDelay(mergeReleaseTags(tags, older)), now)
   const allTags = olderTags ? mergeReleaseTags(tags, olderTags) : tags
+  const allCandidates = candidates(allTags)
   const { eligible, releaseDelay } = applyReleaseDelay(
-    selectChannelCandidates(allTags, includePrerelease, releaseFilter),
+    allCandidates,
     allTags,
     currentVersion,
     options.minReleaseAgeMs,
     now
   )
-  return {
-    ...(await resolveNewerReleaseTags(eligible, currentVersion, maxTags, {
-      source,
-      probes,
-      assetProbes
-    })),
-    releaseDelay
-  }
+  const bypassDelayForMinimum = minimum !== undefined && eligible.length === 0
+  const result = await resolveNewerReleaseTags(
+    bypassDelayForMinimum ? allCandidates.toReversed() : eligible,
+    currentVersion,
+    bypassDelayForMinimum ? 1 : maxTags,
+    scope
+  )
+  return { ...result, releaseDelay }
 }
 
 // Perf builds require explicit opt-in, even when semver considers them newer.
@@ -264,7 +277,7 @@ async function resolveNewerReleaseTags(
   candidates: ReleaseFeedTag[],
   currentVersion: string,
   maxTags: number,
-  { source, probes, assetProbes }: ReleaseProbeScope
+  scope: ReleaseProbeScope
 ): Promise<FetchNewerReleaseTagsBaseResult> {
   const newestNewerIndex = candidates.findIndex(
     ({ version }) => compareVersions(version, currentVersion) > 0
@@ -278,28 +291,7 @@ async function resolveNewerReleaseTags(
     newestNewerIndex,
     newestNewerIndex + MAX_MANIFEST_PROBE_CANDIDATES
   )
-  const macSelfUpdateSource = getMacSelfUpdateSourceFor(source)
-  const manifestResults = (
-    await Promise.all(
-      probeCandidates.map(async ({ tag, version }) => ({
-        tag,
-        version,
-        probe:
-          probes.get(tag) ??
-          (await probeReleaseManifest(tag, source.repo, assetProbes, macSelfUpdateSource))
-      }))
-    )
-  ).flatMap(({ tag, version, probe }) => {
-    const verdict = judgeManifestProbe(probe, version, source)
-    if (verdict.kind === 'mismatch') {
-      // Why skipped rather than not-ready: the mismatch is a publishing error, not a window that closes.
-      console.warn(
-        `[updater] ${source.id} release ${tag} advertises ${version} but its manifest names ${verdict.manifestVersion}; skipped`
-      )
-      return []
-    }
-    return [{ tag, version, readiness: verdict.kind }]
-  })
+  const manifestResults = await judgeCandidateManifests(probeCandidates, scope)
   // Why not-ready rather than no-newer: the primary source answers no-newer by pinning the tag
   // GitHub's /releases/latest names, which is the very release skipped above. A verified
   // last-good tag gives electron-updater a real result instead, and the publishing-window retry

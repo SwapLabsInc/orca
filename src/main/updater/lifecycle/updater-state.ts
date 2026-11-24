@@ -10,9 +10,11 @@ import type {
 import type { ReleaseChannel } from '../../../shared/updater/release-channel'
 import type { ReleaseSourceId } from '../../../shared/updater/release-sources'
 import type { PrimaryEventSuppression, UpdateCheckVariant } from './updater-types'
+import type { TeamUpdateApproval, TeamUpdatePolicy } from '../releases/updater-release-policy'
 
 export const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 export const AUTO_UPDATE_RETRY_INTERVAL_MS = 60 * 60 * 1000
+export const TEAM_POLICY_CHECK_RETRY_MS = 15_000
 // #7576: back off persistent feed failures up to this cap; completed checks reset the cadence.
 export const MAX_AUTO_UPDATE_RETRY_INTERVAL_MS = 6 * 60 * 60 * 1000
 export const NUDGE_POLL_INTERVAL_MS = 30 * 60 * 1000
@@ -36,6 +38,16 @@ export type UpdateInstallMode =
   | 'supervised-headless-serve'
   | 'unsupported-headless-serve'
 export type PreQuitCleanupFailureMode = 'continue' | 'abort'
+export type UpdateInstallTrigger = 'manual' | 'automatic' | 'team-policy'
+
+export function isPendingTeamRestart(status: UpdateStatus): boolean {
+  return (
+    status.state === 'downloaded' &&
+    status.requiredByTeam === true &&
+    status.teamRestart?.phase !== 'manual' &&
+    status.teamRestart?.phase !== 'retry-next-launch'
+  )
+}
 
 // Typed preflight context keeps UI routing independent of error-text matching.
 export class ReleaseFeedPreflightError extends Error {
@@ -137,6 +149,12 @@ export abstract class UpdaterState {
   // 'available' the pinned check lands, so a second click cannot start a second download.
   protected pinnedAutoDownloadPending = false
   protected getReleaseChannelOverride: (() => ReleaseChannel | null) | null = null
+  protected getTeamUpdatePolicy: (() => TeamUpdatePolicy | undefined) | null = null
+  protected teamUpdateApproval: TeamUpdateApproval | null = null
+  protected teamPolicyCheckPending = false
+  protected teamControlledPrerelease = false
+  protected implicitInstallOnQuit = false
+  protected macTeamDownloadDeferred = false
   protected getUpdateDelayDays: (() => number) | null = null
   // Newest release the last release-feed check withheld for the user's delay.
   protected delayedUpdate: DelayedUpdate | null = null

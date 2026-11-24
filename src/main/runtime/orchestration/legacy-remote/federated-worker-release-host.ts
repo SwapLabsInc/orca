@@ -25,6 +25,10 @@ import {
   type WorkerClosingTurn
 } from '../../rpc/methods/orchestration/worker/release/worker-release-closing-turn'
 import { orchestrationTimestampToMs } from '../../rpc/methods/orchestration/worker/output/worker-output'
+import {
+  closeStoppedWorkerTerminals,
+  closeWorkerBoundTerminals
+} from '../../rpc/methods/orchestration/worker/release/worker-bound-terminal-close'
 import type { inspectRemoteAttachment } from './federation-attachment-observation'
 import {
   classifyWorkerTerminalCloseError,
@@ -77,6 +81,8 @@ async function requestRemoteAttachmentRelease(
     }
   }
   if (attachment.stage === 'released') {
+    // Finishes a bound-terminal cleanup an earlier release call left undone.
+    await closeStoppedWorkerTerminals(runtime, db, attachment.dispatch_id)
     const archived = await readRemoteAttachmentOutputIfAvailable({
       runtime,
       attachment,
@@ -257,6 +263,7 @@ async function completeRemoteAttachmentRelease(
     dispatchId: attachment.dispatch_id,
     stage: 'released'
   })
+  await closeWorkerBoundTerminals(runtime, db, resource.origin_dispatch_id)
   return {
     dispatchId: attachment.dispatch_id,
     state: 'released',

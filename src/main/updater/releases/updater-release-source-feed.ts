@@ -8,6 +8,8 @@ import { UpdaterInstallExecution } from '../lifecycle/updater-install-execution'
 import type { UpdateCheckVariant } from '../lifecycle/updater-types'
 import { recordRoutineCheckSkippedForUnknownSource } from '../updater-release-sources'
 import { getReleaseDownloadUrl } from './updater-release-readiness'
+import { getLatestReleaseDownloadUrl } from '../../updater-release-urls'
+import { releaseSelectionPolicy, type TeamUpdatePolicy } from './updater-release-policy'
 
 /** LOCAL: the release source a routine check reads, and what that source changes about the check. */
 type RoutineReleaseFeed = {
@@ -44,6 +46,30 @@ export abstract class UpdaterReleaseSourceFeed extends UpdaterInstallExecution {
       isPerfCheck,
       forcePrerelease: isPerfCheck || !isPrimarySource
     }
+  }
+
+  /** Upstream's selection policy for this feed; a perf check and a team's channel bind only the primary source. */
+  protected selectRoutineReleases(
+    feed: RoutineReleaseFeed,
+    variant: UpdateCheckVariant,
+    team: TeamUpdatePolicy | undefined
+  ): ReturnType<typeof releaseSelectionPolicy> {
+    const policy = releaseSelectionPolicy({
+      team,
+      variant: feed.isPerfCheck || variant !== 'perf' ? variant : 'default',
+      version: feed.currentVersion,
+      includePrerelease: this.includePrereleaseActive,
+      memberChannel: this.getReleaseChannelOverride?.() ?? null,
+      ignoreDelay: this.ignoreUpdateDelayOnce,
+      getUpdateDelayDays: this.getUpdateDelayDays
+    })
+    // Why: a non-primary source publishes only prereleases, whatever channel a team names.
+    return { ...policy, includePrerelease: !feed.isPrimarySource || policy.includePrerelease }
+  }
+
+  /** A placeholder: every check pins a concrete tag first; this only names the running source's repo. */
+  protected getRunningSourceLatestDownloadUrl(): string {
+    return getLatestReleaseDownloadUrl(getReleaseSourceOrPrimary(this.getRunningReleaseSource()))
   }
 
   protected getRunningSourceDownloadUrl(tag: string): string {

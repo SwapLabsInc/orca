@@ -184,7 +184,7 @@ function AutomationRow({
       .finally(() => setStarting(false))
   }
   const open = (): void =>
-    openBotAutomation(automation.id, card.failed ? (row.latestRunId ?? null) : null)
+    openBotAutomation(bot.hostId, automation.id, card.failed ? (row.latestRunId ?? null) : null)
   const toggle = pauseResume(t, enabled, setEnabled, saving)
   const kind = hasAutomationSchedule(automation) ? (
     <CalendarClock className={ICON} />
@@ -197,6 +197,8 @@ function AutomationRow({
       title={automation.name}
       state={rowState?.label}
       dimmed={rowState?.kind === 'paused'}
+      // An event-only row has no next; one whose events won't fire still runs on its schedule.
+      next={enabled && card.nextAt !== null ? { at: card.nextAt, now } : null}
       card={{
         state: rowState,
         facts: [
@@ -228,7 +230,7 @@ function AutomationRow({
                 {
                   icon: <ArrowUpRight />,
                   label: t('bots.automations.openOnPage', 'Open on Automations page'),
-                  onSelect: () => openBotAutomation(automation.id, null)
+                  onSelect: () => openBotAutomation(bot.hostId, automation.id, null)
                 }
               ]
             ]}
@@ -307,6 +309,7 @@ export function UpcomingItem({
     case 'look-around':
       return <LookAroundRow bot={bot} row={row} state={upNext} now={now} folded={folded} />
     case 'tidy-up':
+      // Its next run is a window, or whenever this computer wakes after one, so it says no time.
       return <TidyUpRow bot={bot} folded={folded} />
     case 'automation':
       return (

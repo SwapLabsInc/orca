@@ -10,6 +10,9 @@ import {
   type ReleaseSourceId
 } from '../../../shared/updater/release-sources'
 import { UpdaterState as BaseUpdaterState } from './updater-state'
+import { isMacInstallerReady } from '../mac-install/updater-mac-install'
+
+type ErrorUpdateStatus = Extract<UpdateStatus, { state: 'error' }>
 
 export abstract class UpdaterStatus extends BaseUpdaterState {
   protected getAutoUpdater(): UpdateEngine {
@@ -144,6 +147,18 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
     return { ...status, delayedUpdate: this.delayedUpdate }
   }
 
+  protected canInstallOnNormalQuit(version: string): boolean {
+    return (
+      process.platform === 'darwin' &&
+      this.updateInstallMode === 'interactive' &&
+      this.autoUpdater?.autoInstallOnAppQuit === true &&
+      // LOCAL: a staged-bundle engine installs only on its own restart, never on a plain quit.
+      this.autoUpdater.installerReadinessSource !== 'staged-bundle' &&
+      this.availableVersion === version &&
+      isMacInstallerReady(version)
+    )
+  }
+
   /** `force` re-delivers a status the renderer must not miss even when it repeats the current one. */
   protected sendStatus(status: UpdateStatus, options?: { force?: boolean }): void {
     const pendingUserInitiatedCheckOptions = this.pendingUserInitiatedCheckAfterInFlight
@@ -185,11 +200,15 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
       }
     }
 
+    const preparedStatus: UpdateStatus =
+      status.state === 'downloaded' && this.canInstallOnNormalQuit(status.version)
+        ? { ...status, installOnQuit: true }
+        : status
     const releaseSource = status.releaseSource ?? this.getStatusReleaseSource(status.state)
     const sourcedStatus: UpdateStatus = {
       ...(this.activeUpdateSource === 'release'
-        ? this.decorateStatusWithDelayedUpdate(status)
-        : { ...status, source: this.activeUpdateSource }),
+        ? this.decorateStatusWithDelayedUpdate(preparedStatus)
+        : { ...preparedStatus, source: this.activeUpdateSource }),
       ...(releaseSource ? { releaseSource } : {})
     }
     const decoratedStatus = this.decorateStatusWithActiveNudge(
@@ -262,4 +281,6 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
   protected abstract launchPendingUserInitiatedCheckAfterInFlight(options: UpdateCheckOptions): void
   protected abstract checkForUpdatesFromMenu(options?: UpdateCheckOptions): void
   protected abstract downloadUpdate(): void
+  /** LOCAL: whether an error repeats the current one in its source and card presentation too. */
+  protected abstract repeatsErrorFields(current: ErrorUpdateStatus): boolean
 }
