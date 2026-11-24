@@ -81,6 +81,10 @@ export function isQuittingForUpdate(): boolean {
   return updater.isQuittingForUpdate()
 }
 
+export function isNativeUpdateInstallUnderWay(): boolean {
+  return updater.isNativeUpdateInstallUnderWay()
+}
+
 export function applyTeamPolicyBeforeQuit(): void {
   updater.applyTeamPolicyBeforeQuit()
 }
