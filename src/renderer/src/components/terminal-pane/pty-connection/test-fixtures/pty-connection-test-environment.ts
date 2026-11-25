@@ -1,4 +1,3 @@
-import { isGeminiTerminalTitle as actualIsGeminiTerminalTitle } from '../../../../../../shared/agent-status/title/agent-title-core'
 import { vi } from 'vitest'
 import * as agentStatusStartupSnapshot from '@/hooks/ipc-events/agent-status/agent-status-startup-snapshot'
 import { drainFakeTimerWork, flushAsyncTicks } from './pty-connection-test-async'
@@ -18,10 +17,8 @@ let freshModulesLoaded = false
 export function buildAgentStatusModuleMock(
   actual: Record<string, unknown>
 ): Record<string, unknown> {
-  const isGeminiTerminalTitle = actualIsGeminiTerminalTitle
   return {
     ...actual,
-    isGeminiTerminalTitle: vi.fn((title: string) => isGeminiTerminalTitle(title)),
     isClaudeAgent: vi.fn(() => false),
     detectAgentStatusFromTitle: vi.fn((title: string) => {
       if (/Claude (working|done)/.test(title)) {

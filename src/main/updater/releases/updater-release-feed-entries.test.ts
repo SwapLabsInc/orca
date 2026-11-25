@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setHostSliceForTest } from '../../updater-host-slice.fixture'
+import { installNetRequestFetchAdapter } from '../testing/updater-net-request.fixture'
 import {
   FORK_RELEASE_SOURCES_LITERAL,
   setReleaseSourcesLiteralForTest
 } from '../../../shared/updater/release-sources.fixture'
 
-const { netFetchMock } = vi.hoisted(() => ({ netFetchMock: vi.fn() }))
+const { netFetchMock, netRequestMock } = vi.hoisted(() => ({
+  netFetchMock: vi.fn(),
+  netRequestMock: vi.fn()
+}))
 
-vi.mock('electron', () => ({ net: { fetch: netFetchMock, request: vi.fn() } }))
+vi.mock('electron', () => ({ net: { fetch: netFetchMock, request: netRequestMock } }))
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const NOW = Date.parse('2026-11-02T12:00:00Z')
@@ -57,6 +61,8 @@ describe('the update delay on a source other than the primary', () => {
   beforeEach(() => {
     vi.resetModules()
     netFetchMock.mockReset()
+    netRequestMock.mockReset()
+    installNetRequestFetchAdapter(netRequestMock, netFetchMock)
     setReleaseSourcesLiteralForTest(FORK_RELEASE_SOURCES_LITERAL)
     restoreHostSlice = setHostSliceForTest({ platform: 'linux', arch: 'x64' })
   })

@@ -3,7 +3,7 @@ import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-
 import {
   AssetProbeBudget,
   probeReleaseManifest,
-  requestGitHubReleaseHead,
+  requestReleaseHead,
   type ReleaseManifestProbe
 } from './updater-release-readiness'
 import { getLatestReleasePageUrl, getReleaseTagPathPattern } from '../../updater-release-urls'
@@ -62,7 +62,7 @@ export async function fetchLatestStableReleaseTag(
   try {
     // Resolve only the release-page redirect; installer redirects continue on to signed storage URLs.
     const latestUrl = getLatestReleasePageUrl(source)
-    const response = await requestGitHubReleaseHead(latestUrl)
+    const response = await requestReleaseHead(latestUrl)
     if (!response?.redirectUrl || response.statusCode < 300 || response.statusCode >= 400) {
       return null
     }
