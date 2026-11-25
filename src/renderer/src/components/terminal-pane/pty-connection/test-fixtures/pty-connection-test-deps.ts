@@ -6,7 +6,7 @@ import type { StoreState } from './pty-connection-test-store-state'
 import type { TerminalKittyKeyboardModeTracker } from '../../../../../../shared/terminal/protocol/input-modes/terminal-kitty-keyboard-mode-tracker'
 
 export type PtyConnectionAgentTitleMocks = Required<
-  Pick<PtyConnectionDeps, 'detectAgentStatusFromTitle' | 'isClaudeAgent' | 'isGeminiTerminalTitle'>
+  Pick<PtyConnectionDeps, 'detectAgentStatusFromTitle' | 'isClaudeAgent'>
 >
 
 export function bindPaneAgentTitleMocks<T extends object>(
@@ -15,8 +15,7 @@ export function bindPaneAgentTitleMocks<T extends object>(
 ) {
   return Object.assign(deps, {
     detectAgentStatusFromTitle: mocks.detectAgentStatusFromTitle,
-    isClaudeAgent: mocks.isClaudeAgent,
-    isGeminiTerminalTitle: mocks.isGeminiTerminalTitle
+    isClaudeAgent: mocks.isClaudeAgent
   })
 }
 

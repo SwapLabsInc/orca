@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setHostSliceForTest } from '../../updater-host-slice.fixture'
+import { installNetRequestFetchAdapter } from '../testing/updater-net-request.fixture'
 
-const { netFetchMock } = vi.hoisted(() => ({ netFetchMock: vi.fn() }))
+const { netFetchMock, netRequestMock } = vi.hoisted(() => ({
+  netFetchMock: vi.fn(),
+  netRequestMock: vi.fn()
+}))
 
 vi.mock('electron', () => ({
-  net: { fetch: netFetchMock, request: vi.fn() }
+  net: { fetch: netFetchMock, request: netRequestMock }
 }))
 
 /** A response whose body streams `chunks`, as `net.fetch` hands the probe; `text()` reads it whole. */
@@ -44,6 +48,8 @@ describe('probeReleaseManifest', () => {
   beforeEach(() => {
     vi.resetModules()
     netFetchMock.mockReset()
+    netRequestMock.mockReset()
+    installNetRequestFetchAdapter(netRequestMock, netFetchMock)
     restoreHostSlice = setHostSliceForTest({ arch: 'x64' })
   })
 

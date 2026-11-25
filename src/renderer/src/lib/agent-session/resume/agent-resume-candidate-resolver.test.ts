@@ -95,12 +95,12 @@ const rungs: Row[] = [
 const filters: Row[] = [
   {
     name: 'filter: agent mismatch with a known pane agent',
-    args: { candidates: [candidate('a', { agent: 'gemini' }), candidate('b')] },
+    args: { candidates: [candidate('a', { agent: 'claude' }), candidate('b')] },
     expected: 'resume:b:sole-candidate'
   },
   {
     name: 'filter: unknown pane agent keeps every agent in play',
-    args: { paneAgent: null, candidates: [candidate('a', { agent: 'gemini' }), candidate('b')] },
+    args: { paneAgent: null, candidates: [candidate('a', { agent: 'claude' }), candidate('b')] },
     expected: 'choose:a,b'
   },
   {

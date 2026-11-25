@@ -14,11 +14,11 @@ import type { WorkerTerminalReleaseRuntime } from '../terminal-authority/release
 import { readRemoteAttachmentOutputIfAvailable } from './remote-attachment-archive-read'
 import { WorkerTerminalReleaseSingleFlight } from '../../rpc/methods/orchestration/worker/release/worker-terminal-release-single-flight'
 import { yieldAutoReleaseToWorkingAgent } from '../terminal-authority/release/worker-terminal-auto-release-working-yield'
-import { archiveSummary } from '../../rpc/methods/orchestration/worker/release/worker-terminal-resource-presentation'
 import {
-  retainedReason,
-  type WorkerReleaseReceipt
-} from '../../rpc/methods/orchestration/worker/release/worker-release-completion'
+  archiveSummary,
+  retainedReason
+} from '../../rpc/methods/orchestration/worker/release/worker-terminal-resource-presentation'
+import type { WorkerReleaseReceipt } from '../../rpc/methods/orchestration/worker/release/worker-release-completion'
 import { releaseUnknownRecovery } from '../../rpc/methods/orchestration/worker/release/worker-release-unknown-recovery'
 import {
   noteClosingTurnInArchive,
