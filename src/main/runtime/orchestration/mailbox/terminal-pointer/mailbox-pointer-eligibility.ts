@@ -46,7 +46,7 @@ export const LIVENESS_ONLY_POINTER_TYPES: readonly string[] = ['heartbeat']
  * An unacked batch defers rather than drops: only mail it does not hold is eligible, once each.
  * A batch of only `silentTypes` selects nothing; that mail stays undelivered, so the next pointer
  * counts it as `check` will. */
-export function selectOrchestrationPointerBatch(input: {
+type PointerSelection = {
   db: OrchestrationDb
   mailboxHandle: string
   waiters: ReadonlySet<OrchestrationMessageWaiter> | undefined
@@ -54,32 +54,58 @@ export function selectOrchestrationPointerBatch(input: {
   silentTypes?: readonly string[]
   /** A terminal's own mailbox leaves rows a Run owns undelivered for routing to move. */
   excludeRunOwnedDirect?: boolean
-}): OrchestrationPointerBatch {
-  if (hasUnfilteredOrchestrationWaiter(input.waiters)) {
-    return { messages: [], heldDeliveryId: undefined }
-  }
+  newestFirst?: boolean
+}
+
+function pointerExclusions(input: PointerSelection, excludeIds?: readonly string[]) {
   const excludedTypes = new Set(input.reservedTypes)
   for (const waiter of input.waiters ?? []) {
     for (const type of waiter.typeFilter ?? []) {
       excludedTypes.add(type)
     }
   }
+  return {
+    excludeTypes: [...excludedTypes],
+    excludeIds,
+    excludeRunOwnedDirect: input.excludeRunOwnedDirect
+  }
+}
+
+export function selectOrchestrationPointerSequence(input: PointerSelection): number | undefined {
+  return hasUnfilteredOrchestrationWaiter(input.waiters)
+    ? undefined
+    : input.db.getUndeliveredUnreadSequence(
+        input.mailboxHandle,
+        pointerExclusions(
+          input,
+          input.db.getOutstandingMailboxDelivery?.(input.mailboxHandle)?.messageIds
+        )
+      )
+}
+
+export function selectOrchestrationPointerBatch(
+  input: PointerSelection
+): OrchestrationPointerBatch {
+  if (hasUnfilteredOrchestrationWaiter(input.waiters)) {
+    return { messages: [], heldDeliveryId: undefined }
+  }
   const held = input.db.getOutstandingMailboxDelivery?.(input.mailboxHandle)
+  const exclusions = pointerExclusions(input, held?.messageIds)
   const select = (excludeTypes: string[], limit: number) =>
     input.db.getUndeliveredUnreadMessages(input.mailboxHandle, undefined, {
+      ...exclusions,
       excludeTypes,
-      excludeIds: held?.messageIds,
-      excludeRunOwnedDirect: input.excludeRunOwnedDirect,
+      newestFirst: input.newestFirst,
       limit
     })
-  const messages = select([...excludedTypes], ORCHESTRATION_DELIVERY_BATCH_LIMIT)
+  const messages = select(exclusions.excludeTypes, ORCHESTRATION_DELIVERY_BATCH_LIMIT)
   const silentTypes = input.silentTypes ?? []
   const silentOnly =
     silentTypes.length > 0 &&
     messages.every((message) => silentTypes.includes(message.type)) &&
     // A full page of silent mail can hide newer mail past it, which still warrants this pointer.
     (messages.length < ORCHESTRATION_DELIVERY_BATCH_LIMIT ||
-      select([...excludedTypes, ...silentTypes], 1).length === 0)
+      select([...exclusions.excludeTypes, ...silentTypes], 1).length === 0)
   return { messages: silentOnly ? [] : messages, heldDeliveryId: held?.id }
 }
 
