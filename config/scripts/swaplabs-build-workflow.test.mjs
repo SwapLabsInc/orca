@@ -288,7 +288,8 @@ describe('swaplabs fork build base version', () => {
 
   it.each([
     ['fails', { TAGS_FAIL: '1' }],
-    ['finds no tags', { TAGS: '' }]
+    ['finds no tags', { TAGS: '' }],
+    ['finds no release version', { TAGS: 'vnext' }]
   ])('stops the build when the tag lookup %s', async (_name, env) => {
     const result = await run(env)
     expect(result.exitCode).not.toBe(0)
